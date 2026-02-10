@@ -1,21 +1,32 @@
 import { supabase } from '../lib/supabase';
 
-export const obtenerUsuariosActivos = async () => {
+export const obtenerUsuarios = async () => {
   const { data, error } = await supabase
     .from('usuarios_app')
     .select('*')
-    .eq('activo', true)
-    .order('usuario');
+    .order('created_at', { ascending: false });
 
   if (error) throw error;
-  return data || [];
+  return data;
 };
 
-export const eliminarUsuario = async (id: number) => {
+export const crearUsuario = async (data: any) => {
+  const { error } = await supabase.from('usuarios_app').insert(data);
+  if (error) throw error;
+};
+
+export const actualizarUsuario = async (id: string, data: any) => {
   const { error } = await supabase
     .from('usuarios_app')
-    .update({ activo: false })
+    .update(data)
     .eq('id', id);
+  if (error) throw error;
+};
 
+export const eliminarUsuario = async (id: string) => {
+  const { error } = await supabase
+    .from('usuarios_app')
+    .delete()
+    .eq('id', id);
   if (error) throw error;
 };
