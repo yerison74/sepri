@@ -419,6 +419,15 @@ export const tramitesService = {
         query = query.eq('area_destinatario', filtros.area);
       }
 
+      // Restricción por área: solo trámites enviados a su área (area_destinatario) o enviados por su área (origen = area_destinatario en creación). Filtro único por area_destinatario.
+      if (!filtros.esAdmin) {
+        if (filtros.areaUsuario) {
+          query = query.eq('area_destinatario', filtros.areaUsuario);
+        } else {
+          query = query.limit(0);
+        }
+      }
+
       // Búsqueda por texto
       if (filtros.search) {
         query = query.or(

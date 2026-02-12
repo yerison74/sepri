@@ -474,12 +474,14 @@ export const uploadAPI = {
 
 // Trámites API - Conectado a Supabase (seguimiento de trámites)
 export const tramitesAPI = {
-  obtenerTramites: async (params?: { search?: string; estado?: string; area?: string; limit?: number; offset?: number }) => {
+  obtenerTramites: async (params?: { search?: string; estado?: string; area?: string; areaUsuario?: string; esAdmin?: boolean; limit?: number; offset?: number }) => {
     try {
       const response = await tramitesService.obtenerTramites({
         search: params?.search,
         estado: params?.estado,
         area: params?.area,
+        areaUsuario: params?.areaUsuario,
+        esAdmin: params?.esAdmin,
         limit: params?.limit ?? 12,
         offset: params?.offset ?? 0,
       });

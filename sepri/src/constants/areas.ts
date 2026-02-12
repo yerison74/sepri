@@ -3,6 +3,7 @@
  * Se usan para: área del usuario, área destinatario/destino en trámites.
  */
 export const AREAS_TRAMITES: { nombre: string; codigo: string }[] = [
+  { nombre: 'Dirección General', codigo: 'DIGE' },
   { nombre: 'Oficina de Libre Acceso a la Información Pública', codigo: 'OAIP' },
   { nombre: 'Departamento Jurídico', codigo: 'JURI' },
   { nombre: 'Departamento de Recursos Humanos', codigo: 'RRHH' },

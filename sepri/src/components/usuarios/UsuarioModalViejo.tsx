@@ -2,6 +2,7 @@ import {
   Dialog, DialogTitle, DialogContent, DialogActions,
   TextField, Select, MenuItem, Checkbox, FormControlLabel, Button
 } from '@mui/material';
+import { CARGOS } from '../../constants/cargos';
 
 const PERMISOS = [
   { key: 'crear_usuarios', label: 'Creación de usuarios' },
@@ -17,6 +18,7 @@ const PERMISOS = [
 
 const AREAS = [
   'Ninguna',
+  'Dirección General',
   'Oficina de Libre Acceso a la Información Pública',
   'Departamento Jurídico',
   'Departamento de Recursos Humanos',
@@ -55,8 +57,13 @@ export default function UsuarioModalViejo({ open, onClose, onSave, form, setForm
           value={form.usuario} onChange={e=>setForm({...form,usuario:e.target.value})}/>
         <TextField fullWidth margin="dense" label="Contraseña *" type="password"
           value={form.password} onChange={e=>setForm({...form,password:e.target.value})}/>
-        <TextField fullWidth margin="dense" label="Cargo"
-          value={form.cargo} onChange={e=>setForm({...form,cargo:e.target.value})}/>
+        <Select fullWidth value={form.cargo || ''} displayEmpty
+          onChange={e=>setForm({...form,cargo:e.target.value})}
+          renderValue={(v) => v || 'Sin especificar'}
+          style={{ marginTop: 8, marginBottom: 8 }}>
+          <MenuItem value="">Sin especificar</MenuItem>
+          {CARGOS.map(c=> <MenuItem key={c} value={c}>{c}</MenuItem>)}
+        </Select>
 
         <Select fullWidth value={form.area}
           onChange={e=>setForm({...form,area:e.target.value})}>
