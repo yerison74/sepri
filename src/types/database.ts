@@ -92,6 +92,10 @@ export interface TramitesFilters {
   search?: string;
   estado?: string;
   area?: string;
+  /** Si se indica, solo se devuelven trámites enviados por o enviados a esta área (ignorado si esAdmin) */
+  areaUsuario?: string;
+  /** Si true, se ignoran filtros por área y se devuelven todos los trámites */
+  esAdmin?: boolean;
   limit?: number;
   offset?: number;
 }

@@ -55,6 +55,7 @@ import {
 } from '@mui/icons-material';
 import { tramitesAPI, Tramite, MovimientoTramite } from '../services/api';
 import { AREAS_TRAMITES, getCodigoPorArea } from '../constants/areas';
+import { useAuth } from '../context/AuthContext';
 import JsBarcode from 'jsbarcode';
 
 // Componente para generar código de barras usando jsbarcode
@@ -96,6 +97,7 @@ interface TramiteHistoryProps {
 }
 
 const TramiteHistory: React.FC<TramiteHistoryProps> = ({ soloLectura = false }) => {
+  const { user } = useAuth();
   const [tramites, setTramites] = useState<Tramite[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -117,7 +119,7 @@ const TramiteHistory: React.FC<TramiteHistoryProps> = ({ soloLectura = false }) 
   const [viewMode, setViewMode] = useState<'list' | 'cards'>('list');
   const [hideCompleted, setHideCompleted] = useState(false);
 
-  // Formulario nuevo trámite
+  // Formulario nuevo trámite (destinatario y área se rellenan con el usuario logueado)
   const [nuevoTramite, setNuevoTramite] = useState({
     titulo: '',
     nombre_destinatario: '',
@@ -145,6 +147,19 @@ const TramiteHistory: React.FC<TramiteHistoryProps> = ({ soloLectura = false }) 
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [page, searchQuery]);
 
+  // Al abrir el diálogo de nuevo trámite, rellenar destinatario y área con el usuario logueado
+  useEffect(() => {
+    if (openDialog && user) {
+      const nombreCompleto = [user.nombre, user.apellido].filter(Boolean).join(' ').trim();
+      const areaUsuario = user.area || '';
+      setNuevoTramite((prev) => ({
+        ...prev,
+        nombre_destinatario: nombreCompleto || prev.nombre_destinatario,
+        area_destinatario: areaUsuario || prev.area_destinatario
+      }));
+    }
+  }, [openDialog, user]);
+
   // Resetear página cuando se ocultan los completados
   useEffect(() => {
     setPage(1);
@@ -162,10 +177,14 @@ const TramiteHistory: React.FC<TramiteHistoryProps> = ({ soloLectura = false }) 
     try {
       setLoading(true);
       setError(null);
+      const areaUsuario = user?.area ?? '';
+      const esAdmin = user?.rol === 'admin';
       const response = await tramitesAPI.obtenerTramites({ 
         search: searchQuery,
         limit: rowsPerPage,
-        offset: (page - 1) * rowsPerPage
+        offset: (page - 1) * rowsPerPage,
+        areaUsuario: areaUsuario || undefined,
+        esAdmin,
       });
       const tramitesData = response.data.data || [];
       
@@ -477,10 +496,12 @@ const TramiteHistory: React.FC<TramiteHistoryProps> = ({ soloLectura = false }) 
 
   const handleSeguimiento = (tramite: Tramite) => {
     setSelectedTramite(tramite);
+    const nombreCompleto = user ? [user.nombre, user.apellido].filter(Boolean).join(' ').trim() : '';
+    const areaUsuario = user?.area || tramite.area_destinatario;
     setSeguimientoData({
-      area_origen: tramite.area_destinatario,
+      area_origen: areaUsuario,
       area_destino: '',
-      usuario: '',
+      usuario: nombreCompleto,
       observaciones: '',
       actualizar_estado: tramite.estado
     });

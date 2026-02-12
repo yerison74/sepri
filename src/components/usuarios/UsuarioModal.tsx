@@ -20,6 +20,7 @@ import {
   CircularProgress,
   Stack
 } from '@mui/material';
+import { CARGOS } from '../../constants/cargos';
 import { 
   Person as PersonIcon,
   Lock as LockIcon,
@@ -42,6 +43,7 @@ const PERMISOS = [
 
 const AREAS = [
   'Ninguna',
+  'Dirección General',
   'Oficina de Libre Acceso a la Información Pública',
   'Departamento Jurídico',
   'Departamento de Recursos Humanos',
@@ -192,13 +194,23 @@ export default function UsuarioModal({
             </Typography>
           </Box>
           <Stack spacing={2}>
-            <TextField
-              fullWidth
-              label="Cargo"
-              value={form.cargo}
-              onChange={(e) => setForm({ ...form, cargo: e.target.value })}
-              variant="outlined"
-            />
+            <FormControl fullWidth>
+              <InputLabel>Cargo</InputLabel>
+              <Select
+                value={form.cargo || ''}
+                onChange={(e) => setForm({ ...form, cargo: e.target.value })}
+                label="Cargo"
+              >
+                <MenuItem value="">
+                  <em>Sin especificar</em>
+                </MenuItem>
+                {CARGOS.map((c) => (
+                  <MenuItem key={c} value={c}>
+                    {c}
+                  </MenuItem>
+                ))}
+              </Select>
+            </FormControl>
             <FormControl fullWidth>
               <InputLabel>Área</InputLabel>
               <Select
