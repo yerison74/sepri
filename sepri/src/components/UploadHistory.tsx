@@ -147,15 +147,15 @@ const TramiteHistory: React.FC<TramiteHistoryProps> = ({ soloLectura = false }) 
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [page, searchQuery]);
 
-  // Al abrir el diálogo de nuevo trámite, rellenar destinatario y área con el usuario logueado
+  // Al abrir el diálogo de nuevo trámite, rellenar solo el remitente con el usuario logueado.
+  // Primera área de envío queda vacía para que el usuario la elija.
   useEffect(() => {
     if (openDialog && user) {
       const nombreCompleto = [user.nombre, user.apellido].filter(Boolean).join(' ').trim();
-      const areaUsuario = user.area || '';
       setNuevoTramite((prev) => ({
         ...prev,
-        nombre_destinatario: nombreCompleto || prev.nombre_destinatario,
-        area_destinatario: areaUsuario || prev.area_destinatario
+        nombre_destinatario: nombreCompleto || prev.nombre_destinatario
+        // area_destinatario no se rellena: el usuario debe elegir la primera área de envío
       }));
     }
   }, [openDialog, user]);
@@ -258,7 +258,8 @@ const TramiteHistory: React.FC<TramiteHistoryProps> = ({ soloLectura = false }) 
         formData.append('nombre_destinatario', nuevoTramite.nombre_destinatario);
         formData.append('area_destinatario', nuevoTramite.area_destinatario);
         formData.append('area_destino_final', nuevoTramite.area_destino_final);
-        formData.append('codigo_area', getCodigoPorArea(nuevoTramite.area_destinatario));
+        // Código del ID según el área del usuario que crea el trámite
+        formData.append('codigo_area', getCodigoPorArea(user?.area || ''));
         formData.append('archivo_pdf', nuevoTramite.archivo_pdf);
 
         const response = await tramitesAPI.crearTramiteConArchivo(formData);
@@ -274,7 +275,8 @@ const TramiteHistory: React.FC<TramiteHistoryProps> = ({ soloLectura = false }) 
           nombre_destinatario: nuevoTramite.nombre_destinatario,
           area_destinatario: nuevoTramite.area_destinatario,
           area_destino_final: nuevoTramite.area_destino_final,
-          codigo_area: getCodigoPorArea(nuevoTramite.area_destinatario),
+          // Código del ID según el área del usuario que crea el trámite
+          codigo_area: getCodigoPorArea(user?.area || ''),
         });
         nuevoTramiteData = response.data.data;
       }
@@ -497,9 +499,10 @@ const TramiteHistory: React.FC<TramiteHistoryProps> = ({ soloLectura = false }) 
   const handleSeguimiento = (tramite: Tramite) => {
     setSelectedTramite(tramite);
     const nombreCompleto = user ? [user.nombre, user.apellido].filter(Boolean).join(' ').trim() : '';
-    const areaUsuario = user?.area || tramite.area_destinatario;
+    // Área origen = última área en la que llegó el trámite (donde está actualmente)
+    const ultimaAreaLlegada = tramite.area_destinatario;
     setSeguimientoData({
-      area_origen: areaUsuario,
+      area_origen: ultimaAreaLlegada,
       area_destino: '',
       usuario: nombreCompleto,
       observaciones: '',
@@ -931,8 +934,8 @@ const TramiteHistory: React.FC<TramiteHistoryProps> = ({ soloLectura = false }) 
                   <TableRow sx={{ backgroundColor: 'primary.main' }}>
                     <TableCell sx={{ color: 'white', fontWeight: 600 }}>ID</TableCell>
                     <TableCell sx={{ color: 'white', fontWeight: 600 }}>Título</TableCell>
-                    <TableCell sx={{ color: 'white', fontWeight: 600 }}>Destinatario</TableCell>
-                    <TableCell sx={{ color: 'white', fontWeight: 600 }}>Área Destinatario</TableCell>
+                    <TableCell sx={{ color: 'white', fontWeight: 600 }}>Remitente</TableCell>
+                    <TableCell sx={{ color: 'white', fontWeight: 600 }}>Primera área de envío</TableCell>
                     <TableCell sx={{ color: 'white', fontWeight: 600 }}>Área Destino Final</TableCell>
                     <TableCell sx={{ color: 'white', fontWeight: 600 }}>Estado</TableCell>
                     <TableCell sx={{ color: 'white', fontWeight: 600 }}>Fecha Creación</TableCell>
@@ -1096,7 +1099,7 @@ const TramiteHistory: React.FC<TramiteHistoryProps> = ({ soloLectura = false }) 
                           </Typography>
                         </Box>
                         <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
-                          <strong>Área:</strong> {tramite.area_destinatario}
+                          <strong>Primera área de envío:</strong> {tramite.area_destinatario}
                         </Typography>
                         <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
                           <strong>Destino Final:</strong> {tramite.area_destino_final}
@@ -1220,19 +1223,19 @@ const TramiteHistory: React.FC<TramiteHistoryProps> = ({ soloLectura = false }) 
               placeholder="Ej: Solicitud de Presupuesto"
             />
             <TextField
-              label="Nombre del Destinatario"
+              label="Remitente"
               fullWidth
               required
               value={nuevoTramite.nombre_destinatario}
-              onChange={(e) => setNuevoTramite({ ...nuevoTramite, nombre_destinatario: e.target.value })}
-              placeholder="Ej: Juan Pérez"
+              InputProps={{ readOnly: true }}
+              placeholder="Se rellena con el usuario logueado"
             />
             <Box sx={{ display: 'flex', gap: 2 }}>
               <FormControl fullWidth required>
-                <InputLabel>Área del Destinatario</InputLabel>
+                <InputLabel>Primera área de envío</InputLabel>
                 <Select
                   value={nuevoTramite.area_destinatario}
-                  label="Área del Destinatario"
+                  label="Primera área de envío"
                   onChange={(e) => setNuevoTramite({ ...nuevoTramite, area_destinatario: e.target.value })}
                 >
                   {AREAS_TRAMITES.map((area) => (
@@ -1347,7 +1350,7 @@ const TramiteHistory: React.FC<TramiteHistoryProps> = ({ soloLectura = false }) 
                   <strong>Título:</strong> {selectedTramite.titulo}
                 </Typography>
                 <Typography variant="body2" color="text.secondary">
-                  <strong>Destinatario:</strong> {selectedTramite.nombre_destinatario}
+                  <strong>Remitente:</strong> {selectedTramite.nombre_destinatario}
                 </Typography>
               </Box>
             </Box>
@@ -1567,12 +1570,12 @@ const TramiteHistory: React.FC<TramiteHistoryProps> = ({ soloLectura = false }) 
               </Select>
             </FormControl>
             <TextField
-              label="Usuario / Quién envía"
+              label="Usuario / Quién envía (Remitente)"
               fullWidth
               required
               value={seguimientoData.usuario}
-              onChange={(e) => setSeguimientoData({ ...seguimientoData, usuario: e.target.value })}
-              placeholder="Ej: María González"
+              InputProps={{ readOnly: true }}
+              placeholder="Se rellena con el usuario logueado"
             />
             <FormControl fullWidth>
               <InputLabel>Actualizar Estado</InputLabel>
