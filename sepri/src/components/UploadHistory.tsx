@@ -281,7 +281,22 @@ const TramiteHistory: React.FC<TramiteHistoryProps> = ({ soloLectura = false }) 
         nuevoTramiteData = response.data.data;
       }
 
-      setTramites([nuevoTramiteData, ...tramites]);
+      // Movimiento 1: desde el área del usuario hasta la primera área de envío, por quien creó el trámite
+      const areaOrigenCreador = user?.area || 'Área del creador';
+      const nombreCreador = [user?.nombre, user?.apellido].filter(Boolean).join(' ').trim() || nuevoTramite.nombre_destinatario;
+      try {
+        await tramitesAPI.registrarMovimiento(nuevoTramiteData.id, {
+          area_origen: areaOrigenCreador,
+          area_destino: nuevoTramite.area_destinatario,
+          usuario: nombreCreador,
+          observaciones: 'Trámite creado',
+          actualizar_estado: 'en_transito',
+        });
+      } catch (errMov: any) {
+        console.warn('No se pudo registrar el movimiento inicial del trámite:', errMov?.response?.data?.error || errMov);
+      }
+
+      setTramites([{ ...nuevoTramiteData, estado: 'en_transito' }, ...tramites]);
 
       setOpenDialog(false);
       setNuevoTramite({
@@ -946,7 +961,9 @@ const TramiteHistory: React.FC<TramiteHistoryProps> = ({ soloLectura = false }) 
                   {paginatedTramites.map((tramite) => (
                     <TableRow
                       key={tramite.id}
+                      onClick={() => handleViewHistory(tramite)}
                       sx={{
+                        cursor: 'pointer',
                         '&:hover': { backgroundColor: 'action.hover' },
                         borderLeft: tramite.estado === 'completado' ? '4px solid #4CAF50' : 'none'
                       }}
@@ -993,7 +1010,7 @@ const TramiteHistory: React.FC<TramiteHistoryProps> = ({ soloLectura = false }) 
                             : 'N/A'}
                         </Typography>
                       </TableCell>
-                      <TableCell align="center">
+                      <TableCell align="center" onClick={(e) => e.stopPropagation()}>
                         <Box sx={{ display: 'flex', gap: 0.5, justifyContent: 'center' }}>
                           {tramite.archivo_pdf && (
                             <Tooltip title="Ver PDF">
@@ -1013,15 +1030,6 @@ const TramiteHistory: React.FC<TramiteHistoryProps> = ({ soloLectura = false }) 
                               color="primary"
                             >
                               <QrCode fontSize="small" />
-                            </IconButton>
-                          </Tooltip>
-                          <Tooltip title="Ver Historial">
-                            <IconButton
-                              size="small"
-                              onClick={() => handleViewHistory(tramite)}
-                              color="info"
-                            >
-                              <HistoryIcon fontSize="small" />
                             </IconButton>
                           </Tooltip>
                           {tramite.estado !== 'completado' && !soloLectura && (
@@ -1056,10 +1064,12 @@ const TramiteHistory: React.FC<TramiteHistoryProps> = ({ soloLectura = false }) 
                 <Box key={tramite.id}>
                   <Card 
                     elevation={3}
+                    onClick={() => handleViewHistory(tramite)}
                     sx={{
                       height: '100%',
                       display: 'flex',
                       flexDirection: 'column',
+                      cursor: 'pointer',
                       transition: 'transform 0.2s, box-shadow 0.2s',
                       border: tramite.estado === 'completado' ? '2px solid #4CAF50' : 'none',
                       borderLeft: tramite.estado === 'completado' ? '4px solid #4CAF50' : 'none',
@@ -1130,7 +1140,7 @@ const TramiteHistory: React.FC<TramiteHistoryProps> = ({ soloLectura = false }) 
                       </Box>
                     </CardContent>
 
-                    <CardActions sx={{ justifyContent: 'space-between', px: 2, pb: 2 }}>
+                    <CardActions sx={{ justifyContent: 'space-between', px: 2, pb: 2 }} onClick={(e) => e.stopPropagation()}>
                       <Box>
                         {tramite.archivo_pdf && (
                           <Tooltip title="Ver PDF">
@@ -1150,15 +1160,6 @@ const TramiteHistory: React.FC<TramiteHistoryProps> = ({ soloLectura = false }) 
                             color="primary"
                           >
                             <QrCode />
-                          </IconButton>
-                        </Tooltip>
-                        <Tooltip title="Ver Historial">
-                          <IconButton
-                            size="small"
-                            onClick={() => handleViewHistory(tramite)}
-                            color="info"
-                          >
-                            <HistoryIcon />
                           </IconButton>
                         </Tooltip>
                       </Box>
