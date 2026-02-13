@@ -43,7 +43,7 @@ export interface Tramite {
   nombre_destinatario: string;
   area_destinatario: string;
   area_destino_final: string;
-  estado: 'en_transito' | 'recibido' | 'procesado' | 'completado';
+  estado: 'en_transito' | 'detenido' | 'firmado' | 'procesado' | 'completado';
   codigo_barras?: string | null;
   archivo_pdf?: string | null;
   nombre_archivo?: string | null;
