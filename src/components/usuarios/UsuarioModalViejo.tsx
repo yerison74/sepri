@@ -71,10 +71,20 @@ export default function UsuarioModalViejo({ open, onClose, onSave, form, setForm
         </Select>
 
         <Select fullWidth value={form.rol}
-          onChange={e=>setForm({...form,rol:e.target.value})}
+          onChange={e=>{
+            const newRol = e.target.value;
+            const updates = { ...form, rol: newRol };
+            if (newRol === 'admin') {
+              const todosPermisos = {} as Record<string, boolean>;
+              PERMISOS.forEach(p=> { todosPermisos[p.key] = true; });
+              updates.permisos = todosPermisos;
+            }
+            setForm(updates);
+          }}
           style={{ marginTop: 12 }}>
-          <MenuItem value="usuario">Usuario</MenuItem>
           <MenuItem value="admin">Administrador</MenuItem>
+          <MenuItem value="supervision">Supervisión</MenuItem>
+          <MenuItem value="usuario">Usuario</MenuItem>
         </Select>
 
         <h4 style={{ marginTop: 16 }}>Permisos</h4>

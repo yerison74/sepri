@@ -99,11 +99,12 @@ interface TramiteHistoryProps {
 const TramiteHistory: React.FC<TramiteHistoryProps> = ({ soloLectura = false }) => {
   const { user } = useAuth();
   const [tramites, setTramites] = useState<Tramite[]>([]);
+  const [totalCount, setTotalCount] = useState(0);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [page, setPage] = useState(1);
-  const [rowsPerPage] = useState(12);
+  const [rowsPerPage] = useState(15);
   const searchInputRef = useRef<HTMLInputElement>(null);
   const [scanning, setScanning] = useState(false);
   const [lastInputTime, setLastInputTime] = useState(0);
@@ -160,10 +161,10 @@ const TramiteHistory: React.FC<TramiteHistoryProps> = ({ soloLectura = false }) 
     }
   }, [openDialog, user]);
 
-  // Resetear página cuando se ocultan los completados
+  // Resetear a página 1 cuando cambian filtros
   useEffect(() => {
     setPage(1);
-  }, [hideCompleted]);
+  }, [hideCompleted, searchQuery]);
 
   // Limpiar stream de cámara al desmontar
   useEffect(() => {
@@ -178,19 +179,21 @@ const TramiteHistory: React.FC<TramiteHistoryProps> = ({ soloLectura = false }) 
       setLoading(true);
       setError(null);
       const areaUsuario = user?.area ?? '';
-      const esAdmin = user?.rol === 'admin';
+      const verTodosTramites = user?.rol === 'admin' || user?.rol === 'supervision';
       const response = await tramitesAPI.obtenerTramites({ 
         search: searchQuery,
         limit: rowsPerPage,
         offset: (page - 1) * rowsPerPage,
         areaUsuario: areaUsuario || undefined,
-        esAdmin,
+        esAdmin: verTodosTramites,
       });
       const tramitesData = response.data.data || [];
-      
+      const total = response.data.count ?? tramitesData.length;
+      setTotalCount(total);
+
       // Obtener URL del backend desde variable de entorno o usar default
       const backendUrl = process.env.REACT_APP_BACKEND_URL || 'http://localhost:3001';
-      
+
       // Convertir URLs relativas a absolutas
       const tramitesConUrl = tramitesData.map((tramite: any) => {
         if (tramite.archivo_pdf && tramite.archivo_pdf.startsWith('/api/')) {
@@ -198,7 +201,7 @@ const TramiteHistory: React.FC<TramiteHistoryProps> = ({ soloLectura = false }) 
         }
         return tramite;
       });
-      
+
       setTramites(tramitesConUrl);
     } catch (err: any) {
       if (err.response?.status === 404) {
@@ -417,57 +420,34 @@ const TramiteHistory: React.FC<TramiteHistoryProps> = ({ soloLectura = false }) 
     setScanning(false);
   };
 
-  const handleViewPdf = async (tramite: Tramite) => {
+  const handleViewPdf = (tramite: Tramite) => {
     if (!tramite.archivo_pdf) {
       setError('No hay archivo PDF asociado a este trámite');
       return;
     }
 
-    try {
-      // Obtener URL del backend desde variable de entorno o usar default
-      const backendUrl = process.env.REACT_APP_BACKEND_URL || 'http://localhost:3001';
-      
-      // Asegurar que la URL sea absoluta
-      let pdfUrl = tramite.archivo_pdf.trim();
-      
-      // Si es una URL relativa que empieza con /api/
-      if (pdfUrl.startsWith('/api/')) {
-        pdfUrl = `${backendUrl}${pdfUrl}`;
-      }
-      // Si es una blob URL (creada localmente), usarla directamente
-      else if (pdfUrl.startsWith('blob:')) {
-        // Mantener la blob URL - estas son válidas localmente
-      }
-      // Si ya es una URL completa (http/https), usarla directamente
-      else if (pdfUrl.startsWith('http://') || pdfUrl.startsWith('https://')) {
-        // URL completa, usar tal cual
-      }
-      // Si no tiene protocolo, intentar construir URL
-      else {
-        // Si no tiene protocolo, asumir que es relativa al backend
-        pdfUrl = `${backendUrl}${pdfUrl.startsWith('/') ? '' : '/'}${pdfUrl}`;
-      }
-      
-      console.log('Abriendo PDF en nueva pestaña:', pdfUrl);
-      
-      // Verificar si la URL es válida antes de abrir
-      if (!pdfUrl || pdfUrl.trim() === '') {
-        setError('URL del PDF no válida');
-        return;
-      }
-      
-      // Abrir PDF en nueva pestaña del navegador
-      // El navegador usará su visor de PDF integrado o el lector del sistema según configuración
-      const newWindow = window.open(pdfUrl, '_blank', 'noopener,noreferrer');
-      
-      // Si el navegador bloquea la ventana emergente, mostrar mensaje
-      if (!newWindow || newWindow.closed || typeof newWindow.closed === 'undefined') {
-        setError('No se pudo abrir el PDF. Por favor, verifica que tu navegador permita ventanas emergentes.');
-      }
-    } catch (error: any) {
-      console.error('Error al abrir PDF:', error);
-      setError(`Error al abrir el PDF: ${error.message || 'Error desconocido'}. Verifica que el backend esté corriendo y que la URL del PDF sea válida.`);
+    const backendUrl = process.env.REACT_APP_BACKEND_URL || 'http://localhost:3001';
+    let pdfUrl = tramite.archivo_pdf.trim();
+
+    if (pdfUrl.startsWith('/api/')) {
+      pdfUrl = `${backendUrl}${pdfUrl}`;
+    } else if (!pdfUrl.startsWith('http://') && !pdfUrl.startsWith('https://') && !pdfUrl.startsWith('blob:')) {
+      pdfUrl = `${backendUrl}${pdfUrl.startsWith('/') ? '' : '/'}${pdfUrl}`;
     }
+
+    if (!pdfUrl) {
+      setError('URL del PDF no válida');
+      return;
+    }
+
+    // Usar <a> con target="_blank" — no es bloqueado por el navegador
+    const link = document.createElement('a');
+    link.href = pdfUrl;
+    link.target = '_blank';
+    link.rel = 'noopener noreferrer';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
   };
 
   const handleDownloadPdf = (tramite: Tramite) => {
@@ -637,11 +617,8 @@ const TramiteHistory: React.FC<TramiteHistoryProps> = ({ soloLectura = false }) 
     );
   });
 
-  const totalPages = Math.ceil(filteredTramites.length / rowsPerPage);
-  const paginatedTramites = filteredTramites.slice(
-    (page - 1) * rowsPerPage,
-    page * rowsPerPage
-  );
+  const totalPages = Math.max(1, Math.ceil(totalCount / rowsPerPage));
+  const paginatedTramites = filteredTramites;
 
   return (
     <Box sx={{ p: 3 }}>
@@ -956,6 +933,7 @@ const TramiteHistory: React.FC<TramiteHistoryProps> = ({ soloLectura = false }) 
                     <TableCell sx={{ color: 'white', fontWeight: 600 }}>Área Destino Final</TableCell>
                     <TableCell sx={{ color: 'white', fontWeight: 600 }}>Estado</TableCell>
                     <TableCell sx={{ color: 'white', fontWeight: 600 }}>Fecha Creación</TableCell>
+                    <TableCell sx={{ color: 'white', fontWeight: 600 }} align="center">Documento</TableCell>
                     <TableCell sx={{ color: 'white', fontWeight: 600 }} align="center">Acciones</TableCell>
                   </TableRow>
                 </TableHead>
@@ -1014,18 +992,22 @@ const TramiteHistory: React.FC<TramiteHistoryProps> = ({ soloLectura = false }) 
                         </Typography>
                       </TableCell>
                       <TableCell align="center" onClick={(e) => e.stopPropagation()}>
+                        {tramite.archivo_pdf ? (
+                          <Button
+                            size="small"
+                            variant="outlined"
+                            color="error"
+                            startIcon={<PictureAsPdf />}
+                            onClick={() => handleViewPdf(tramite)}
+                          >
+                            Ver PDF
+                          </Button>
+                        ) : (
+                          <Typography variant="caption" color="text.secondary">—</Typography>
+                        )}
+                      </TableCell>
+                      <TableCell align="center" onClick={(e) => e.stopPropagation()}>
                         <Box sx={{ display: 'flex', gap: 0.5, justifyContent: 'center' }}>
-                          {tramite.archivo_pdf && (
-                            <Tooltip title="Ver PDF">
-                              <IconButton
-                                size="small"
-                                onClick={() => handleViewPdf(tramite)}
-                                color="error"
-                              >
-                                <Visibility fontSize="small" />
-                              </IconButton>
-                            </Tooltip>
-                          )}
                           <Tooltip title="Ver Código de Barras">
                             <IconButton
                               size="small"
@@ -1142,14 +1124,19 @@ const TramiteHistory: React.FC<TramiteHistoryProps> = ({ soloLectura = false }) 
                         />
                       </Box>
 
-                      {/* Archivo PDF */}
+                      {/* Archivo PDF - clic para ver */}
                       {tramite.archivo_pdf && (
-                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 2 }}>
-                          <PictureAsPdf color="error" fontSize="small" />
-                          <Typography variant="caption" color="text.secondary">
-                            {tramite.nombre_archivo || 'documento.pdf'}
-                          </Typography>
-                        </Box>
+                        <Button
+                          fullWidth
+                          size="small"
+                          variant="outlined"
+                          color="error"
+                          startIcon={<PictureAsPdf />}
+                          onClick={(e) => { e.stopPropagation(); handleViewPdf(tramite); }}
+                          sx={{ mb: 2, justifyContent: 'flex-start', textTransform: 'none' }}
+                        >
+                          Ver PDF: {tramite.nombre_archivo || 'documento.pdf'}
+                        </Button>
                       )}
 
                       {/* Código de Barras en la parte inferior */}
@@ -1215,15 +1202,20 @@ const TramiteHistory: React.FC<TramiteHistoryProps> = ({ soloLectura = false }) 
             </Box>
           )}
 
-          {/* Paginación */}
-          {totalPages > 1 && (
-            <Box sx={{ display: 'flex', justifyContent: 'center', mt: 3 }}>
+          {/* Navegación de páginas */}
+          {totalCount > 0 && (
+            <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mt: 3, flexWrap: 'wrap', gap: 2 }}>
+              <Typography variant="body2" color="text.secondary">
+                Mostrando {(page - 1) * rowsPerPage + 1}-{Math.min(page * rowsPerPage, totalCount)} de {totalCount} trámites
+              </Typography>
               <Pagination
                 count={totalPages}
                 page={page}
-                onChange={(event, value) => setPage(value)}
+                onChange={(_, value) => setPage(value)}
                 color="primary"
                 size="large"
+                showFirstButton
+                showLastButton
               />
             </Box>
           )}
@@ -1648,25 +1640,42 @@ const TramiteHistory: React.FC<TramiteHistoryProps> = ({ soloLectura = false }) 
           }
         }}
       >
-        <DialogTitle sx={{ 
+                <DialogTitle sx={{ 
           pb: 2,
           borderBottom: '2px solid',
           borderColor: 'divider',
           backgroundColor: 'primary.main',
           color: 'white'
         }}>
-          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-            <HistoryIcon />
-            <Box>
-              <Typography variant="h6" component="div" sx={{ fontWeight: 600 }}>
-                Historial de Movimientos
-              </Typography>
-              {selectedTramite && (
-                <Typography variant="body2" sx={{ opacity: 0.9, mt: 0.5 }}>
-                  {selectedTramite.id} - {selectedTramite.titulo}
+          <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 2 }}>
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+              <HistoryIcon />
+              <Box>
+                <Typography variant="h6" component="div" sx={{ fontWeight: 600 }}>
+                  Historial de Movimientos
                 </Typography>
-              )}
+                {selectedTramite && (
+                  <Typography variant="body2" sx={{ opacity: 0.9, mt: 0.5 }}>
+                    {selectedTramite.id} - {selectedTramite.titulo}
+                  </Typography>
+                )}
+              </Box>
             </Box>
+            {selectedTramite?.archivo_pdf && (
+              <Button
+                variant="contained"
+                size="small"
+                color="error"
+                startIcon={<PictureAsPdf />}
+                onClick={() => {
+                  setOpenHistoryDialog(false);
+                  handleViewPdf(selectedTramite);
+                }}
+                sx={{ whiteSpace: 'nowrap' }}
+              >
+                Ver PDF del trámite
+              </Button>
+            )}
           </Box>
         </DialogTitle>
         <DialogContent sx={{ pt: 3, minHeight: '300px' }}>

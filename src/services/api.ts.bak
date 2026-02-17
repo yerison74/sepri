@@ -510,10 +510,20 @@ export const tramitesAPI = {
       const prefijo = codigo_area || 'TR';
       const id = `${prefijo}-${Date.now()}`;
       const codigoBarras = `${Date.now()}`;
+      let archivoPdfUrl: string | null = null;
 
-      // Subir PDF a Supabase Storage — propagar el error si falla
-      const path = `tramites/${id}-${archivoPdf.name}`;
-      const archivoPdfUrl = await storageService.subirArchivo(archivoPdf, 'documentos', path);
+      try {
+        // CAMBIO IMPORTANTE: Usar el bucket "documentos" en lugar de "uploads"
+        const path = `tramites/${id}-${archivoPdf.name}`;
+        archivoPdfUrl = await storageService.subirArchivo(archivoPdf, 'documentos', path);
+        console.log('✅ PDF subido exitosamente a Supabase Storage:', archivoPdfUrl);
+      } catch (storageError: any) {
+        console.warn('❌ No se pudo subir PDF a Storage:', storageError?.message);
+        if (storageError?.message?.includes('Bucket not found')) {
+          console.warn('⚠️  Bucket "documentos" no encontrado. Verifica que existe en Supabase Storage.');
+        }
+        // Continuar sin la URL del PDF si hay error
+      }
 
       const data = await tramitesService.crearTramite({
         id,

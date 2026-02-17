@@ -145,7 +145,15 @@ export default function GestionUsuarios() {
   };
 
   const getRolColor = (rol: string) => {
-    return rol === 'admin' ? 'error' : 'primary';
+    if (rol === 'admin') return 'error';
+    if (rol === 'supervision') return 'warning';
+    return 'primary';
+  };
+
+  const getRolLabel = (rol: string) => {
+    if (rol === 'admin') return 'Administrador';
+    if (rol === 'supervision') return 'Supervisión';
+    return 'Usuario';
   };
 
   const getEstadoColor = (activo: boolean) => {
@@ -256,7 +264,7 @@ export default function GestionUsuarios() {
                       </TableCell>
                       <TableCell>
                         <Chip 
-                          label={u.rol === 'admin' ? 'Administrador' : 'Usuario'}
+                          label={getRolLabel(u.rol)}
                           color={getRolColor(u.rol)}
                           size="small"
                           sx={{ fontWeight: 500 }}
