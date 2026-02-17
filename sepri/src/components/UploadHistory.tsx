@@ -960,7 +960,6 @@ const TramiteHistory: React.FC<TramiteHistoryProps> = ({ soloLectura = false }) 
                   <TableRow sx={{ backgroundColor: 'primary.main' }}>
                     <TableCell sx={{ color: 'white', fontWeight: 600 }}>ID</TableCell>
                     <TableCell sx={{ color: 'white', fontWeight: 600 }}>Título</TableCell>
-                    <TableCell sx={{ color: 'white', fontWeight: 600 }}>Oficio</TableCell>
                     <TableCell sx={{ color: 'white', fontWeight: 600 }}>Remitente</TableCell>
                     <TableCell sx={{ color: 'white', fontWeight: 600 }}>Primera área de envío</TableCell>
                     <TableCell sx={{ color: 'white', fontWeight: 600 }}>Área Destino Final</TableCell>
@@ -990,11 +989,6 @@ const TramiteHistory: React.FC<TramiteHistoryProps> = ({ soloLectura = false }) 
                       <TableCell>
                         <Typography variant="body2" sx={{ fontWeight: 500 }}>
                           {tramite.titulo}
-                        </Typography>
-                      </TableCell>
-                      <TableCell>
-                        <Typography variant="body2" color="text.secondary">
-                          {tramite.oficio || '—'}
                         </Typography>
                       </TableCell>
                       <TableCell>
@@ -1142,11 +1136,6 @@ const TramiteHistory: React.FC<TramiteHistoryProps> = ({ soloLectura = false }) 
                         <Typography variant="subtitle1" sx={{ fontWeight: 600, mb: 1 }}>
                           {tramite.titulo}
                         </Typography>
-                        {tramite.oficio && (
-                          <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
-                            <strong>Oficio:</strong> {tramite.oficio}
-                          </Typography>
-                        )}
                         <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1 }}>
                           <Person fontSize="small" color="action" />
                           <Typography variant="body2" color="text.secondary">
