@@ -154,12 +154,12 @@ export const uploadAPI = {
       try {
         const timestamp = Date.now();
         const fileName = `uploads/xml/${timestamp}-${file.name}`;
-        storageUrl = await storageService.subirArchivo(file, 'uploads', fileName);
+        storageUrl = await storageService.subirArchivo(file, 'documentos', fileName);
       } catch (storageError: any) {
         // Si el bucket no existe, continuar sin guardar en storage
         console.warn('No se pudo subir a Storage (el bucket puede no existir):', storageError.message);
         if (storageError.message?.includes('Bucket not found')) {
-          console.warn('⚠️  Bucket "uploads" no encontrado. Por favor, créalo en Supabase Storage.');
+          console.warn('⚠️  Bucket "documentos" no encontrado. Por favor, créalo en Supabase Storage.');
         }
       }
 
@@ -380,12 +380,12 @@ export const uploadAPI = {
       try {
         const timestamp = Date.now();
         const fileName = `uploads/excel/${timestamp}-${file.name}`;
-        storageUrl = await storageService.subirArchivo(file, 'uploads', fileName);
+        storageUrl = await storageService.subirArchivo(file, 'documentos', fileName);
       } catch (storageError: any) {
         // Si el bucket no existe, continuar sin guardar en storage
         console.warn('No se pudo subir a Storage (el bucket puede no existir):', storageError.message);
         if (storageError.message?.includes('Bucket not found')) {
-          console.warn('⚠️  Bucket "uploads" no encontrado. Por favor, créalo en Supabase Storage.');
+          console.warn('⚠️  Bucket "documentos" no encontrado. Por favor, créalo en Supabase Storage.');
         }
       }
 
@@ -565,11 +565,11 @@ export const tramitesAPI = {
 
       try {
         const path = `tramites/${id}-${archivoPdf.name}`;
-        archivoPdfUrl = await storageService.subirArchivo(archivoPdf, 'uploads', path);
+        archivoPdfUrl = await storageService.subirArchivo(archivoPdf, 'documentos', path);
       } catch (storageError: any) {
         console.warn('No se pudo subir PDF a Storage:', storageError?.message);
         if (storageError?.message?.includes('Bucket not found')) {
-          console.warn('⚠️  Crea el bucket "uploads" en Supabase Storage para guardar los PDFs.');
+          console.warn('⚠️  Crea el bucket "documentos" en Supabase Storage para guardar los PDFs.');
         }
       }
 
