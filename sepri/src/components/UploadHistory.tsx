@@ -123,6 +123,7 @@ const TramiteHistory: React.FC<TramiteHistoryProps> = ({ soloLectura = false }) 
   // Formulario nuevo trámite (destinatario y área se rellenan con el usuario logueado)
   const [nuevoTramite, setNuevoTramite] = useState({
     titulo: '',
+    oficio: '',
     nombre_destinatario: '',
     area_destinatario: '',
     area_destino_final: '',
@@ -138,6 +139,7 @@ const TramiteHistory: React.FC<TramiteHistoryProps> = ({ soloLectura = false }) 
   const [seguimientoData, setSeguimientoData] = useState({
     area_origen: '',
     area_destino: '',
+    oficio: '',
     usuario: '',
     observaciones: '',
     actualizar_estado: ''
@@ -258,6 +260,7 @@ const TramiteHistory: React.FC<TramiteHistoryProps> = ({ soloLectura = false }) 
       if (nuevoTramite.archivo_pdf) {
         const formData = new FormData();
         formData.append('titulo', nuevoTramite.titulo);
+        formData.append('oficio', nuevoTramite.oficio);
         formData.append('nombre_destinatario', nuevoTramite.nombre_destinatario);
         formData.append('area_destinatario', nuevoTramite.area_destinatario);
         formData.append('area_destino_final', nuevoTramite.area_destino_final);
@@ -275,6 +278,7 @@ const TramiteHistory: React.FC<TramiteHistoryProps> = ({ soloLectura = false }) 
       } else {
         const response = await tramitesAPI.crearTramite({
           titulo: nuevoTramite.titulo,
+          oficio: nuevoTramite.oficio || undefined,
           nombre_destinatario: nuevoTramite.nombre_destinatario,
           area_destinatario: nuevoTramite.area_destinatario,
           area_destino_final: nuevoTramite.area_destino_final,
@@ -304,6 +308,7 @@ const TramiteHistory: React.FC<TramiteHistoryProps> = ({ soloLectura = false }) 
       setOpenDialog(false);
       setNuevoTramite({
         titulo: '',
+        oficio: '',
         nombre_destinatario: '',
         area_destinatario: '',
         area_destino_final: '',
@@ -522,6 +527,7 @@ const TramiteHistory: React.FC<TramiteHistoryProps> = ({ soloLectura = false }) 
     setSeguimientoData({
       area_origen: ultimaAreaLlegada,
       area_destino: '',
+      oficio: '',
       usuario: nombreCompleto,
       observaciones: '',
       actualizar_estado: tramite.estado
@@ -532,8 +538,8 @@ const TramiteHistory: React.FC<TramiteHistoryProps> = ({ soloLectura = false }) 
   const handleRegistrarSeguimiento = async () => {
     if (!selectedTramite) return;
 
-    if (!seguimientoData.area_destino || !seguimientoData.usuario) {
-      setError('Por favor complete el área destino y el usuario');
+    if (!seguimientoData.area_destino || !seguimientoData.usuario || !seguimientoData.oficio?.trim()) {
+      setError('Por favor complete el área destino, el usuario y el oficio');
       return;
     }
 
@@ -542,6 +548,7 @@ const TramiteHistory: React.FC<TramiteHistoryProps> = ({ soloLectura = false }) 
       await tramitesAPI.registrarMovimiento(selectedTramite.id, {
         area_origen: seguimientoData.area_origen,
         area_destino: seguimientoData.area_destino,
+        oficio: seguimientoData.oficio.trim(),
         usuario: seguimientoData.usuario,
         observaciones: seguimientoData.observaciones,
         actualizar_estado: seguimientoData.actualizar_estado
@@ -559,6 +566,7 @@ const TramiteHistory: React.FC<TramiteHistoryProps> = ({ soloLectura = false }) 
       setSeguimientoData({
         area_origen: '',
         area_destino: '',
+        oficio: '',
         usuario: '',
         observaciones: '',
         actualizar_estado: ''
@@ -632,6 +640,7 @@ const TramiteHistory: React.FC<TramiteHistoryProps> = ({ soloLectura = false }) 
     
     return (
       tramite.titulo.toLowerCase().includes(searchLower) ||
+      (tramite.oficio && tramite.oficio.toLowerCase().includes(searchLower)) ||
       tramite.nombre_destinatario.toLowerCase().includes(searchLower) ||
       tramite.id.toLowerCase().includes(searchLower) ||
       tramite.area_destinatario.toLowerCase().includes(searchLower) ||
@@ -708,7 +717,7 @@ const TramiteHistory: React.FC<TramiteHistoryProps> = ({ soloLectura = false }) 
               value={searchQuery}
               onChange={handleSearchChange}
               onKeyPress={handleSearchKeyPress}
-              placeholder="ID (ej. OAIP-123456, JURI-123456), título, destinatario, área o código de barras..."
+              placeholder="ID, título, oficio, destinatario, área o código de barras..."
               sx={{
                 '& .MuiOutlinedInput-root': {
                   borderRadius: 2,
@@ -951,6 +960,7 @@ const TramiteHistory: React.FC<TramiteHistoryProps> = ({ soloLectura = false }) 
                   <TableRow sx={{ backgroundColor: 'primary.main' }}>
                     <TableCell sx={{ color: 'white', fontWeight: 600 }}>ID</TableCell>
                     <TableCell sx={{ color: 'white', fontWeight: 600 }}>Título</TableCell>
+                    <TableCell sx={{ color: 'white', fontWeight: 600 }}>Oficio</TableCell>
                     <TableCell sx={{ color: 'white', fontWeight: 600 }}>Remitente</TableCell>
                     <TableCell sx={{ color: 'white', fontWeight: 600 }}>Primera área de envío</TableCell>
                     <TableCell sx={{ color: 'white', fontWeight: 600 }}>Área Destino Final</TableCell>
@@ -980,6 +990,11 @@ const TramiteHistory: React.FC<TramiteHistoryProps> = ({ soloLectura = false }) 
                       <TableCell>
                         <Typography variant="body2" sx={{ fontWeight: 500 }}>
                           {tramite.titulo}
+                        </Typography>
+                      </TableCell>
+                      <TableCell>
+                        <Typography variant="body2" color="text.secondary">
+                          {tramite.oficio || '—'}
                         </Typography>
                       </TableCell>
                       <TableCell>
@@ -1127,6 +1142,11 @@ const TramiteHistory: React.FC<TramiteHistoryProps> = ({ soloLectura = false }) 
                         <Typography variant="subtitle1" sx={{ fontWeight: 600, mb: 1 }}>
                           {tramite.titulo}
                         </Typography>
+                        {tramite.oficio && (
+                          <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
+                            <strong>Oficio:</strong> {tramite.oficio}
+                          </Typography>
+                        )}
                         <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1 }}>
                           <Person fontSize="small" color="action" />
                           <Typography variant="body2" color="text.secondary">
@@ -1259,6 +1279,13 @@ const TramiteHistory: React.FC<TramiteHistoryProps> = ({ soloLectura = false }) 
               placeholder="Ej: Solicitud de Presupuesto"
             />
             <TextField
+              label="Oficio"
+              fullWidth
+              value={nuevoTramite.oficio}
+              onChange={(e) => setNuevoTramite({ ...nuevoTramite, oficio: e.target.value })}
+              placeholder="Ej: OF-2025-001"
+            />
+            <TextField
               label="Remitente"
               fullWidth
               required
@@ -1348,6 +1375,7 @@ const TramiteHistory: React.FC<TramiteHistoryProps> = ({ soloLectura = false }) 
             setOpenDialog(false);
             setNuevoTramite({
               titulo: '',
+              oficio: '',
               nombre_destinatario: '',
               area_destinatario: '',
               area_destino_final: '',
@@ -1606,6 +1634,14 @@ const TramiteHistory: React.FC<TramiteHistoryProps> = ({ soloLectura = false }) 
               </Select>
             </FormControl>
             <TextField
+              label="Oficio"
+              fullWidth
+              required
+              value={seguimientoData.oficio}
+              onChange={(e) => setSeguimientoData({ ...seguimientoData, oficio: e.target.value })}
+              placeholder="Ej: OF-2025-001"
+            />
+            <TextField
               label="Usuario / Quién envía (Remitente)"
               fullWidth
               required
@@ -1677,11 +1713,12 @@ const TramiteHistory: React.FC<TramiteHistoryProps> = ({ soloLectura = false }) 
                 <Typography variant="h6" component="div" sx={{ fontWeight: 600 }}>
                   Historial de Movimientos
                 </Typography>
-                {selectedTramite && (
-                  <Typography variant="body2" sx={{ opacity: 0.9, mt: 0.5 }}>
-                    {selectedTramite.id} - {selectedTramite.titulo}
-                  </Typography>
-                )}
+              {selectedTramite && (
+                <Typography variant="body2" sx={{ opacity: 0.9, mt: 0.5 }}>
+                  {selectedTramite.id} - {selectedTramite.titulo}
+                  {selectedTramite.oficio && ` · Oficio: ${selectedTramite.oficio}`}
+                </Typography>
+              )}
               </Box>
             </Box>
             {selectedTramite?.archivo_pdf && (
@@ -1851,6 +1888,23 @@ const TramiteHistory: React.FC<TramiteHistoryProps> = ({ soloLectura = false }) 
                         </Box>
                       </Box>
                       
+                      {movimiento.oficio && (
+                        <Box sx={{ 
+                          display: 'flex', 
+                          alignItems: 'center', 
+                          gap: 1, 
+                          mb: 1,
+                          p: 1,
+                          backgroundColor: 'rgba(33, 150, 243, 0.08)',
+                          borderRadius: 1,
+                          border: '1px solid',
+                          borderColor: 'primary.light'
+                        }}>
+                          <Typography variant="body2" color="text.secondary">
+                            <strong>Oficio:</strong> {movimiento.oficio}
+                          </Typography>
+                        </Box>
+                      )}
                       {movimiento.usuario && (
                         <Box sx={{ 
                           display: 'flex', 

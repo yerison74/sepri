@@ -514,6 +514,7 @@ export const tramitesAPI = {
 
   crearTramite: async (tramite: {
     titulo: string;
+    oficio?: string | null;
     nombre_destinatario: string;
     area_destinatario: string;
     area_destino_final: string;
@@ -543,6 +544,7 @@ export const tramitesAPI = {
   crearTramiteConArchivo: async (formData: FormData) => {
     try {
       const titulo = formData.get('titulo') as string;
+      const oficio = (formData.get('oficio') as string) || null;
       const nombre_destinatario = formData.get('nombre_destinatario') as string;
       const area_destinatario = formData.get('area_destinatario') as string;
       const area_destino_final = formData.get('area_destino_final') as string;
@@ -574,6 +576,7 @@ export const tramitesAPI = {
       const data = await tramitesService.crearTramite({
         id,
         titulo,
+        oficio: oficio || undefined,
         nombre_destinatario,
         area_destinatario,
         area_destino_final,
@@ -639,6 +642,7 @@ export const tramitesAPI = {
   registrarMovimiento: async (id: string, movimiento: {
     area_origen: string;
     area_destino: string;
+    oficio?: string | null;
     observaciones?: string;
     usuario?: string;
     actualizar_estado?: string;
@@ -647,6 +651,7 @@ export const tramitesAPI = {
       const data = await tramitesService.registrarMovimiento(id, {
         area_origen: movimiento.area_origen,
         area_destino: movimiento.area_destino,
+        oficio: movimiento.oficio ?? null,
         observaciones: movimiento.observaciones,
         usuario: movimiento.usuario,
       });

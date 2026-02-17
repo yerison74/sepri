@@ -103,7 +103,7 @@ function App() {
             <h1 className="text-base sm:text-lg md:text-xl font-semibold flex-grow">
               {tramitesOnly
                 ? 'Sistema de Seguimiento de Trámites'
-                : 'Sistema de Gestión de Mantenimientos'}
+                : 'Seguimiento de Procesos Internos'}
             </h1>
             <div className="flex items-center gap-2">
               <span className="hidden sm:inline text-sm flex items-center gap-1">

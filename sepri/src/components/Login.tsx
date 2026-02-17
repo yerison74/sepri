@@ -39,7 +39,7 @@ export default function Login() {
           color: '#4aa3ff',
           marginBottom: 8
         }}>
-          Sistema de Gestión de Mantenimientos
+          Seguimiento de Procesos Internos
         </h1>
 
         <p style={{

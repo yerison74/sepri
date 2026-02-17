@@ -428,10 +428,11 @@ export const tramitesService = {
         }
       }
 
-      // Búsqueda por texto
+      // Búsqueda por texto (incluye oficio)
       if (filtros.search) {
+        const term = filtros.search.trim().replace(/'/g, "''");
         query = query.or(
-          `titulo.ilike.%${filtros.search}%,nombre_destinatario.ilike.%${filtros.search}%,id.ilike.%${filtros.search}%`
+          `titulo.ilike.%${term}%,nombre_destinatario.ilike.%${term}%,id.ilike.%${term}%,oficio.ilike.%${term}%`
         );
       }
 
@@ -573,6 +574,7 @@ export const tramitesService = {
         tramite_id: tramiteId,
         area_origen: movimiento.area_origen,
         area_destino: movimiento.area_destino,
+        oficio: movimiento.oficio ?? null,
         observaciones: movimiento.observaciones ?? null,
         usuario: movimiento.usuario ?? null,
       };
