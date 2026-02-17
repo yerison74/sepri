@@ -139,7 +139,6 @@ const TramiteHistory: React.FC<TramiteHistoryProps> = ({ soloLectura = false }) 
   const [seguimientoData, setSeguimientoData] = useState({
     area_origen: '',
     area_destino: '',
-    oficio: '',
     usuario: '',
     observaciones: '',
     actualizar_estado: ''
@@ -527,7 +526,6 @@ const TramiteHistory: React.FC<TramiteHistoryProps> = ({ soloLectura = false }) 
     setSeguimientoData({
       area_origen: ultimaAreaLlegada,
       area_destino: '',
-      oficio: '',
       usuario: nombreCompleto,
       observaciones: '',
       actualizar_estado: tramite.estado
@@ -538,8 +536,8 @@ const TramiteHistory: React.FC<TramiteHistoryProps> = ({ soloLectura = false }) 
   const handleRegistrarSeguimiento = async () => {
     if (!selectedTramite) return;
 
-    if (!seguimientoData.area_destino || !seguimientoData.usuario || !seguimientoData.oficio?.trim()) {
-      setError('Por favor complete el área destino, el usuario y el oficio');
+    if (!seguimientoData.area_destino || !seguimientoData.usuario) {
+      setError('Por favor complete el área destino y el usuario');
       return;
     }
 
@@ -548,7 +546,6 @@ const TramiteHistory: React.FC<TramiteHistoryProps> = ({ soloLectura = false }) 
       await tramitesAPI.registrarMovimiento(selectedTramite.id, {
         area_origen: seguimientoData.area_origen,
         area_destino: seguimientoData.area_destino,
-        oficio: seguimientoData.oficio.trim(),
         usuario: seguimientoData.usuario,
         observaciones: seguimientoData.observaciones,
         actualizar_estado: seguimientoData.actualizar_estado
@@ -566,7 +563,6 @@ const TramiteHistory: React.FC<TramiteHistoryProps> = ({ soloLectura = false }) 
       setSeguimientoData({
         area_origen: '',
         area_destino: '',
-        oficio: '',
         usuario: '',
         observaciones: '',
         actualizar_estado: ''
@@ -1623,14 +1619,6 @@ const TramiteHistory: React.FC<TramiteHistoryProps> = ({ soloLectura = false }) 
               </Select>
             </FormControl>
             <TextField
-              label="Oficio"
-              fullWidth
-              required
-              value={seguimientoData.oficio}
-              onChange={(e) => setSeguimientoData({ ...seguimientoData, oficio: e.target.value })}
-              placeholder="Ej: OF-2025-001"
-            />
-            <TextField
               label="Usuario / Quién envía (Remitente)"
               fullWidth
               required
@@ -1877,23 +1865,6 @@ const TramiteHistory: React.FC<TramiteHistoryProps> = ({ soloLectura = false }) 
                         </Box>
                       </Box>
                       
-                      {movimiento.oficio && (
-                        <Box sx={{ 
-                          display: 'flex', 
-                          alignItems: 'center', 
-                          gap: 1, 
-                          mb: 1,
-                          p: 1,
-                          backgroundColor: 'rgba(33, 150, 243, 0.08)',
-                          borderRadius: 1,
-                          border: '1px solid',
-                          borderColor: 'primary.light'
-                        }}>
-                          <Typography variant="body2" color="text.secondary">
-                            <strong>Oficio:</strong> {movimiento.oficio}
-                          </Typography>
-                        </Box>
-                      )}
                       {movimiento.usuario && (
                         <Box sx={{ 
                           display: 'flex', 
