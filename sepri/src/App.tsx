@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   Dashboard,
   Assignment,
@@ -69,6 +69,14 @@ function App() {
   const tabs = tramitesOnly
     ? allTabs.filter((tab) => tab.index === 3)
     : allTabs.filter((tab) => hasPermission(TAB_PERMISOS[tab.index as keyof typeof TAB_PERMISOS]));
+
+  // Al tener usuario, ir a la primera pestaña que tiene permiso (login o recarga)
+  const allowedTabIndices = tabs.map((t) => t.index).join(',');
+  useEffect(() => {
+    if (!user || tabs.length === 0) return;
+    const allowedSet = new Set(tabs.map((t) => t.index));
+    setTabValue((prev) => (allowedSet.has(prev) ? prev : tabs[0].index));
+  }, [user?.id, allowedTabIndices]);
 
   if (loading) {
     return (

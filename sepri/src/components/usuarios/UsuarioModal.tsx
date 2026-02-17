@@ -242,11 +242,21 @@ export default function UsuarioModal({
                 <InputLabel>Rol del Usuario</InputLabel>
                 <Select
                   value={form.rol}
-                  onChange={(e) => setForm({ ...form, rol: e.target.value })}
+                  onChange={(e) => {
+                    const newRol = e.target.value;
+                    const updates = { ...form, rol: newRol };
+                    if (newRol === 'admin') {
+                      const todosPermisos: Record<string, boolean> = {};
+                      PERMISOS.forEach(p => { todosPermisos[p.key] = true; });
+                      updates.permisos = todosPermisos;
+                    }
+                    setForm(updates);
+                  }}
                   label="Rol del Usuario"
                 >
-                  <MenuItem value="usuario">Usuario</MenuItem>
                   <MenuItem value="admin">Administrador</MenuItem>
+                  <MenuItem value="supervision">Supervisión</MenuItem>
+                  <MenuItem value="usuario">Usuario</MenuItem>
                 </Select>
               </FormControl>
               <Box sx={{ minWidth: { xs: '100%', sm: 'auto' } }}>
