@@ -107,7 +107,7 @@ export const ejemploConsultarObrasConFiltros = async (filtros: {
 export const ejemploSubirArchivo = async (file: File, path: string) => {
   try {
     const { data, error } = await supabase.storage
-      .from('uploads') // Reemplaza 'uploads' con el nombre de tu bucket
+      .from('documentos') // Reemplaza 'uploads' con el nombre de tu bucket
       .upload(path, file);
 
     if (error) throw error;

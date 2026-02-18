@@ -255,76 +255,122 @@ export const uploadAPI = {
     <latitud>18.4861</latitud>
     <longitud>-69.9312</longitud>
     
-    <!-- Fechas y plazos -->
+    <!-- Fechas (formato: YYYY-MM-DD) -->
     <fecha_inicio>2024-01-01</fecha_inicio>
-    <fecha_fin_contractual>2024-12-31</fecha_fin_contractual>
-    <plazo>365</plazo>
-    <fecha_inauguracion>2024-12-31</fecha_inauguracion>
+    <fecha_fin_estimada>2024-12-31</fecha_fin_estimada>
+    <fecha_inauguracion>2024-06-01</fecha_inauguracion>
     
-    <!-- Financiamiento -->
-    <monto_contratado>1000000.00</monto_contratado>
-    
-    <!-- Valoraciones -->
-    <valoracion_1>100000.00</valoracion_1>
-    <valoracion_2>200000.00</valoracion_2>
-    <valoracion_3>300000.00</valoracion_3>
-    <valoracion_4>400000.00</valoracion_4>
-    
-    <!-- Observaciones adicionales -->
-    <observaciones>Observaciones sobre el estado de la obra</observaciones>
+    <!-- Observaciones -->
+    <observacion_legal>Observaciones del área legal</observacion_legal>
+    <observacion_financiero>Observaciones del área financiero</observacion_financiero>
   </obra>
 </mantenimientos>`;
-
+    
     const blob = new Blob([xmlTemplate], { type: 'application/xml' });
-    return {
+    return Promise.resolve({
       data: blob,
-    } as AxiosResponse<Blob>;
+    } as AxiosResponse<Blob>);
   },
 
   descargarPlantillaExcel: () => {
-    // Crear plantilla Excel con todas las columnas requeridas
-    const plantillaData = [
-      {
-        id_obra: 'OB-0000',
-        codigo: '123-456',
-        nombre: 'Nombre de la obra',
-        estado: 'ACTIVA',
-        responsable: 'Nombre del responsable o contratista',
-        descripcion: 'Descripción detallada de la obra',
-        provincia: 'Nombre de la provincia',
-        municipio: 'Nombre del municipio',
-        nivel: 'Nivel educativo (Inicial, Primario, Secundario, etc.)',
-        no_aula: 1,
-        distrito_minerd_sigede: 'Código del distrito MINERD SIGEDE',
-        latitud: 18.4861,
-        longitud: -69.9312,
-        fecha_inicio: '2024-01-01',
-        fecha_fin_contractual: '2024-12-31',
-        plazo: 365,
-        fecha_inauguracion: '2024-12-31',
-        monto_contratado: 1000000.00,
-        valoracion_1: 100000.00,
-        valoracion_2: 200000.00,
-        valoracion_3: 300000.00,
-        valoracion_4: 400000.00,
-        observaciones: 'Observaciones sobre el estado de la obra'
-      }
+    // Generar plantilla Excel vacía con todas las columnas requeridas
+    // Orden: Obligatorios primero, luego información general, ubicación, fechas, observaciones
+    const headers = [
+      // Campos obligatorios
+      'id_obra', // ID de la obra (OB-0000, MT-0000) - OBLIGATORIO
+      'codigo', // Código de contrato (número con guion, ej: 123-456)
+      'nombre',
+      'estado',
+      
+      // Información general
+      'responsable',
+      'descripcion',
+      
+      // Ubicación
+      'provincia',
+      'municipio',
+      'nivel',
+      'no_aula',
+      'distrito_minerd_sigede',
+      'latitud',
+      'longitud',
+      
+      // Fechas (formato: YYYY-MM-DD)
+      'fecha_inicio',
+      'fecha_fin_estimada',
+      'fecha_inauguracion',
+      
+      // Observaciones
+      'observacion_legal',
+      'observacion_financiero'
     ];
-
-    // Convertir a Excel
-    const worksheet = XLSX.utils.json_to_sheet(plantillaData);
-    const workbook = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(workbook, worksheet, 'Plantilla');
     
-    // Generar blob
+    // Crear hoja con encabezados y una fila de ejemplo con valores de muestra
+    const ejemplo = [
+      // Campos obligatorios
+      'OB-0000', // id_obra (OB-0000 o MT-0000) - OBLIGATORIO
+      '123-456', // codigo (número con guion)
+      'Nombre de la obra',
+      'ACTIVA',
+      
+      // Información general
+      'Nombre del responsable o contratista',
+      'Descripción detallada de la obra',
+      
+      // Ubicación
+      'Nombre de la provincia',
+      'Nombre del municipio',
+      'Nivel educativo (Inicial, Primario, Secundario, etc.)',
+      1,
+      'Código del distrito MINERD SIGEDE',
+      '18.4861',
+      '-69.9312',
+      
+      // Fechas
+      '2024-01-01',
+      '2024-12-31',
+      '2024-06-01',
+      
+      // Observaciones
+      'Observaciones del área legal',
+      'Observaciones del área financiero'
+    ];
+    
+    const worksheet = XLSX.utils.aoa_to_sheet([headers, ejemplo]);
+    
+    // Ajustar ancho de columnas para mejor visualización
+    const colWidths = [
+      { wch: 12 },  // codigo
+      { wch: 30 },  // nombre
+      { wch: 15 },  // estado
+      { wch: 30 },  // responsable
+      { wch: 40 },  // descripcion
+      { wch: 20 },  // provincia
+      { wch: 20 },  // municipio
+      { wch: 25 },  // nivel
+      { wch: 10 },  // no_aula
+      { wch: 25 },  // distrito_minerd_sigede
+      { wch: 12 },  // latitud
+      { wch: 12 },  // longitud
+      { wch: 12 },  // fecha_inicio
+      { wch: 15 },  // fecha_fin_estimada
+      { wch: 15 },  // fecha_inauguracion
+      { wch: 35 },  // observacion_legal
+      { wch: 35 },  // observacion_financiero
+    ];
+    worksheet['!cols'] = colWidths;
+    
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, worksheet, 'Obras');
+    
     const excelBuffer = XLSX.write(workbook, { type: 'array', bookType: 'xlsx' });
     const blob = new Blob([excelBuffer], { 
       type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' 
     });
 
-    return {
+    return Promise.resolve({
       data: blob,
-    } as AxiosResponse<Blob>;
+    } as AxiosResponse<Blob>);
   },
 
   subirExcel: async (file: File) => {
@@ -336,20 +382,21 @@ export const uploadAPI = {
         const fileName = `uploads/excel/${timestamp}-${file.name}`;
         storageUrl = await storageService.subirArchivo(file, 'documentos', fileName);
       } catch (storageError: any) {
-        console.warn('No se pudo subir a Storage:', storageError.message);
+        // Si el bucket no existe, continuar sin guardar en storage
+        console.warn('No se pudo subir a Storage (el bucket puede no existir):', storageError.message);
         if (storageError.message?.includes('Bucket not found')) {
           console.warn('⚠️  Bucket "documentos" no encontrado. Por favor, créalo en Supabase Storage.');
         }
       }
 
-      // Procesar archivo
+      // Procesar archivo (esto es lo importante)
       const resultado = await procesarArchivoExcel(file);
 
-      // Registrar en historial
+      // Registrar en historial (opcional - si la tabla no existe, se omite)
       try {
         await historialUploadsService.registrarUpload({
           nombre_archivo: file.name,
-          tipo_archivo: 'Excel',
+          tipo_archivo: 'EXCEL',
           registros_procesados: resultado.total,
           registros_exitosos: resultado.exitosas,
           registros_fallidos: resultado.fallidas,
@@ -358,10 +405,12 @@ export const uploadAPI = {
             : null,
         });
       } catch (historialError: any) {
+        // Silenciar error si la tabla no existe - no es crítico para el procesamiento
         if (historialError?.message?.includes('Could not find the table') || 
             historialError?.message?.includes('relation') ||
             historialError?.message?.includes('does not exist')) {
-          console.warn('⚠️  Tabla historial_uploads no encontrada.');
+          console.warn('⚠️  Tabla historial_uploads no encontrada. El procesamiento continuó exitosamente.');
+          console.warn('💡 Para habilitar el historial, ejecuta el script SQL en Supabase.');
         } else {
           console.warn('No se pudo registrar en historial:', historialError);
         }
@@ -465,6 +514,7 @@ export const tramitesAPI = {
 
   crearTramite: async (tramite: {
     titulo: string;
+    oficio?: string | null;
     nombre_destinatario: string;
     area_destinatario: string;
     area_destino_final: string;
@@ -494,6 +544,7 @@ export const tramitesAPI = {
   crearTramiteConArchivo: async (formData: FormData) => {
     try {
       const titulo = formData.get('titulo') as string;
+      const oficio = (formData.get('oficio') as string) || null;
       const nombre_destinatario = formData.get('nombre_destinatario') as string;
       const area_destinatario = formData.get('area_destinatario') as string;
       const area_destino_final = formData.get('area_destino_final') as string;
@@ -510,14 +561,22 @@ export const tramitesAPI = {
       const prefijo = codigo_area || 'TR';
       const id = `${prefijo}-${Date.now()}`;
       const codigoBarras = `${Date.now()}`;
+      let archivoPdfUrl: string | null = null;
 
-      // Subir PDF a Supabase Storage — propagar el error si falla
-      const path = `tramites/${id}-${archivoPdf.name}`;
-      const archivoPdfUrl = await storageService.subirArchivo(archivoPdf, 'documentos', path);
+      try {
+        const path = `tramites/${id}-${archivoPdf.name}`;
+        archivoPdfUrl = await storageService.subirArchivo(archivoPdf, 'documentos', path);
+      } catch (storageError: any) {
+        console.warn('No se pudo subir PDF a Storage:', storageError?.message);
+        if (storageError?.message?.includes('Bucket not found')) {
+          console.warn('⚠️  Crea el bucket "documentos" en Supabase Storage para guardar los PDFs.');
+        }
+      }
 
       const data = await tramitesService.crearTramite({
         id,
         titulo,
+        oficio: oficio || undefined,
         nombre_destinatario,
         area_destinatario,
         area_destino_final,
@@ -583,6 +642,7 @@ export const tramitesAPI = {
   registrarMovimiento: async (id: string, movimiento: {
     area_origen: string;
     area_destino: string;
+    oficio?: string | null;
     observaciones?: string;
     usuario?: string;
     actualizar_estado?: string;
@@ -591,6 +651,7 @@ export const tramitesAPI = {
       const data = await tramitesService.registrarMovimiento(id, {
         area_origen: movimiento.area_origen,
         area_destino: movimiento.area_destino,
+        oficio: movimiento.oficio ?? null,
         observaciones: movimiento.observaciones,
         usuario: movimiento.usuario,
       });
@@ -613,3 +674,5 @@ export const tramitesAPI = {
 };
 
 export default apiClient;
+
+

@@ -40,6 +40,7 @@ export interface HistorialEstado {
 export interface Tramite {
   id: string;
   titulo: string;
+  oficio?: string | null;
   nombre_destinatario: string;
   area_destinatario: string;
   area_destino_final: string;
@@ -57,6 +58,7 @@ export interface MovimientoTramite {
   tramite_id: string;
   area_origen: string;
   area_destino: string;
+  oficio?: string | null;
   fecha_movimiento?: string | null;
   observaciones?: string | null;
   usuario?: string | null;
