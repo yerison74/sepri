@@ -58,6 +58,19 @@ import { AREAS_TRAMITES, getCodigoPorArea } from '../constants/areas';
 import { useAuth } from '../context/AuthContext';
 import JsBarcode from 'jsbarcode';
 
+// Logo DIE para la etiqueta (lateral izquierdo)
+const LogoEtiqueta: React.FC<{ size?: number }> = ({ size = 56 }) => (
+  <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+    <img
+      src="/logo-die.png"
+      alt="DIE"
+      width={size}
+      height={size}
+      style={{ objectFit: 'contain' }}
+    />
+  </Box>
+);
+
 // Componente para generar código de barras usando jsbarcode
 const BarcodeDisplay: React.FC<{ codigo: string; id: string }> = ({ codigo, id }) => {
   const barcodeRef = useRef<SVGSVGElement>(null);
@@ -65,9 +78,7 @@ const BarcodeDisplay: React.FC<{ codigo: string; id: string }> = ({ codigo, id }
   useEffect(() => {
     if (barcodeRef.current && codigo) {
       try {
-        // Limpiar el SVG antes de generar
         barcodeRef.current.innerHTML = '';
-        // Generar código de barras CODE128
         JsBarcode(barcodeRef.current, codigo, {
           format: 'CODE128',
           width: 2,
@@ -92,6 +103,64 @@ const BarcodeDisplay: React.FC<{ codigo: string; id: string }> = ({ codigo, id }
   );
 };
 
+// Etiqueta para imprimir: logo (izq) + código de barras + ID + área de creación
+const BarcodeLabelPrint: React.FC<{
+  codigo: string;
+  id: string;
+  areaCreacion: string;
+}> = ({ codigo, id, areaCreacion }) => {
+  const barcodeRef = useRef<SVGSVGElement>(null);
+
+  useEffect(() => {
+    if (barcodeRef.current && codigo) {
+      try {
+        barcodeRef.current.innerHTML = '';
+        JsBarcode(barcodeRef.current, codigo, {
+          format: 'CODE128',
+          width: 1.8,
+          height: 48,
+          displayValue: false,
+          margin: 4
+        });
+      } catch (error) {
+        console.error('Error al generar código de barras:', error);
+      }
+    }
+  }, [codigo]);
+
+  return (
+    <Box
+      className="barcode-label-print"
+      sx={{
+        display: 'flex',
+        flexDirection: 'row',
+        alignItems: 'flex-start',
+        gap: 1.5,
+        width: '100%',
+        maxWidth: 320,
+        p: 1.5,
+        border: '1px solid #e0e0e0',
+        borderRadius: 1,
+        bgcolor: 'white',
+        boxShadow: 1
+      }}
+    >
+      <LogoEtiqueta size={52} />
+      <Box sx={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', minWidth: 0 }}>
+        <Box sx={{ width: '100%', display: 'flex', justifyContent: 'center' }}>
+          <svg ref={barcodeRef} />
+        </Box>
+        <Typography variant="body2" sx={{ fontWeight: 700, fontFamily: 'monospace', fontSize: '0.95rem', mt: 0.5 }}>
+          {id}
+        </Typography>
+        <Typography variant="caption" sx={{ textAlign: 'center', mt: 0.5, color: 'text.secondary', lineHeight: 1.2 }}>
+          {areaCreacion || '—'}
+        </Typography>
+      </Box>
+    </Box>
+  );
+};
+
 interface TramiteHistoryProps {
   soloLectura?: boolean;
 }
@@ -112,6 +181,7 @@ const TramiteHistory: React.FC<TramiteHistoryProps> = ({ soloLectura = false }) 
   const streamRef = useRef<MediaStream | null>(null);
   const [openDialog, setOpenDialog] = useState(false);
   const [openBarcodeDialog, setOpenBarcodeDialog] = useState(false);
+  const [barcodeCreatorArea, setBarcodeCreatorArea] = useState('');
   const [openSeguimientoDialog, setOpenSeguimientoDialog] = useState(false);
   const [selectedTramite, setSelectedTramite] = useState<Tramite | null>(null);
   const [openHistoryDialog, setOpenHistoryDialog] = useState(false);
@@ -263,7 +333,6 @@ const TramiteHistory: React.FC<TramiteHistoryProps> = ({ soloLectura = false }) 
         formData.append('nombre_destinatario', nuevoTramite.nombre_destinatario);
         formData.append('area_destinatario', nuevoTramite.area_destinatario);
         formData.append('area_destino_final', nuevoTramite.area_destino_final);
-        // Código del ID según el área del usuario que crea el trámite
         formData.append('codigo_area', getCodigoPorArea(user?.area || ''));
         formData.append('archivo_pdf', nuevoTramite.archivo_pdf);
 
@@ -281,7 +350,6 @@ const TramiteHistory: React.FC<TramiteHistoryProps> = ({ soloLectura = false }) 
           nombre_destinatario: nuevoTramite.nombre_destinatario,
           area_destinatario: nuevoTramite.area_destinatario,
           area_destino_final: nuevoTramite.area_destino_final,
-          // Código del ID según el área del usuario que crea el trámite
           codigo_area: getCodigoPorArea(user?.area || ''),
         });
         nuevoTramiteData = response.data.data;
@@ -513,9 +581,22 @@ const TramiteHistory: React.FC<TramiteHistoryProps> = ({ soloLectura = false }) 
     }
   };
 
-  const handleViewBarcode = (tramite: Tramite) => {
+  const handleViewBarcode = async (tramite: Tramite) => {
     setSelectedTramite(tramite);
     setOpenBarcodeDialog(true);
+    setBarcodeCreatorArea('');
+    try {
+      const res = await tramitesAPI.obtenerHistorialTramite(tramite.id);
+      const movimientos: MovimientoTramite[] = res.data?.data || [];
+      // El primer movimiento (el más antiguo) tiene area_origen = área del usuario que creó el trámite
+      const ordenados = [...movimientos].sort((a, b) =>
+        new Date(a.fecha_movimiento || 0).getTime() - new Date(b.fecha_movimiento || 0).getTime()
+      );
+      const areaCreador = ordenados[0]?.area_origen ?? '';
+      setBarcodeCreatorArea(areaCreador);
+    } catch {
+      setBarcodeCreatorArea('');
+    }
   };
 
   const handleSeguimiento = (tramite: Tramite) => {
@@ -1382,31 +1463,24 @@ const TramiteHistory: React.FC<TramiteHistoryProps> = ({ soloLectura = false }) 
         </DialogActions>
       </Dialog>
 
-      {/* Dialog para código de barras */}
-      <Dialog open={openBarcodeDialog} onClose={() => setOpenBarcodeDialog(false)} maxWidth="sm" fullWidth>
+      {/* Dialog para código de barras - Solo logo, código de barras, ID y área de creación */}
+      <Dialog open={openBarcodeDialog} onClose={() => { setOpenBarcodeDialog(false); setBarcodeCreatorArea(''); }} maxWidth="sm" fullWidth>
         <DialogTitle>
           Código de Barras - {selectedTramite?.id}
         </DialogTitle>
         <DialogContent>
           {selectedTramite && (
-            <Box sx={{ textAlign: 'center', py: 3 }}>
-              <BarcodeDisplay 
-                codigo={getCodigoBarras(selectedTramite.id)} 
-                id={selectedTramite.id} 
+            <Box sx={{ display: 'flex', justifyContent: 'center', py: 2 }}>
+              <BarcodeLabelPrint
+                codigo={getCodigoBarras(selectedTramite.id)}
+                id={selectedTramite.id}
+                areaCreacion={barcodeCreatorArea || '—'}
               />
-              <Box sx={{ mt: 3 }}>
-                <Typography variant="body2" color="text.secondary" gutterBottom>
-                  <strong>Título:</strong> {selectedTramite.titulo}
-                </Typography>
-                <Typography variant="body2" color="text.secondary">
-                  <strong>Remitente:</strong> {selectedTramite.nombre_destinatario}
-                </Typography>
-              </Box>
             </Box>
           )}
         </DialogContent>
         <DialogActions>
-          <Button onClick={() => setOpenBarcodeDialog(false)}>Cerrar</Button>
+          <Button onClick={() => { setOpenBarcodeDialog(false); setBarcodeCreatorArea(''); }}>Cerrar</Button>
           <Button
             variant="contained"
             startIcon={<Print />}
