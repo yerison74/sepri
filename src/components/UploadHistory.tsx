@@ -123,6 +123,7 @@ const TramiteHistory: React.FC<TramiteHistoryProps> = ({ soloLectura = false }) 
   // Formulario nuevo trámite (destinatario y área se rellenan con el usuario logueado)
   const [nuevoTramite, setNuevoTramite] = useState({
     titulo: '',
+    oficio: '',
     nombre_destinatario: '',
     area_destinatario: '',
     area_destino_final: '',
@@ -258,6 +259,7 @@ const TramiteHistory: React.FC<TramiteHistoryProps> = ({ soloLectura = false }) 
       if (nuevoTramite.archivo_pdf) {
         const formData = new FormData();
         formData.append('titulo', nuevoTramite.titulo);
+        formData.append('oficio', nuevoTramite.oficio);
         formData.append('nombre_destinatario', nuevoTramite.nombre_destinatario);
         formData.append('area_destinatario', nuevoTramite.area_destinatario);
         formData.append('area_destino_final', nuevoTramite.area_destino_final);
@@ -275,6 +277,7 @@ const TramiteHistory: React.FC<TramiteHistoryProps> = ({ soloLectura = false }) 
       } else {
         const response = await tramitesAPI.crearTramite({
           titulo: nuevoTramite.titulo,
+          oficio: nuevoTramite.oficio || undefined,
           nombre_destinatario: nuevoTramite.nombre_destinatario,
           area_destinatario: nuevoTramite.area_destinatario,
           area_destino_final: nuevoTramite.area_destino_final,
@@ -304,6 +307,7 @@ const TramiteHistory: React.FC<TramiteHistoryProps> = ({ soloLectura = false }) 
       setOpenDialog(false);
       setNuevoTramite({
         titulo: '',
+        oficio: '',
         nombre_destinatario: '',
         area_destinatario: '',
         area_destino_final: '',
@@ -420,34 +424,57 @@ const TramiteHistory: React.FC<TramiteHistoryProps> = ({ soloLectura = false }) 
     setScanning(false);
   };
 
-  const handleViewPdf = (tramite: Tramite) => {
+  const handleViewPdf = async (tramite: Tramite) => {
     if (!tramite.archivo_pdf) {
       setError('No hay archivo PDF asociado a este trámite');
       return;
     }
 
-    const backendUrl = process.env.REACT_APP_BACKEND_URL || 'http://localhost:3001';
-    let pdfUrl = tramite.archivo_pdf.trim();
-
-    if (pdfUrl.startsWith('/api/')) {
-      pdfUrl = `${backendUrl}${pdfUrl}`;
-    } else if (!pdfUrl.startsWith('http://') && !pdfUrl.startsWith('https://') && !pdfUrl.startsWith('blob:')) {
-      pdfUrl = `${backendUrl}${pdfUrl.startsWith('/') ? '' : '/'}${pdfUrl}`;
+    try {
+      // Obtener URL del backend desde variable de entorno o usar default
+      const backendUrl = process.env.REACT_APP_BACKEND_URL || 'http://localhost:3001';
+      
+      // Asegurar que la URL sea absoluta
+      let pdfUrl = tramite.archivo_pdf.trim();
+      
+      // Si es una URL relativa que empieza con /api/
+      if (pdfUrl.startsWith('/api/')) {
+        pdfUrl = `${backendUrl}${pdfUrl}`;
+      }
+      // Si es una blob URL (creada localmente), usarla directamente
+      else if (pdfUrl.startsWith('blob:')) {
+        // Mantener la blob URL - estas son válidas localmente
+      }
+      // Si ya es una URL completa (http/https), usarla directamente
+      else if (pdfUrl.startsWith('http://') || pdfUrl.startsWith('https://')) {
+        // URL completa, usar tal cual
+      }
+      // Si no tiene protocolo, intentar construir URL
+      else {
+        // Si no tiene protocolo, asumir que es relativa al backend
+        pdfUrl = `${backendUrl}${pdfUrl.startsWith('/') ? '' : '/'}${pdfUrl}`;
+      }
+      
+      console.log('Abriendo PDF en nueva pestaña:', pdfUrl);
+      
+      // Verificar si la URL es válida antes de abrir
+      if (!pdfUrl || pdfUrl.trim() === '') {
+        setError('URL del PDF no válida');
+        return;
+      }
+      
+      // Abrir PDF en nueva pestaña del navegador
+      // El navegador usará su visor de PDF integrado o el lector del sistema según configuración
+      const newWindow = window.open(pdfUrl, '_blank', 'noopener,noreferrer');
+      
+      // Si el navegador bloquea la ventana emergente, mostrar mensaje
+      if (!newWindow || newWindow.closed || typeof newWindow.closed === 'undefined') {
+        setError('No se pudo abrir el PDF. Por favor, verifica que tu navegador permita ventanas emergentes.');
+      }
+    } catch (error: any) {
+      console.error('Error al abrir PDF:', error);
+      setError(`Error al abrir el PDF: ${error.message || 'Error desconocido'}. Verifica que el backend esté corriendo y que la URL del PDF sea válida.`);
     }
-
-    if (!pdfUrl) {
-      setError('URL del PDF no válida');
-      return;
-    }
-
-    // Usar <a> con target="_blank" — no es bloqueado por el navegador
-    const link = document.createElement('a');
-    link.href = pdfUrl;
-    link.target = '_blank';
-    link.rel = 'noopener noreferrer';
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
   };
 
   const handleDownloadPdf = (tramite: Tramite) => {
@@ -609,6 +636,7 @@ const TramiteHistory: React.FC<TramiteHistoryProps> = ({ soloLectura = false }) 
     
     return (
       tramite.titulo.toLowerCase().includes(searchLower) ||
+      (tramite.oficio && tramite.oficio.toLowerCase().includes(searchLower)) ||
       tramite.nombre_destinatario.toLowerCase().includes(searchLower) ||
       tramite.id.toLowerCase().includes(searchLower) ||
       tramite.area_destinatario.toLowerCase().includes(searchLower) ||
@@ -685,7 +713,7 @@ const TramiteHistory: React.FC<TramiteHistoryProps> = ({ soloLectura = false }) 
               value={searchQuery}
               onChange={handleSearchChange}
               onKeyPress={handleSearchKeyPress}
-              placeholder="ID (ej. OAIP-123456, JURI-123456), título, destinatario, área o código de barras..."
+              placeholder="ID, título, oficio, destinatario, área o código de barras..."
               sx={{
                 '& .MuiOutlinedInput-root': {
                   borderRadius: 2,
@@ -1236,6 +1264,13 @@ const TramiteHistory: React.FC<TramiteHistoryProps> = ({ soloLectura = false }) 
               placeholder="Ej: Solicitud de Presupuesto"
             />
             <TextField
+              label="Oficio"
+              fullWidth
+              value={nuevoTramite.oficio}
+              onChange={(e) => setNuevoTramite({ ...nuevoTramite, oficio: e.target.value })}
+              placeholder="Ej: OF-2025-001"
+            />
+            <TextField
               label="Remitente"
               fullWidth
               required
@@ -1325,6 +1360,7 @@ const TramiteHistory: React.FC<TramiteHistoryProps> = ({ soloLectura = false }) 
             setOpenDialog(false);
             setNuevoTramite({
               titulo: '',
+              oficio: '',
               nombre_destinatario: '',
               area_destinatario: '',
               area_destino_final: '',
@@ -1654,11 +1690,12 @@ const TramiteHistory: React.FC<TramiteHistoryProps> = ({ soloLectura = false }) 
                 <Typography variant="h6" component="div" sx={{ fontWeight: 600 }}>
                   Historial de Movimientos
                 </Typography>
-                {selectedTramite && (
-                  <Typography variant="body2" sx={{ opacity: 0.9, mt: 0.5 }}>
-                    {selectedTramite.id} - {selectedTramite.titulo}
-                  </Typography>
-                )}
+              {selectedTramite && (
+                <Typography variant="body2" sx={{ opacity: 0.9, mt: 0.5 }}>
+                  {selectedTramite.id} - {selectedTramite.titulo}
+                  {selectedTramite.oficio && ` · Oficio: ${selectedTramite.oficio}`}
+                </Typography>
+              )}
               </Box>
             </Box>
             {selectedTramite?.archivo_pdf && (

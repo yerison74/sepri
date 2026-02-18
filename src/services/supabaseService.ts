@@ -1,4 +1,4 @@
-import { supabase, supabaseStorage } from '../lib/supabase';
+import { supabase } from '../lib/supabase';
 import type {
   Obra,
   Tramite,
@@ -428,10 +428,11 @@ export const tramitesService = {
         }
       }
 
-      // Búsqueda por texto
+      // Búsqueda por texto (incluye oficio)
       if (filtros.search) {
+        const term = filtros.search.trim().replace(/'/g, "''");
         query = query.or(
-          `titulo.ilike.%${filtros.search}%,nombre_destinatario.ilike.%${filtros.search}%,id.ilike.%${filtros.search}%`
+          `titulo.ilike.%${term}%,nombre_destinatario.ilike.%${term}%,id.ilike.%${term}%,oficio.ilike.%${term}%`
         );
       }
 
@@ -573,6 +574,7 @@ export const tramitesService = {
         tramite_id: tramiteId,
         area_origen: movimiento.area_origen,
         area_destino: movimiento.area_destino,
+        oficio: movimiento.oficio ?? null,
         observaciones: movimiento.observaciones ?? null,
         usuario: movimiento.usuario ?? null,
       };
@@ -655,30 +657,29 @@ export const historialUploadsService = {
 export const storageService = {
   /**
    * Subir un archivo a Supabase Storage
-   * Usa supabaseStorage (service_role si está disponible) para hacer bypass de RLS
    */
   subirArchivo: async (file: File, bucket: string, path: string): Promise<string> => {
-    const { data, error } = await supabaseStorage.storage
-      .from(bucket)
-      .upload(path, file, {
-        cacheControl: '3600',
-        upsert: true,
-        contentType: file.type || 'application/pdf',
-      });
+    try {
+      const { data, error } = await supabase.storage
+        .from(bucket)
+        .upload(path, file, {
+          cacheControl: '3600',
+          upsert: false,
+        });
 
-    if (error) {
-      throw new Error(`Error de Storage: ${error.message}`);
+      if (error) throw error;
+      if (!data) throw new Error('Error al subir archivo');
+
+      // Obtener URL pública
+      const { data: urlData } = supabase.storage
+        .from(bucket)
+        .getPublicUrl(data.path);
+
+      return urlData.publicUrl;
+    } catch (error: any) {
+      console.error('Error al subir archivo:', error);
+      throw new Error(error.message || 'Error al subir archivo');
     }
-
-    if (!data) {
-      throw new Error('No se recibió respuesta del servidor de Storage');
-    }
-
-    const { data: urlData } = supabase.storage
-      .from(bucket)
-      .getPublicUrl(data.path);
-
-    return urlData.publicUrl;
   },
 
   /**
