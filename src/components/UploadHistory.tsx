@@ -58,23 +58,25 @@ import { AREAS_TRAMITES, getCodigoPorArea } from '../constants/areas';
 import { useAuth } from '../context/AuthContext';
 import JsBarcode from 'jsbarcode';
 
-// Componente para generar código de barras usando jsbarcode
-const BarcodeDisplay: React.FC<{ codigo: string; id: string }> = ({ codigo, id }) => {
+// Logo DIE en base64
+const DIE_LOGO_BASE64 = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAGcAAABbAQAAAABGgqaCAAABdklEQVR4nMWTMY7bMBBFH2dVqAmiAwSwDhIkOkKOk8KBGcAH2CPRbrzHoMutzDQJgaU4KUjbkuFVNtWyob7+zJ8h59Mo16VS9lA2UzjJE07Vlp8A5JpYUMJNEDMO/ARFZhVm1XemfZUbD8NChfdB/3uGBU03ReoglXxVHXXzI+lX1SzA71FV7LfKHWJab1aHyj09J1z4VFUePfjvHwoa+30kfG4tCKRhGyA3DgTiBk9ciQeBkFtI/AwgcEw46FwEgX3sIOPXgOpDWLE28eNOs0ATelDiCgRtvQINWISMGwCbOhBSV8yTcQhgy7FbjxB7LOAUEIKSAEMTEPgCgMdGBI+5XJjAuhrLJeRymdaAYKIABHxGsBePz+YQNohKZYYpF8+RTcWDldz4aur70ywr9U5Se/4unLsbWVGNzZ2/8UScR3Z2SeVNKPBH9WRVVU/6km/deuSXZcvY003zlDqus+S/38O1+kVT21kv7Vu7NrcVlnpZ6uwvP/W29c5zRTMAAAAASUVORK5CYII=';
+
+// Componente para generar código de barras usando jsbarcode - Estilo DIE
+const BarcodeDisplay: React.FC<{ codigo: string; id: string; año?: string }> = ({ codigo, id, año }) => {
   const barcodeRef = useRef<SVGSVGElement>(null);
 
   useEffect(() => {
     if (barcodeRef.current && codigo) {
       try {
-        // Limpiar el SVG antes de generar
         barcodeRef.current.innerHTML = '';
-        // Generar código de barras CODE128
         JsBarcode(barcodeRef.current, codigo, {
           format: 'CODE128',
           width: 2,
-          height: 60,
-          displayValue: true,
-          fontSize: 14,
-          margin: 10
+          height: 80,
+          displayValue: false,
+          margin: 0,
+          background: '#ffffff',
+          lineColor: '#000000',
         });
       } catch (error) {
         console.error('Error al generar código de barras:', error);
@@ -83,10 +85,97 @@ const BarcodeDisplay: React.FC<{ codigo: string; id: string }> = ({ codigo, id }
   }, [codigo]);
 
   return (
-    <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', p: 2 }}>
-      <svg ref={barcodeRef} />
-      <Typography variant="caption" sx={{ mt: 1, fontFamily: 'monospace', fontWeight: 600 }}>
+    <Box
+      sx={{
+        display: 'inline-flex',
+        flexDirection: 'column',
+        border: '2.5px solid #000',
+        borderRadius: '14px',
+        overflow: 'hidden',
+        background: '#fff',
+        padding: '10px 14px 10px 14px',
+        width: 480,
+        boxShadow: '0 2px 8px rgba(0,0,0,0.15)',
+        position: 'relative',
+        boxSizing: 'border-box',
+      }}
+    >
+      {/* Fila superior: logo DIE + código de barras. El año va arriba a la derecha absoluto */}
+      {año && (
+        <Typography
+          sx={{
+            position: 'absolute',
+            top: 10,
+            right: 14,
+            fontFamily: 'Arial, sans-serif',
+            fontWeight: 700,
+            fontSize: '0.85rem',
+            color: '#000',
+            lineHeight: 1,
+            zIndex: 1,
+          }}
+        >
+          {año}
+        </Typography>
+      )}
+
+      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 0.5 }}>
+        {/* Logo DIE */}
+        <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', flexShrink: 0, width: 64 }}>
+          <img
+            src={DIE_LOGO_BASE64}
+            alt="DIE Logo"
+            style={{ width: 58, height: 'auto', imageRendering: 'crisp-edges' }}
+          />
+          <Typography
+            sx={{
+              fontFamily: 'Arial Black, Arial, sans-serif',
+              fontWeight: 900,
+              fontSize: '1.1rem',
+              letterSpacing: 2,
+              color: '#000',
+              mt: 0.25,
+              lineHeight: 1,
+            }}
+          >
+            DIE
+          </Typography>
+        </Box>
+
+        {/* Código de barras ocupa todo el espacio restante */}
+        <Box sx={{ flex: 1, minWidth: 0, mt: año ? '18px' : 0 }}>
+          <svg ref={barcodeRef} style={{ width: '100%', height: 'auto', display: 'block' }} />
+        </Box>
+      </Box>
+
+      {/* ID grande centrado en dos líneas */}
+      <Typography
+        sx={{
+          fontFamily: 'Arial Black, Arial, sans-serif',
+          fontWeight: 900,
+          fontSize: '2rem',
+          letterSpacing: 1,
+          color: '#000',
+          textAlign: 'center',
+          lineHeight: 1.15,
+          mt: 0.25,
+        }}
+      >
         {id}
+      </Typography>
+
+      {/* Subtítulo */}
+      <Typography
+        sx={{
+          fontFamily: 'Arial, sans-serif',
+          fontSize: '0.72rem',
+          color: '#000',
+          textAlign: 'center',
+          mt: 0.25,
+          letterSpacing: 0.5,
+        }}
+      >
+        Dirección de Infraestructura Escolar
       </Typography>
     </Box>
   );
@@ -620,8 +709,8 @@ const TramiteHistory: React.FC<TramiteHistoryProps> = ({ soloLectura = false }) 
 
   // Obtener código de barras del ID (solo números)
   const getCodigoBarras = (id: string) => {
-    // Extraer solo los números del ID (ej. OAIP-123456 -> 123456)
-    return id.replace(/[^0-9]/g, '');
+    // Usar el ID completo (ej. TECO-1771359309039)
+    return id;
   };
 
   // Filtrar trámites según búsqueda y estado completado
@@ -1170,7 +1259,16 @@ const TramiteHistory: React.FC<TramiteHistoryProps> = ({ soloLectura = false }) 
                       {/* Código de Barras en la parte inferior */}
                       <Box sx={{ mt: 'auto', pt: 2, borderTop: '1px solid #e0e0e0', textAlign: 'center' }}>
                         <Box sx={{ bgcolor: 'white', p: 1, borderRadius: 1, border: '1px solid #e0e0e0' }}>
-                          <BarcodeDisplay codigo={codigoBarras} id={tramite.id} />
+                          <BarcodeDisplay 
+                            codigo={codigoBarras} 
+                            id={tramite.id}
+                            año={tramite.fecha_creacion
+                              ? new Date(tramite.fecha_creacion).getFullYear().toString()
+                              : tramite.created_at
+                                ? new Date(tramite.created_at).getFullYear().toString()
+                                : new Date().getFullYear().toString()
+                            }
+                          />
                         </Box>
                       </Box>
                     </CardContent>
@@ -1382,6 +1480,41 @@ const TramiteHistory: React.FC<TramiteHistoryProps> = ({ soloLectura = false }) 
         </DialogActions>
       </Dialog>
 
+      {/* Estilos de impresión - solo muestra la etiqueta */}
+      <style>{`
+        @media print {
+          body * { visibility: hidden !important; }
+          #barcode-print-area, #barcode-print-area * { visibility: visible !important; }
+          #barcode-print-area {
+            position: fixed !important;
+            top: 50% !important;
+            left: 50% !important;
+            transform: translate(-50%, -50%) !important;
+            margin: 0 !important;
+            padding: 0 !important;
+          }
+        }
+      `}</style>
+
+      {/* Contenedor de impresión oculto fuera del dialog */}
+      {selectedTramite && openBarcodeDialog && (
+        <Box
+          id="barcode-print-area"
+          sx={{ position: 'fixed', left: '-9999px', top: 0 }}
+        >
+          <BarcodeDisplay
+            codigo={getCodigoBarras(selectedTramite.id)}
+            id={selectedTramite.id}
+            año={selectedTramite.fecha_creacion
+              ? new Date(selectedTramite.fecha_creacion).getFullYear().toString()
+              : selectedTramite.created_at
+                ? new Date(selectedTramite.created_at).getFullYear().toString()
+                : new Date().getFullYear().toString()
+            }
+          />
+        </Box>
+      )}
+
       {/* Dialog para código de barras */}
       <Dialog open={openBarcodeDialog} onClose={() => setOpenBarcodeDialog(false)} maxWidth="sm" fullWidth>
         <DialogTitle>
@@ -1389,12 +1522,18 @@ const TramiteHistory: React.FC<TramiteHistoryProps> = ({ soloLectura = false }) 
         </DialogTitle>
         <DialogContent>
           {selectedTramite && (
-            <Box sx={{ textAlign: 'center', py: 3 }}>
+            <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', py: 3, gap: 3 }}>
               <BarcodeDisplay 
                 codigo={getCodigoBarras(selectedTramite.id)} 
-                id={selectedTramite.id} 
+                id={selectedTramite.id}
+                año={selectedTramite.fecha_creacion
+                  ? new Date(selectedTramite.fecha_creacion).getFullYear().toString()
+                  : selectedTramite.created_at
+                    ? new Date(selectedTramite.created_at).getFullYear().toString()
+                    : new Date().getFullYear().toString()
+                }
               />
-              <Box sx={{ mt: 3 }}>
+              <Box sx={{ textAlign: 'center' }}>
                 <Typography variant="body2" color="text.secondary" gutterBottom>
                   <strong>Título:</strong> {selectedTramite.titulo}
                 </Typography>
