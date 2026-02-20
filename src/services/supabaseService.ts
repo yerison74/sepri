@@ -577,6 +577,7 @@ export const tramitesService = {
         oficio: movimiento.oficio ?? null,
         observaciones: movimiento.observaciones ?? null,
         usuario: movimiento.usuario ?? null,
+        estado_resultante: movimiento.estado_resultante ?? null,
       };
       const { data, error } = await supabase
         .from('movimientos_tramites')

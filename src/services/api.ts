@@ -522,7 +522,9 @@ export const tramitesAPI = {
   }) => {
     try {
       const prefijo = tramite.codigo_area || 'TR';
-      const id = `${prefijo}-${Date.now()}`;
+      // Sufijo numérico de 6 dígitos para el ID (ej: TR-123456)
+      const sufijo = (Date.now() % 1000000).toString().padStart(6, '0');
+      const id = `${prefijo}-${sufijo}`;
       const { codigo_area: _, ...resto } = tramite;
       const data = await tramitesService.crearTramite({
         ...resto,
@@ -559,7 +561,9 @@ export const tramitesAPI = {
       }
 
       const prefijo = codigo_area || 'TR';
-      const id = `${prefijo}-${Date.now()}`;
+      // Sufijo numérico de 6 dígitos para el ID (ej: TR-123456)
+      const sufijo = (Date.now() % 1000000).toString().padStart(6, '0');
+      const id = `${prefijo}-${sufijo}`;
       const codigoBarras = `${Date.now()}`;
       let archivoPdfUrl: string | null = null;
 
@@ -654,6 +658,7 @@ export const tramitesAPI = {
         oficio: movimiento.oficio ?? null,
         observaciones: movimiento.observaciones,
         usuario: movimiento.usuario,
+        estado_resultante: movimiento.actualizar_estado ?? null,
       });
       if (movimiento.actualizar_estado) {
         await tramitesService.actualizarTramite(id, {
