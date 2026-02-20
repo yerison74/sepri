@@ -1901,6 +1901,10 @@ const TramiteHistory: React.FC<TramiteHistoryProps> = ({ soloLectura = false }) 
               }}>
                 {historial.map((movimiento, index) => {
                   const esUltimo = index === 0;
+                  const movimientoDetenido = movimiento.estado_resultante === 'detenido';
+                  const colorBorde = movimientoDetenido ? '#c62828' : (esUltimo ? 'primary.main' : 'divider');
+                  const colorFondo = movimientoDetenido ? 'rgba(198, 40, 40, 0.06)' : (esUltimo ? 'rgba(66, 165, 245, 0.05)' : 'background.paper');
+                  const colorCirculo = movimientoDetenido ? '#c62828' : 'primary.main';
                   return (
                     <Paper 
                       key={movimiento.id || index} 
@@ -1909,8 +1913,8 @@ const TramiteHistory: React.FC<TramiteHistoryProps> = ({ soloLectura = false }) 
                         p: 2.5, 
                         position: 'relative',
                         borderLeft: esUltimo ? '4px solid' : '2px solid',
-                        borderColor: esUltimo ? 'primary.main' : 'divider',
-                        backgroundColor: esUltimo ? 'rgba(66, 165, 245, 0.05)' : 'background.paper',
+                        borderColor: colorBorde,
+                        backgroundColor: movimientoDetenido ? colorFondo : (esUltimo ? 'rgba(66, 165, 245, 0.05)' : 'background.paper'),
                         transition: 'all 0.2s',
                         '&:hover': {
                           boxShadow: 4,
@@ -1922,7 +1926,7 @@ const TramiteHistory: React.FC<TramiteHistoryProps> = ({ soloLectura = false }) 
                         <Chip 
                           label="Más Reciente" 
                           size="small" 
-                          color="primary" 
+                          color={movimientoDetenido ? 'error' : 'primary'} 
                           sx={{ 
                             position: 'absolute', 
                             top: 8, 
@@ -1937,7 +1941,7 @@ const TramiteHistory: React.FC<TramiteHistoryProps> = ({ soloLectura = false }) 
                             width: 32,
                             height: 32,
                             borderRadius: '50%',
-                            backgroundColor: 'primary.main',
+                            backgroundColor: colorCirculo,
                             color: 'white',
                             display: 'flex',
                             alignItems: 'center',
@@ -2025,10 +2029,10 @@ const TramiteHistory: React.FC<TramiteHistoryProps> = ({ soloLectura = false }) 
                         <Box sx={{ 
                           mt: 1.5,
                           p: 1.5,
-                          backgroundColor: 'rgba(0, 0, 0, 0.02)',
+                          backgroundColor: movimiento.estado_resultante === 'detenido' ? 'rgba(198, 40, 40, 0.06)' : 'rgba(0, 0, 0, 0.02)',
                           borderRadius: 1,
                           borderLeft: '3px solid',
-                          borderColor: 'info.main'
+                          borderColor: movimiento.estado_resultante === 'detenido' ? '#c62828' : 'info.main'
                         }}>
                           <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 0.5, fontWeight: 600 }}>
                             Observaciones

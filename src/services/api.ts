@@ -658,6 +658,7 @@ export const tramitesAPI = {
         oficio: movimiento.oficio ?? null,
         observaciones: movimiento.observaciones,
         usuario: movimiento.usuario,
+        estado_resultante: movimiento.actualizar_estado ?? null,
       });
       if (movimiento.actualizar_estado) {
         await tramitesService.actualizarTramite(id, {

@@ -62,6 +62,8 @@ export interface MovimientoTramite {
   fecha_movimiento?: string | null;
   observaciones?: string | null;
   usuario?: string | null;
+  /** Estado que quedó el trámite tras este movimiento (ej. 'detenido', 'completado'). Para indicadores en historial. */
+  estado_resultante?: string | null;
 }
 
 export interface HistorialUpload {
