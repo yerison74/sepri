@@ -34,29 +34,3 @@ code {
   margin: 0;
   padding: 0;
 }
-
-/* Etiqueta código de barras: solo imprimir esta zona (logo, código, ID, área de creación) */
-@media print {
-  body * {
-    visibility: hidden;
-  }
-  .barcode-label-print,
-  .barcode-label-print * {
-    visibility: visible;
-  }
-  .barcode-label-print {
-    position: absolute !important;
-    left: 0 !important;
-    top: 0 !important;
-    width: 80mm !important;
-    min-height: 50mm !important;
-    max-width: 80mm !important;
-    padding: 4mm !important;
-    margin: 0 !important;
-    box-shadow: none !important;
-    border: 1px solid #ccc !important;
-    background: white !important;
-    -webkit-print-color-adjust: exact;
-    print-color-adjust: exact;
-  }
-}
