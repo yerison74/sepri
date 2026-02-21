@@ -518,6 +518,7 @@ export const tramitesAPI = {
     nombre_destinatario: string;
     area_destinatario: string;
     area_destino_final: string;
+    proceso?: string | null;
     codigo_area?: string;
   }) => {
     try {
@@ -531,6 +532,7 @@ export const tramitesAPI = {
         id,
         estado: 'en_transito',
         codigo_barras: `${Date.now()}`,
+        proceso: tramite.proceso ?? undefined,
       });
       return { data: { data } } as AxiosResponse<{ data: Tramite }>;
     } catch (error: any) {
@@ -551,6 +553,7 @@ export const tramitesAPI = {
       const area_destinatario = formData.get('area_destinatario') as string;
       const area_destino_final = formData.get('area_destino_final') as string;
       const codigo_area = (formData.get('codigo_area') as string) || 'TR';
+      const proceso = (formData.get('proceso') as string) || null;
       const archivoPdf = formData.get('archivo_pdf') as File | null;
 
       if (!titulo || !nombre_destinatario || !area_destinatario || !area_destino_final) {
@@ -584,6 +587,7 @@ export const tramitesAPI = {
         nombre_destinatario,
         area_destinatario,
         area_destino_final,
+        proceso: proceso || undefined,
         estado: 'en_transito',
         codigo_barras: codigoBarras,
         archivo_pdf: archivoPdfUrl,
@@ -643,6 +647,15 @@ export const tramitesAPI = {
     }
   },
 
+  obtenerTiemposActualesPorTramites: async (tramiteIds: string[]) => {
+    try {
+      const data = await tramitesService.obtenerTiemposActualesPorTramites(tramiteIds);
+      return { data: { data } } as AxiosResponse<{ data: Record<string, import('../types/database').TiempoEnArea | null> }>;
+    } catch (error: any) {
+      return { data: { data: {} } } as AxiosResponse<{ data: Record<string, import('../types/database').TiempoEnArea | null> }>;
+    }
+  },
+
   registrarMovimiento: async (id: string, movimiento: {
     area_origen: string;
     area_destino: string;
@@ -652,6 +665,7 @@ export const tramitesAPI = {
     actualizar_estado?: string;
   }) => {
     try {
+      const tramite = await tramitesService.obtenerTramitePorId(id);
       const data = await tramitesService.registrarMovimiento(id, {
         area_origen: movimiento.area_origen,
         area_destino: movimiento.area_destino,
@@ -665,6 +679,12 @@ export const tramitesAPI = {
           estado: movimiento.actualizar_estado as Tramite['estado'],
           area_destinatario: movimiento.area_destino,
         });
+      }
+      if (tramite.proceso) {
+        await tramitesService.cerrarTiempoEnAreaActual(id);
+        if (movimiento.actualizar_estado !== 'completado') {
+          await tramitesService.abrirTiempoEnArea(id, movimiento.area_destino, tramite.proceso);
+        }
       }
       return { data: { data } } as AxiosResponse<{ data: MovimientoTramite }>;
     } catch (error: any) {

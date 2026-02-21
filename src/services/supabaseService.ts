@@ -3,6 +3,7 @@ import type {
   Obra,
   Tramite,
   MovimientoTramite,
+  TiempoEnArea,
   HistorialUpload,
   ObrasFilters,
   TramitesFilters,
@@ -592,6 +593,90 @@ export const tramitesService = {
     } catch (error: any) {
       console.error('Error al registrar movimiento:', error);
       throw new Error(error.message || 'Error al registrar movimiento');
+    }
+  },
+
+  /**
+   * Cerrar el registro de tiempo en el área actual (al enviar el trámite a otra área).
+   */
+  cerrarTiempoEnAreaActual: async (tramiteId: string): Promise<void> => {
+    try {
+      const { error } = await supabase
+        .from('tiempo_en_area')
+        .update({ fecha_salida: new Date().toISOString() })
+        .eq('tramite_id', tramiteId)
+        .is('fecha_salida', null);
+      if (error) throw error;
+    } catch (error: any) {
+      if (error?.code !== '42P01') console.warn('Error al cerrar tiempo en área:', error?.message);
+    }
+  },
+
+  /**
+   * Abrir registro de tiempo en un área (trámite entra a esta área).
+   */
+  abrirTiempoEnArea: async (tramiteId: string, areaNombre: string, procesoId: string): Promise<void> => {
+    try {
+      const { error } = await supabase.from('tiempo_en_area').insert([
+        {
+          tramite_id: tramiteId,
+          area_nombre: areaNombre,
+          fecha_entrada: new Date().toISOString(),
+          proceso_id: procesoId,
+        },
+      ]);
+      if (error) throw error;
+    } catch (error: any) {
+      if (error?.code !== '42P01') console.warn('Error al abrir tiempo en área:', error?.message);
+    }
+  },
+
+  /**
+   * Obtener el registro actual de tiempo en área (el que tiene fecha_salida null) para un trámite.
+   */
+  obtenerTiempoEnAreaActual: async (tramiteId: string): Promise<TiempoEnArea | null> => {
+    try {
+      const { data, error } = await supabase
+        .from('tiempo_en_area')
+        .select('*')
+        .eq('tramite_id', tramiteId)
+        .is('fecha_salida', null)
+        .order('fecha_entrada', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      if (error) throw error;
+      return data;
+    } catch (error: any) {
+      if (error?.code === '42P01') return null;
+      console.warn('Error al obtener tiempo en área actual:', error?.message);
+      return null;
+    }
+  },
+
+  /**
+   * Obtener registros actuales de tiempo (fecha_salida null) para varios trámites.
+   */
+  obtenerTiemposActualesPorTramites: async (tramiteIds: string[]): Promise<Record<string, TiempoEnArea | null>> => {
+    if (tramiteIds.length === 0) return {};
+    try {
+      const { data, error } = await supabase
+        .from('tiempo_en_area')
+        .select('*')
+        .in('tramite_id', tramiteIds)
+        .is('fecha_salida', null);
+      if (error) throw error;
+      const result: Record<string, TiempoEnArea | null> = {};
+      tramiteIds.forEach((id) => { result[id] = null; });
+      (data || []).forEach((row: TiempoEnArea) => {
+        if (!result[row.tramite_id] || new Date(row.fecha_entrada) > new Date((result[row.tramite_id] as TiempoEnArea).fecha_entrada)) {
+          result[row.tramite_id] = row;
+        }
+      });
+      return result;
+    } catch (error: any) {
+      if (error?.code === '42P01') return {};
+      console.warn('Error al obtener tiempos actuales:', error?.message);
+      return {};
     }
   },
 };

@@ -44,6 +44,8 @@ export interface Tramite {
   nombre_destinatario: string;
   area_destinatario: string;
   area_destino_final: string;
+  /** Proceso asignado (ej. proceso_1, proceso_2). Si existe, se activa control de tiempo por área. */
+  proceso?: string | null;
   estado: 'en_transito' | 'detenido' | 'firmado' | 'procesado' | 'completado';
   codigo_barras?: string | null;
   archivo_pdf?: string | null;
@@ -64,6 +66,16 @@ export interface MovimientoTramite {
   usuario?: string | null;
   /** Estado que quedó el trámite tras este movimiento (ej. 'detenido', 'completado'). Para indicadores en historial. */
   estado_resultante?: string | null;
+}
+
+/** Registro de tiempo que un trámite permanece en un área (para procesos con medición). */
+export interface TiempoEnArea {
+  id?: number;
+  tramite_id: string;
+  area_nombre: string;
+  fecha_entrada: string;
+  fecha_salida?: string | null;
+  proceso_id: string;
 }
 
 export interface HistorialUpload {
