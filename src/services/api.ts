@@ -656,6 +656,15 @@ export const tramitesAPI = {
     }
   },
 
+  obtenerTodosTiemposEnAreaPorTramites: async (tramiteIds: string[]) => {
+    try {
+      const data = await tramitesService.obtenerTodosTiemposEnAreaPorTramites(tramiteIds);
+      return { data: { data } } as AxiosResponse<{ data: import('../types/database').TiempoEnArea[] }>;
+    } catch (error: any) {
+      return { data: { data: [] } } as unknown as AxiosResponse<{ data: import('../types/database').TiempoEnArea[] }>;
+    }
+  },
+
   registrarMovimiento: async (id: string, movimiento: {
     area_origen: string;
     area_destino: string;

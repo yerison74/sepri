@@ -4,6 +4,8 @@
  * Tiempos en días (se usa el máximo para alertas y límites).
  */
 
+import { AREAS_TRAMITES } from './areas';
+
 export interface TiempoArea {
   minDias: number;
   maxDias: number;
@@ -18,8 +20,25 @@ export interface ProcesoOption {
   tiemposPorArea: Record<string, TiempoArea | null>;
 }
 
+/** 5 minutos expresados en días (para proceso de prueba) */
+const CINCO_MINUTOS_EN_DIAS = 5 / (60 * 24);
+
+/** Tiempo de 5 min para todas las áreas (proceso de prueba) */
+const TIEMPO_5_MIN_TODAS_AREAS: Record<string, TiempoArea> = AREAS_TRAMITES.reduce<Record<string, TiempoArea>>(
+  (acc, area) => {
+    acc[area.nombre] = { minDias: 0, maxDias: CINCO_MINUTOS_EN_DIAS, label: '5 min' };
+    return acc;
+  },
+  {}
+);
+
 /** Procesos disponibles para el selector en creación de trámite */
 export const PROCESOS: ProcesoOption[] = [
+  {
+    id: 'proceso_prueba',
+    nombre: 'Proceso de prueba',
+    tiemposPorArea: TIEMPO_5_MIN_TODAS_AREAS,
+  },
   {
     id: 'proceso_1',
     nombre: 'Gestión de Construcción Nuevo Proyecto: Escuela o Politécnico',

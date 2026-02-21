@@ -48,6 +48,7 @@ import {
   CheckCircle,
   CameraAlt,
   Stop,
+  Warning as WarningIcon,
   Scanner,
   Clear,
   ViewList,
@@ -297,30 +298,35 @@ const TramiteHistory: React.FC<TramiteHistoryProps> = ({ soloLectura = false }) 
 
       setTramites(tramitesConUrl);
 
-      const conProceso = tramitesConUrl.filter((t: Tramite) => t.proceso);
+      const conProceso = tramitesConUrl.filter((t: Tramite) => t.proceso && t.estado !== 'completado');
       if (conProceso.length > 0) {
         try {
           const ids = conProceso.map((t: Tramite) => t.id);
-          const res = await tramitesAPI.obtenerTiemposActualesPorTramites(ids);
-          const tiempos = res.data?.data || {};
+          const [resActuales, resTodos] = await Promise.all([
+            tramitesAPI.obtenerTiemposActualesPorTramites(ids),
+            tramitesAPI.obtenerTodosTiemposEnAreaPorTramites(ids),
+          ]);
+          const tiempos = resActuales.data?.data || {};
+          const todosLosTiempos: { tramite_id: string; area_nombre: string; fecha_entrada: string; fecha_salida?: string | null }[] = resTodos.data?.data || [];
           const status: Record<string, 'ok' | 'warning' | 'exceeded'> = {};
           const now = Date.now();
           conProceso.forEach((t: Tramite) => {
             const te = tiempos[t.id];
             if (!te) return;
-            const diasMax = getDiasMaximosPorArea(t.proceso!, te.area_nombre);
+            const areaActual = te.area_nombre;
+            const diasMax = getDiasMaximosPorArea(t.proceso!, areaActual);
             if (diasMax == null) return;
-            const entrada = new Date(te.fecha_entrada).getTime();
-            const diasTranscurridos = (now - entrada) / (1000 * 60 * 60 * 24);
+            const filasEnEstaArea = todosLosTiempos.filter((r: any) => r.tramite_id === t.id && r.area_nombre === areaActual);
+            let totalMs = 0;
+            filasEnEstaArea.forEach((r: any) => {
+              const inicio = new Date(r.fecha_entrada).getTime();
+              const fin = r.fecha_salida ? new Date(r.fecha_salida).getTime() : now;
+              totalMs += fin - inicio;
+            });
+            const diasTranscurridos = totalMs / (1000 * 60 * 60 * 24);
             const pct = (diasTranscurridos / diasMax) * 100;
-            if (pct >= 100) {
-              status[t.id] = 'exceeded';
-              if (t.estado !== 'detenido') {
-                tramitesAPI.actualizarTramite(t.id, { estado: 'detenido' }).then(() => {
-                  setTramites((prev) => prev.map((x) => (x.id === t.id ? { ...x, estado: 'detenido' as const } : x)));
-                }).catch(() => {});
-              }
-            } else if (pct >= 80) status[t.id] = 'warning';
+            if (pct >= 100) status[t.id] = 'exceeded';
+            else if (pct >= 80) status[t.id] = 'warning';
             else status[t.id] = 'ok';
           });
           setTiempoStatus(status);
@@ -678,14 +684,6 @@ const TramiteHistory: React.FC<TramiteHistoryProps> = ({ soloLectura = false }) 
         actualizar_estado: seguimientoData.actualizar_estado
       });
 
-      // Actualizar el trámite localmente
-      const tramiteActualizado = { ...selectedTramite };
-      if (seguimientoData.actualizar_estado) {
-        tramiteActualizado.estado = seguimientoData.actualizar_estado as any;
-        tramiteActualizado.area_destinatario = seguimientoData.area_destino;
-      }
-
-      setTramites(tramites.map(t => t.id === selectedTramite.id ? tramiteActualizado : t));
       setOpenSeguimientoDialog(false);
       setSeguimientoData({
         area_origen: '',
@@ -694,6 +692,7 @@ const TramiteHistory: React.FC<TramiteHistoryProps> = ({ soloLectura = false }) 
         observaciones: '',
         actualizar_estado: ''
       });
+      await loadTramites();
     } catch (err: any) {
       setError(err.response?.data?.error || 'Error al registrar el seguimiento');
     }
@@ -1100,8 +1099,8 @@ const TramiteHistory: React.FC<TramiteHistoryProps> = ({ soloLectura = false }) 
                       sx={{
                         cursor: 'pointer',
                         '&:hover': { backgroundColor: 'action.hover' },
-                        borderLeft: tramite.estado === 'completado' ? '4px solid #4CAF50' : tramite.estado === 'detenido' ? '4px solid #F44336' : 'none',
-                        backgroundColor: tramite.estado === 'detenido' ? 'rgba(244, 67, 54, 0.04)' : 'inherit'
+                        borderLeft: tramite.estado === 'completado' ? '4px solid #4CAF50' : tramite.estado === 'detenido' || tiempoStatus[tramite.id] === 'exceeded' ? '4px solid #F44336' : tramite.proceso && tiempoStatus[tramite.id] === 'warning' ? '4px solid #ff9800' : 'none',
+                        backgroundColor: tramite.estado === 'detenido' || tiempoStatus[tramite.id] === 'exceeded' ? 'rgba(244, 67, 54, 0.04)' : tramite.proceso && tiempoStatus[tramite.id] === 'warning' ? 'rgba(255, 152, 0, 0.08)' : 'inherit'
                       }}
                     >
                       <TableCell>
@@ -1141,7 +1140,7 @@ const TramiteHistory: React.FC<TramiteHistoryProps> = ({ soloLectura = false }) 
                           />
                           {tramite.proceso && tiempoStatus[tramite.id] === 'warning' && (
                             <Tooltip title="Trámite próximo a vencer en esta área (80% del tiempo)">
-                              <Chip label="80%" size="small" sx={{ bgcolor: '#ff9800', color: 'white' }} />
+                              <Chip label="Próximo a vencer" size="small" sx={{ bgcolor: '#ff9800', color: 'white', fontWeight: 600, border: '1px solid rgba(255, 152, 0, 0.5)' }} />
                             </Tooltip>
                           )}
                           {tramite.proceso && tiempoStatus[tramite.id] === 'exceeded' && (
@@ -1223,9 +1222,9 @@ const TramiteHistory: React.FC<TramiteHistoryProps> = ({ soloLectura = false }) 
                       flexDirection: 'column',
                       cursor: 'pointer',
                       transition: 'transform 0.2s, box-shadow 0.2s',
-                      border: tramite.estado === 'completado' ? '2px solid #4CAF50' : tramite.estado === 'detenido' ? '2px solid #F44336' : 'none',
-                      borderLeft: tramite.estado === 'completado' ? '4px solid #4CAF50' : tramite.estado === 'detenido' ? '4px solid #F44336' : 'none',
-                      backgroundColor: tramite.estado === 'completado' ? 'rgba(76, 175, 80, 0.05)' : tramite.estado === 'detenido' ? 'rgba(244, 67, 54, 0.05)' : 'inherit',
+                      border: tramite.estado === 'completado' ? '2px solid #4CAF50' : tramite.estado === 'detenido' || tiempoStatus[tramite.id] === 'exceeded' ? '2px solid #F44336' : tramite.proceso && tiempoStatus[tramite.id] === 'warning' ? '2px solid #ff9800' : 'none',
+                      borderLeft: tramite.estado === 'completado' ? '4px solid #4CAF50' : tramite.estado === 'detenido' || tiempoStatus[tramite.id] === 'exceeded' ? '4px solid #F44336' : tramite.proceso && tiempoStatus[tramite.id] === 'warning' ? '4px solid #ff9800' : 'none',
+                      backgroundColor: tramite.estado === 'completado' ? 'rgba(76, 175, 80, 0.05)' : tramite.estado === 'detenido' || tiempoStatus[tramite.id] === 'exceeded' ? 'rgba(244, 67, 54, 0.05)' : tramite.proceso && tiempoStatus[tramite.id] === 'warning' ? 'rgba(255, 152, 0, 0.08)' : 'inherit',
                       '&:hover': {
                         transform: 'translateY(-4px)',
                         boxShadow: 6
@@ -1269,16 +1268,36 @@ const TramiteHistory: React.FC<TramiteHistoryProps> = ({ soloLectura = false }) 
                           </Box>
                         )}
                         {tramite.proceso && tiempoStatus[tramite.id] === 'warning' && (
-                          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1, p: 1, bgcolor: 'rgba(255, 152, 0, 0.15)', borderRadius: 1, border: '1px solid rgba(255, 152, 0, 0.4)' }}>
+                          <Box sx={{ 
+                            display: 'flex', 
+                            alignItems: 'center', 
+                            gap: 1, 
+                            mb: 1,
+                            p: 1,
+                            bgcolor: 'rgba(255, 152, 0, 0.12)',
+                            borderRadius: 1,
+                            border: '1px solid rgba(255, 152, 0, 0.3)'
+                          }}>
+                            <WarningIcon sx={{ color: '#e65100', fontSize: 20 }} />
                             <Typography variant="caption" sx={{ fontWeight: 600, color: '#e65100' }}>
-                              Próximo a vencer (80% tiempo en área)
+                              PRÓXIMO A VENCER (80% TIEMPO EN ÁREA)
                             </Typography>
                           </Box>
                         )}
                         {tramite.proceso && tiempoStatus[tramite.id] === 'exceeded' && (
-                          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1, p: 1, bgcolor: 'rgba(244, 67, 54, 0.12)', borderRadius: 1, border: '1px solid rgba(244, 67, 54, 0.3)' }}>
+                          <Box sx={{ 
+                            display: 'flex', 
+                            alignItems: 'center', 
+                            gap: 1, 
+                            mb: 1,
+                            p: 1,
+                            bgcolor: 'rgba(244, 67, 54, 0.12)',
+                            borderRadius: 1,
+                            border: '1px solid rgba(244, 67, 54, 0.3)'
+                          }}>
+                            <Stop sx={{ color: '#c62828', fontSize: 20 }} />
                             <Typography variant="caption" sx={{ fontWeight: 600, color: '#c62828' }}>
-                              Tiempo excedido en área
+                              TIEMPO EXCEDIDO EN ÁREA
                             </Typography>
                           </Box>
                         )}
@@ -1475,7 +1494,7 @@ const TramiteHistory: React.FC<TramiteHistoryProps> = ({ soloLectura = false }) 
                 displayEmpty
               >
                 <MenuItem value="">
-                  <em>Ninguno — sin medición de tiempo por área</em>
+                  <em>Ninguno</em>
                 </MenuItem>
                 {PROCESOS.map((p) => (
                   <MenuItem key={p.id} value={p.id}>{p.nombre}</MenuItem>
