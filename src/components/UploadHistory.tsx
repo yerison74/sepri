@@ -55,6 +55,7 @@ import {
 } from '@mui/icons-material';
 import { tramitesAPI, Tramite, MovimientoTramite } from '../services/api';
 import { AREAS_TRAMITES, getCodigoPorArea } from '../constants/areas';
+import { PROCESOS, getDiasMaximosPorArea } from '../constants/procesos';
 import { useAuth } from '../context/AuthContext';
 import JsBarcode from 'jsbarcode';
 
@@ -208,6 +209,7 @@ const TramiteHistory: React.FC<TramiteHistoryProps> = ({ soloLectura = false }) 
   const [loadingHistorial, setLoadingHistorial] = useState(false);
   const [viewMode, setViewMode] = useState<'list' | 'cards'>('list');
   const [hideCompleted, setHideCompleted] = useState(false);
+  const [tiempoStatus, setTiempoStatus] = useState<Record<string, 'ok' | 'warning' | 'exceeded'>>({});
 
   // Formulario nuevo trámite (destinatario y área se rellenan con el usuario logueado)
   const [nuevoTramite, setNuevoTramite] = useState({
@@ -216,6 +218,7 @@ const TramiteHistory: React.FC<TramiteHistoryProps> = ({ soloLectura = false }) 
     nombre_destinatario: '',
     area_destinatario: '',
     area_destino_final: '',
+    proceso: '' as string,
     archivo_pdf: null as File | null
   });
   const [uploadingPdf, setUploadingPdf] = useState(false);
@@ -293,6 +296,40 @@ const TramiteHistory: React.FC<TramiteHistoryProps> = ({ soloLectura = false }) 
       });
 
       setTramites(tramitesConUrl);
+
+      const conProceso = tramitesConUrl.filter((t: Tramite) => t.proceso);
+      if (conProceso.length > 0) {
+        try {
+          const ids = conProceso.map((t: Tramite) => t.id);
+          const res = await tramitesAPI.obtenerTiemposActualesPorTramites(ids);
+          const tiempos = res.data?.data || {};
+          const status: Record<string, 'ok' | 'warning' | 'exceeded'> = {};
+          const now = Date.now();
+          conProceso.forEach((t: Tramite) => {
+            const te = tiempos[t.id];
+            if (!te) return;
+            const diasMax = getDiasMaximosPorArea(t.proceso!, te.area_nombre);
+            if (diasMax == null) return;
+            const entrada = new Date(te.fecha_entrada).getTime();
+            const diasTranscurridos = (now - entrada) / (1000 * 60 * 60 * 24);
+            const pct = (diasTranscurridos / diasMax) * 100;
+            if (pct >= 100) {
+              status[t.id] = 'exceeded';
+              if (t.estado !== 'detenido') {
+                tramitesAPI.actualizarTramite(t.id, { estado: 'detenido' }).then(() => {
+                  setTramites((prev) => prev.map((x) => (x.id === t.id ? { ...x, estado: 'detenido' as const } : x)));
+                }).catch(() => {});
+              }
+            } else if (pct >= 80) status[t.id] = 'warning';
+            else status[t.id] = 'ok';
+          });
+          setTiempoStatus(status);
+        } catch {
+          setTiempoStatus({});
+        }
+      } else {
+        setTiempoStatus({});
+      }
     } catch (err: any) {
       if (err.response?.status === 404) {
         setError('El backend aún no tiene implementados los endpoints de trámites. Los datos se guardan localmente.');
@@ -352,7 +389,7 @@ const TramiteHistory: React.FC<TramiteHistoryProps> = ({ soloLectura = false }) 
         formData.append('nombre_destinatario', nuevoTramite.nombre_destinatario);
         formData.append('area_destinatario', nuevoTramite.area_destinatario);
         formData.append('area_destino_final', nuevoTramite.area_destino_final);
-        // Código del ID según el área del usuario que crea el trámite
+        if (nuevoTramite.proceso) formData.append('proceso', nuevoTramite.proceso);
         formData.append('codigo_area', getCodigoPorArea(user?.area || ''));
         formData.append('archivo_pdf', nuevoTramite.archivo_pdf);
 
@@ -370,7 +407,7 @@ const TramiteHistory: React.FC<TramiteHistoryProps> = ({ soloLectura = false }) 
           nombre_destinatario: nuevoTramite.nombre_destinatario,
           area_destinatario: nuevoTramite.area_destinatario,
           area_destino_final: nuevoTramite.area_destino_final,
-          // Código del ID según el área del usuario que crea el trámite
+          proceso: nuevoTramite.proceso || undefined,
           codigo_area: getCodigoPorArea(user?.area || ''),
         });
         nuevoTramiteData = response.data.data;
@@ -400,6 +437,7 @@ const TramiteHistory: React.FC<TramiteHistoryProps> = ({ soloLectura = false }) 
         nombre_destinatario: '',
         area_destinatario: '',
         area_destino_final: '',
+        proceso: '',
         archivo_pdf: null
       });
       if (fileInputRef.current) {
@@ -1095,11 +1133,23 @@ const TramiteHistory: React.FC<TramiteHistoryProps> = ({ soloLectura = false }) 
                         </Typography>
                       </TableCell>
                       <TableCell>
-                        <Chip
-                          label={getEstadoLabel(tramite.estado)}
-                          size="small"
-                          color={getEstadoColor(tramite.estado)}
-                        />
+                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, flexWrap: 'wrap' }}>
+                          <Chip
+                            label={getEstadoLabel(tramite.estado)}
+                            size="small"
+                            color={getEstadoColor(tramite.estado)}
+                          />
+                          {tramite.proceso && tiempoStatus[tramite.id] === 'warning' && (
+                            <Tooltip title="Trámite próximo a vencer en esta área (80% del tiempo)">
+                              <Chip label="80%" size="small" sx={{ bgcolor: '#ff9800', color: 'white' }} />
+                            </Tooltip>
+                          )}
+                          {tramite.proceso && tiempoStatus[tramite.id] === 'exceeded' && (
+                            <Tooltip title="Tiempo excedido en esta área">
+                              <Chip label="Excedido" size="small" color="error" />
+                            </Tooltip>
+                          )}
+                        </Box>
                       </TableCell>
                       <TableCell>
                         <Typography variant="body2" color="text.secondary">
@@ -1215,6 +1265,20 @@ const TramiteHistory: React.FC<TramiteHistoryProps> = ({ soloLectura = false }) 
                             <Stop sx={{ color: '#c62828', fontSize: 20 }} />
                             <Typography variant="caption" sx={{ fontWeight: 600, color: '#c62828' }}>
                               TRÁMITE DETENIDO
+                            </Typography>
+                          </Box>
+                        )}
+                        {tramite.proceso && tiempoStatus[tramite.id] === 'warning' && (
+                          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1, p: 1, bgcolor: 'rgba(255, 152, 0, 0.15)', borderRadius: 1, border: '1px solid rgba(255, 152, 0, 0.4)' }}>
+                            <Typography variant="caption" sx={{ fontWeight: 600, color: '#e65100' }}>
+                              Próximo a vencer (80% tiempo en área)
+                            </Typography>
+                          </Box>
+                        )}
+                        {tramite.proceso && tiempoStatus[tramite.id] === 'exceeded' && (
+                          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1, p: 1, bgcolor: 'rgba(244, 67, 54, 0.12)', borderRadius: 1, border: '1px solid rgba(244, 67, 54, 0.3)' }}>
+                            <Typography variant="caption" sx={{ fontWeight: 600, color: '#c62828' }}>
+                              Tiempo excedido en área
                             </Typography>
                           </Box>
                         )}
@@ -1402,6 +1466,25 @@ const TramiteHistory: React.FC<TramiteHistoryProps> = ({ soloLectura = false }) 
                 </Select>
               </FormControl>
             </Box>
+            <FormControl fullWidth>
+              <InputLabel>Proceso (opcional)</InputLabel>
+              <Select
+                value={nuevoTramite.proceso}
+                label="Proceso (opcional)"
+                onChange={(e) => setNuevoTramite({ ...nuevoTramite, proceso: e.target.value })}
+                displayEmpty
+              >
+                <MenuItem value="">
+                  <em>Ninguno — sin medición de tiempo por área</em>
+                </MenuItem>
+                {PROCESOS.map((p) => (
+                  <MenuItem key={p.id} value={p.id}>{p.nombre}</MenuItem>
+                ))}
+              </Select>
+              <Typography variant="caption" color="text.secondary" sx={{ mt: 0.5, display: 'block' }}>
+                Si selecciona un proceso, se activa el control y monitoreo de tiempo por área.
+              </Typography>
+            </FormControl>
             <Box>
               <Typography variant="body2" sx={{ mb: 1, fontWeight: 500 }}>
                 Archivo PDF (opcional)
@@ -1462,6 +1545,7 @@ const TramiteHistory: React.FC<TramiteHistoryProps> = ({ soloLectura = false }) 
               nombre_destinatario: '',
               area_destinatario: '',
               area_destino_final: '',
+              proceso: '',
               archivo_pdf: null
             });
             if (fileInputRef.current) {
