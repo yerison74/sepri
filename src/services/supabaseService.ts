@@ -679,6 +679,26 @@ export const tramitesService = {
       return {};
     }
   },
+
+  /**
+   * Obtener TODOS los registros de tiempo en área para los trámites (para sumar tiempo total por área).
+   */
+  obtenerTodosTiemposEnAreaPorTramites: async (tramiteIds: string[]): Promise<TiempoEnArea[]> => {
+    if (tramiteIds.length === 0) return [];
+    try {
+      const { data, error } = await supabase
+        .from('tiempo_en_area')
+        .select('*')
+        .in('tramite_id', tramiteIds)
+        .order('fecha_entrada', { ascending: true });
+      if (error) throw error;
+      return data || [];
+    } catch (error: any) {
+      if (error?.code === '42P01') return [];
+      console.warn('Error al obtener todos los tiempos en área:', error?.message);
+      return [];
+    }
+  },
 };
 
 // ============================================
