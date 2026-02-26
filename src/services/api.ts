@@ -166,7 +166,7 @@ export const uploadAPI = {
       // Procesar archivo (esto es lo importante)
       const resultado = await procesarArchivoXml(file);
 
-      // Registrar en historial (opcional - si la tabla no existe, se omite)
+      // Registrar en historial (opcional - nunca hace fallar el upload)
       try {
         await historialUploadsService.registrarUpload({
           nombre_archivo: file.name,
@@ -179,15 +179,7 @@ export const uploadAPI = {
             : null,
         });
       } catch (historialError: any) {
-        // Silenciar error si la tabla no existe - no es crítico para el procesamiento
-        if (historialError?.message?.includes('Could not find the table') || 
-            historialError?.message?.includes('relation') ||
-            historialError?.message?.includes('does not exist')) {
-          console.warn('⚠️  Tabla historial_uploads no encontrada. El procesamiento continuó exitosamente.');
-          console.warn('💡 Para habilitar el historial, ejecuta el script SQL en Supabase.');
-        } else {
-          console.warn('No se pudo registrar en historial:', historialError);
-        }
+        console.warn('No se pudo registrar en historial (el procesamiento fue exitoso):', historialError?.message || historialError);
       }
 
       return {
@@ -392,7 +384,7 @@ export const uploadAPI = {
       // Procesar archivo (esto es lo importante)
       const resultado = await procesarArchivoExcel(file);
 
-      // Registrar en historial (opcional - si la tabla no existe, se omite)
+      // Registrar en historial (opcional - nunca hace fallar el upload)
       try {
         await historialUploadsService.registrarUpload({
           nombre_archivo: file.name,
@@ -405,15 +397,7 @@ export const uploadAPI = {
             : null,
         });
       } catch (historialError: any) {
-        // Silenciar error si la tabla no existe - no es crítico para el procesamiento
-        if (historialError?.message?.includes('Could not find the table') || 
-            historialError?.message?.includes('relation') ||
-            historialError?.message?.includes('does not exist')) {
-          console.warn('⚠️  Tabla historial_uploads no encontrada. El procesamiento continuó exitosamente.');
-          console.warn('💡 Para habilitar el historial, ejecuta el script SQL en Supabase.');
-        } else {
-          console.warn('No se pudo registrar en historial:', historialError);
-        }
+        console.warn('No se pudo registrar en historial (el procesamiento fue exitoso):', historialError?.message || historialError);
       }
 
       return {

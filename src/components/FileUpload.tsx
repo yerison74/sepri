@@ -10,7 +10,7 @@ import CalendarTodayIcon from '@mui/icons-material/CalendarToday';
 import DescriptionIcon from '@mui/icons-material/Description';
 import PersonIcon from '@mui/icons-material/Person';
 import InfoIcon from '@mui/icons-material/Info';
-import { uploadAPI } from '../services/api';
+import { uploadAPI, statsAPI } from '../services/api';
 import { obrasService } from '../services/supabaseService';
 import type { Obra } from '../types/database';
 
@@ -23,24 +23,13 @@ interface FileUploadProps {
 
 const MAX_SIZE_BYTES = 10 * 1024 * 1024; // 10MB
 
-const ESTADOS_OPCIONES = [
-  'ACTIVA',
-  'INAUGURADA',
-  'TERMINADA',
-  'DETENIDA',
-  'PENDIENTE',
-  'EN PROGRESO',
-  'COMPLETADO',
-  'CANCELADO',
-  'PAUSADO'
-];
-
 const FileUpload: React.FC<FileUploadProps> = ({ onUploadComplete, onError, soloLectura = false }) => {
   const [file, setFile] = useState<File | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [validMessage, setValidMessage] = useState<string | null>(null);
   const [uploading, setUploading] = useState(false);
   const [downloading, setDownloading] = useState(false);
+  const [estadosParaDescarga, setEstadosParaDescarga] = useState<string[]>([]);
   const [downloadFilters, setDownloadFilters] = useState({
     search: '',
     estado: '',
@@ -52,6 +41,22 @@ const FileUpload: React.FC<FileUploadProps> = ({ onUploadComplete, onError, solo
     fechaInauguracionHasta: ''
   });
   const inputRef = useRef<HTMLInputElement | null>(null);
+
+  // Cargar estados desde la BD para el filtro de descarga (igual que en Obras/Dashboard)
+  React.useEffect(() => {
+    const load = async () => {
+      try {
+        const res = await statsAPI.obtenerResumenDashboard();
+        const porEstado = res?.data?.data?.estadisticas?.porEstado;
+        if (Array.isArray(porEstado)) {
+          setEstadosParaDescarga(porEstado.map((e: { estado: string }) => e.estado));
+        }
+      } catch {
+        setEstadosParaDescarga([]);
+      }
+    };
+    load();
+  }, []);
 
   // Estado para el formulario de edición de obra
   const [obraForm, setObraForm] = useState<Partial<Obra>>({
@@ -481,7 +486,7 @@ const FileUpload: React.FC<FileUploadProps> = ({ onUploadComplete, onError, solo
             className="px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-[#42A5F5] focus:border-transparent"
           >
             <option value="">Todos</option>
-            {ESTADOS_OPCIONES.map((estado) => (
+            {estadosParaDescarga.map((estado: string) => (
               <option key={estado} value={estado}>
                 {estado}
               </option>
@@ -730,7 +735,7 @@ const FileUpload: React.FC<FileUploadProps> = ({ onUploadComplete, onError, solo
                       className="w-full px-4 py-2.5 border-2 border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-[#42A5F5] focus:border-[#42A5F5] transition-all bg-white"
                     >
                       <option value="">Seleccione un estado</option>
-                      {ESTADOS_OPCIONES.map((estado) => (
+                      {estadosParaDescarga.map((estado: string) => (
                         <option key={estado} value={estado}>
                           {estado}
                         </option>

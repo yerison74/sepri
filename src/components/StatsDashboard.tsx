@@ -30,7 +30,6 @@ const COLORS = {
 const StatsDashboard: React.FC<StatsDashboardProps> = ({ refreshTrigger, onEstadoClick, onProvinciaClick }) => {
   const [stats, setStats] = useState<any>(null);
   const [proximasInaugurar, setProximasInaugurar] = useState<Obra[]>([]);
-  const [obrasPorResponsable, setObrasPorResponsable] = useState<any[]>([]);
   const [obrasPorProvincia, setObrasPorProvincia] = useState<{ provincia: string; cantidad: number }[]>([]);
   const [obrasPorMunicipio, setObrasPorMunicipio] = useState<{ municipio: string; provincia: string; cantidad: number }[]>([]);
   const [loading, setLoading] = useState(true);
@@ -48,7 +47,6 @@ const StatsDashboard: React.FC<StatsDashboardProps> = ({ refreshTrigger, onEstad
       const data = statsResponse.data.data;
       setStats(data);
       setProximasInaugurar(data.obrasProximasInaugurar || []);
-      setObrasPorResponsable(data.obrasPorResponsable || []);
       setObrasPorProvincia(data.obrasPorProvincia || []);
       setObrasPorMunicipio(data.obrasPorMunicipio || []);
     } catch (err: any) {
@@ -72,21 +70,24 @@ const StatsDashboard: React.FC<StatsDashboardProps> = ({ refreshTrigger, onEstad
   // Calcular total para porcentajes
   const totalEstados = estadoData.reduce((sum: number, item: any) => sum + item.cantidad, 0);
 
-  // Preparar datos para gráfico de barras (responsables - top 10)
-  const barChartData = obrasPorResponsable
-    .slice(0, 10)
-    .map((item: any) => ({
-      name: item.responsable?.length > 20 
-        ? item.responsable.substring(0, 20) + '...' 
-        : item.responsable || 'Sin responsable',
-      cantidad: item.cantidad,
-      fullName: item.responsable
-    }));
-
-  // Calcular máximo para normalizar barras
-  const maxCantidad = barChartData.length > 0 
-    ? Math.max(...barChartData.map((item: any) => item.cantidad))
+  // Calcular máximo para normalizar barras por estado
+  const maxEstadoCantidad = estadoData.length > 0
+    ? Math.max(...estadoData.map((item: any) => item.cantidad))
     : 1;
+
+  // Preparar fondo para gráfico de pastel (conic-gradient) basado en estados
+  let pieBackground = '';
+  if (estadoData.length > 0 && totalEstados > 0) {
+    let acumulado = 0;
+    const segmentos: string[] = [];
+    estadoData.forEach((item: any) => {
+      const inicio = (acumulado / totalEstados) * 360;
+      const fin = ((acumulado + item.cantidad) / totalEstados) * 360;
+      segmentos.push(`${item.color} ${inicio}deg ${fin}deg`);
+      acumulado += item.cantidad;
+    });
+    pieBackground = `conic-gradient(${segmentos.join(', ')})`;
+  }
 
   if (loading) {
     return (
@@ -225,40 +226,32 @@ const StatsDashboard: React.FC<StatsDashboardProps> = ({ refreshTrigger, onEstad
 
       {/* Gráficos */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
-        {/* Gráfico de Pastel - Distribución por Estado */}
+        {/* Gráfico de Barras - Distribución por Estado */}
         <div className="bg-white rounded-lg shadow-lg p-6">
           <h3 className="text-xl font-semibold mb-4">
-            Distribución por Estado
+            Distribución por Estado (Barras)
           </h3>
           {estadoData.length > 0 ? (
-            <div className="mt-4 space-y-4">
+            <div className="h-64 flex items-end justify-between gap-3">
               {estadoData.map((item: any, index: number) => {
+                const altura = maxEstadoCantidad > 0 ? (item.cantidad / maxEstadoCantidad) * 100 : 0;
                 const porcentaje = totalEstados > 0 ? (item.cantidad / totalEstados) * 100 : 0;
                 return (
-                  <div key={index} className="mb-4">
-                    <div className="flex justify-between items-center mb-1">
-                      <div className="flex items-center gap-2">
+                  <div key={index} className="flex flex-col items-center flex-1 min-w-[40px]">
+                    <div className="flex flex-col justify-end h-full w-full">
+                      <div className="bg-gray-200 rounded-t-md rounded-b-md flex-1 flex items-end justify-center">
                         <div
-                          className="w-4 h-4 rounded-full flex-shrink-0"
-                          style={{ backgroundColor: item.color }}
+                          className="w-3 sm:w-4 rounded-t-md transition-all duration-300"
+                          style={{ height: `${altura}%`, backgroundColor: item.color }}
                         />
-                        <span className="text-sm font-medium">
-                          {item.estado}
-                        </span>
                       </div>
-                      <span className="text-sm text-gray-600 font-semibold">
-                        {item.cantidad} ({porcentaje.toFixed(1)}%)
-                      </span>
                     </div>
-                    <div className="w-full bg-gray-200 rounded-full h-2.5">
-                      <div
-                        className="h-2.5 rounded-full transition-all duration-300"
-                        style={{ 
-                          width: `${porcentaje}%`,
-                          backgroundColor: item.color
-                        }}
-                      />
-                    </div>
+                    <span className="mt-2 text-xs font-medium text-center break-words">
+                      {item.estado}
+                    </span>
+                    <span className="text-[11px] text-gray-600 font-semibold">
+                      {item.cantidad} ({porcentaje.toFixed(1)}%)
+                    </span>
                   </div>
                 );
               })}
@@ -270,37 +263,31 @@ const StatsDashboard: React.FC<StatsDashboardProps> = ({ refreshTrigger, onEstad
           )}
         </div>
 
-        {/* Gráfico de Barras - Top Responsables */}
+        {/* Gráfico de Pastel - Distribución por Estado */}
         <div className="bg-white rounded-lg shadow-lg p-6">
           <h3 className="text-xl font-semibold mb-4">
-            Top 10 Responsables / Contratistas
+            Distribución por Estado (Pastel)
           </h3>
-          {barChartData.length > 0 ? (
-            <div className="mt-4 space-y-4">
-              {barChartData.map((item: any, index: number) => {
-                const porcentaje = maxCantidad > 0 ? (item.cantidad / maxCantidad) * 100 : 0;
-                return (
-                  <div key={index} className="mb-4">
-                    <div className="flex justify-between items-center mb-1">
-                      <span 
-                        className="text-sm font-medium flex-1 overflow-hidden text-ellipsis whitespace-nowrap mr-4"
-                        title={item.fullName}
-                      >
-                        {item.name}
-                      </span>
-                      <span className="text-sm text-gray-600 font-semibold min-w-[60px] text-right">
-                        {item.cantidad} {item.cantidad === 1 ? 'obra' : 'obras'}
-                      </span>
-                    </div>
-                    <div className="w-full bg-gray-200 rounded-full h-2.5">
-                      <div
-                        className="h-2.5 rounded-full bg-[#42A5F5] transition-all duration-300"
-                        style={{ width: `${porcentaje}%` }}
-                      />
-                    </div>
+          {estadoData.length > 0 && pieBackground ? (
+            <div className="flex flex-col items-center mt-4">
+              <div
+                className="w-40 h-40 sm:w-48 sm:h-48 rounded-full shadow-inner"
+                style={{ backgroundImage: pieBackground }}
+              />
+              <div className="mt-4 grid grid-cols-1 sm:grid-cols-2 gap-2 w-full">
+                {estadoData.map((item: any, index: number) => (
+                  <div key={index} className="flex items-center gap-2 text-sm">
+                    <span
+                      className="w-3 h-3 rounded-full flex-shrink-0"
+                      style={{ backgroundColor: item.color }}
+                    />
+                    <span className="flex-1 truncate">{item.estado}</span>
+                    <span className="text-gray-600 font-semibold text-xs">
+                      {item.cantidad}
+                    </span>
                   </div>
-                );
-              })}
+                ))}
+              </div>
             </div>
           ) : (
             <div className="flex justify-center items-center h-48">

@@ -218,13 +218,22 @@ export const obrasService = {
 
 
   /**
-   * Crear una nueva obra
+   * Crear una nueva obra.
+   * Si la tabla usa id varchar (ej. OB-0000), pasar obra con id incluido.
+   * Trunca strings que excedan límites típicos de la BD (varchar(20) etc.) para evitar error 22001.
    */
-  crearObra: async (obra: Omit<Obra, 'id' | 'created_at' | 'updated_at'>): Promise<Obra> => {
+  crearObra: async (obra: (Omit<Obra, 'id' | 'created_at' | 'updated_at'> & { id?: string }) | Record<string, unknown>): Promise<Obra> => {
     try {
+      const maxLen = 20;
+      const truncar = (v: unknown): unknown =>
+        typeof v === 'string' && v.length > maxLen ? v.slice(0, maxLen) : v;
+      const payload = Object.fromEntries(
+        Object.entries(obra).map(([k, v]) => [k, truncar(v)])
+      );
+
       const { data, error } = await supabase
         .from('obras')
-        .insert([obra])
+        .insert([payload])
         .select()
         .single();
 
@@ -239,13 +248,21 @@ export const obrasService = {
   },
 
   /**
-   * Actualizar una obra
+   * Actualizar una obra (id puede ser number o string según el esquema de obras).
+   * Trunca strings a 20 caracteres para no exceder varchar(20) si aplica.
    */
-  actualizarObra: async (id: number, updates: Partial<Obra>): Promise<Obra> => {
+  actualizarObra: async (id: number | string, updates: Partial<Obra>): Promise<Obra> => {
     try {
+      const maxLen = 20;
+      const truncar = (v: unknown): unknown =>
+        typeof v === 'string' && v.length > maxLen ? v.slice(0, maxLen) : v;
+      const payload = Object.fromEntries(
+        Object.entries(updates).map(([k, v]) => [k, truncar(v)])
+      );
+
       const { data, error } = await supabase
         .from('obras')
-        .update(updates)
+        .update(payload)
         .eq('id', id)
         .select()
         .single();
@@ -287,37 +304,21 @@ export const obrasService = {
         .from('obras')
         .select('*', { count: 'exact', head: true });
 
-      // Obtener obras por estado (estados específicos del dashboard)
-      const estadosEspecificos = ['ACTIVA', 'INAUGURADA', 'TERMINADA', 'DETENIDA', 'PRELIMINARES', 'INTERVENIDA MANTENIMIENTO', 'NO ESPECIFICADO'];
-      const porEstado: Array<{ estado: string; cantidad: number }> = [];
-
-      for (const estado of estadosEspecificos) {
-        const { count } = await supabase
-          .from('obras')
-          .select('*', { count: 'exact', head: true })
-          .eq('estado', estado);
-        porEstado.push({
-          estado: estado,
-          cantidad: count || 0,
-        });
-      }
-
-      // Obtener todas las obras para contar otros estados
+      // Obtener obras por estado: solo estados que existen en la base de datos
       const { data: todasLasObras } = await supabase
         .from('obras')
         .select('estado');
 
-      // Agregar estados que no están en la lista específica
-      if (todasLasObras) {
-        const estadosEncontrados = new Set(todasLasObras.map(o => o.estado));
-        const estadosYaIncluidos = new Set(estadosEspecificos);
-        
-        estadosEncontrados.forEach(estado => {
-          if (!estadosYaIncluidos.has(estado) && estado) {
-            const cantidad = todasLasObras.filter(o => o.estado === estado).length;
-            porEstado.push({ estado, cantidad });
-          }
+      const porEstado: Array<{ estado: string; cantidad: number }> = [];
+      if (todasLasObras && todasLasObras.length > 0) {
+        const conteoPorEstado = new Map<string, number>();
+        todasLasObras.forEach((o: { estado?: string | null }) => {
+          const estado = (o.estado || '').trim() || 'NO ESPECIFICADO';
+          conteoPorEstado.set(estado, (conteoPorEstado.get(estado) || 0) + 1);
         });
+        Array.from(conteoPorEstado.entries())
+          .sort((a, b) => b[1] - a[1])
+          .forEach(([estado, cantidad]) => porEstado.push({ estado, cantidad }));
       }
 
       // Obtener obras próximas a inaugurar (próximos 30 días)
@@ -740,7 +741,7 @@ export const historialUploadsService = {
         if (error.message?.includes('Could not find the table') || 
             error.message?.includes('relation') ||
             error.message?.includes('does not exist')) {
-          const tableError = new Error('Tabla historial_uploads no encontrada. Ejecuta el script SQL en Supabase.');
+          const tableError = new Error('Tabla historial_uploads no encontrada. Ejecuta el script supabase-historial-uploads.sql en Supabase.');
           (tableError as any).isTableNotFound = true;
           throw tableError;
         }
@@ -766,9 +767,19 @@ export const storageService = {
    */
   subirArchivo: async (file: File, bucket: string, path: string): Promise<string> => {
     try {
+      // Algunos buckets no permiten MIME de Excel; subir como octet-stream para que acepte
+      const excelMimes = [
+        'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        'application/vnd.ms-excel',
+      ];
+      const fileToUpload =
+        excelMimes.includes(file.type)
+          ? new File([file], file.name, { type: 'application/octet-stream' })
+          : file;
+
       const { data, error } = await supabase.storage
         .from(bucket)
-        .upload(path, file, {
+        .upload(path, fileToUpload, {
           cacheControl: '3600',
           upsert: false,
         });

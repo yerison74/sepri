@@ -84,14 +84,13 @@ export const procesarArchivoXml = async (file: File): Promise<{
                 continue;
               }
               
-              // El campo 'id_obra' es el identificador principal
-              // Buscar si ya existe una obra con ese id_obra
+              // En la BD el identificador es la columna id (varchar), no id_obra
               console.log(`🔍 Buscando obra con ID: "${idObraNormalizado}"`);
               
               const { data: obrasExistentes, error: searchError } = await supabase
                 .from('obras')
                 .select('*')
-                .eq('id_obra', idObraNormalizado)
+                .eq('id', idObraNormalizado)
                 .limit(1);
 
               if (searchError) {
@@ -102,27 +101,20 @@ export const procesarArchivoXml = async (file: File): Promise<{
               const obraExistente = obrasExistentes && obrasExistentes.length > 0 ? obrasExistentes[0] : null;
               
               if (obraExistente) {
-                // Actualizar obra existente
                 console.log(`✅ ACTUALIZANDO obra con ID "${idObraNormalizado}" (ID en BD: ${obraExistente.id})`);
-                // Asegurar que id_obra esté normalizado
-                const obraParaActualizar = {
-                  ...Object.fromEntries(
-                    Object.entries(obra).filter(([_, v]) => v !== undefined)
-                  ),
-                  id_obra: idObraNormalizado
-                } as Partial<Omit<Obra, 'id' | 'created_at' | 'updated_at'>>;
-                await obrasService.actualizarObra(obraExistente.id, obraParaActualizar);
+                const { id_obra: _, ...rest } = obra;
+                const obraParaActualizar = Object.fromEntries(
+                  Object.entries(rest).filter(([k, v]) => v !== undefined && k !== 'id_obra')
+                ) as Partial<Omit<Obra, 'id' | 'created_at' | 'updated_at'>>;
+                await obrasService.actualizarObra(obraExistente.id as number | string, obraParaActualizar);
                 resultados.actualizadas++;
               } else {
-                // Crear nueva obra
                 console.log(`➕ CREANDO nueva obra con ID "${idObraNormalizado}"`);
-                // Asegurar que id_obra esté normalizado
+                const { id_obra: __, ...rest } = obra;
                 const obraParaCrear = {
-                  ...Object.fromEntries(
-                    Object.entries(obra).filter(([_, v]) => v !== undefined)
-                  ),
-                  id_obra: idObraNormalizado
-                } as Omit<Obra, 'id' | 'created_at' | 'updated_at'>;
+                  ...Object.fromEntries(Object.entries(rest).filter(([k, v]) => v !== undefined && k !== 'id_obra')),
+                  id: idObraNormalizado
+                };
                 await obrasService.crearObra(obraParaCrear);
                 resultados.creadas++;
               }
@@ -212,14 +204,13 @@ export const procesarArchivoExcel = async (file: File): Promise<{
               continue;
             }
             
-            // El campo 'id_obra' es el identificador principal
-            // Buscar si ya existe una obra con ese id_obra
+            // En la BD el identificador es la columna id (varchar), no id_obra
             console.log(`🔍 Buscando obra con ID: "${idObraNormalizado}"`);
             
             const { data: obrasExistentes, error: searchError } = await supabase
               .from('obras')
               .select('*')
-              .eq('id_obra', idObraNormalizado)
+              .eq('id', idObraNormalizado)
               .limit(1);
 
             if (searchError) {
@@ -230,27 +221,20 @@ export const procesarArchivoExcel = async (file: File): Promise<{
             const obraExistente = obrasExistentes && obrasExistentes.length > 0 ? obrasExistentes[0] : null;
             
             if (obraExistente) {
-              // Actualizar obra existente
               console.log(`✅ ACTUALIZANDO obra con ID "${idObraNormalizado}" (ID en BD: ${obraExistente.id})`);
-              // Asegurar que id_obra esté normalizado
-              const obraParaActualizar = {
-                ...Object.fromEntries(
-                  Object.entries(obra).filter(([_, v]) => v !== undefined)
-                ),
-                id_obra: idObraNormalizado
-              } as Partial<Omit<Obra, 'id' | 'created_at' | 'updated_at'>>;
-              await obrasService.actualizarObra(obraExistente.id, obraParaActualizar);
+              const { id_obra: _, ...rest } = obra;
+              const obraParaActualizar = Object.fromEntries(
+                Object.entries(rest).filter(([k, v]) => v !== undefined && k !== 'id_obra')
+              ) as Partial<Omit<Obra, 'id' | 'created_at' | 'updated_at'>>;
+              await obrasService.actualizarObra(obraExistente.id as number | string, obraParaActualizar);
               resultados.actualizadas++;
             } else {
-              // Crear nueva obra
               console.log(`➕ CREANDO nueva obra con ID "${idObraNormalizado}"`);
-              // Asegurar que id_obra esté normalizado
+              const { id_obra: __, ...rest } = obra;
               const obraParaCrear = {
-                ...Object.fromEntries(
-                  Object.entries(obra).filter(([_, v]) => v !== undefined)
-                ),
-                id_obra: idObraNormalizado
-              } as Omit<Obra, 'id' | 'created_at' | 'updated_at'>;
+                ...Object.fromEntries(Object.entries(rest).filter(([k, v]) => v !== undefined && k !== 'id_obra')),
+                id: idObraNormalizado
+              };
               await obrasService.crearObra(obraParaCrear);
               resultados.creadas++;
             }
