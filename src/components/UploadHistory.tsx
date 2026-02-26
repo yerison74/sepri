@@ -602,7 +602,7 @@ const TramiteHistory: React.FC<TramiteHistoryProps> = ({ soloLectura = false }) 
       
       // Si el navegador bloquea la ventana emergente, mostrar mensaje
       if (!newWindow || newWindow.closed || typeof newWindow.closed === 'undefined') {
-        setError('No se pudo abrir el PDF. Por favor, verifica que tu navegador permita ventanas emergentes.');
+       
       }
     } catch (error: any) {
       console.error('Error al abrir PDF:', error);
