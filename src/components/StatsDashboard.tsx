@@ -70,9 +70,9 @@ const StatsDashboard: React.FC<StatsDashboardProps> = ({ refreshTrigger, onEstad
   // Calcular total para porcentajes
   const totalEstados = estadoData.reduce((sum: number, item: any) => sum + item.cantidad, 0);
 
-  // Calcular máximo para normalizar barras por estado
+  // Calcular máximo para normalizar barras por estado (evitar 0 para no dividir por cero)
   const maxEstadoCantidad = estadoData.length > 0
-    ? Math.max(...estadoData.map((item: any) => item.cantidad))
+    ? Math.max(1, ...estadoData.map((item: any) => Number(item.cantidad) || 0))
     : 1;
 
   // Preparar fondo para gráfico de pastel (conic-gradient) basado en estados
@@ -232,29 +232,48 @@ const StatsDashboard: React.FC<StatsDashboardProps> = ({ refreshTrigger, onEstad
             Distribución por Estado (Barras)
           </h3>
           {estadoData.length > 0 ? (
-            <div className="h-64 flex items-end justify-between gap-3">
-              {estadoData.map((item: any, index: number) => {
-                const altura = maxEstadoCantidad > 0 ? (item.cantidad / maxEstadoCantidad) * 100 : 0;
-                const porcentaje = totalEstados > 0 ? (item.cantidad / totalEstados) * 100 : 0;
-                return (
-                  <div key={index} className="flex flex-col items-center flex-1 min-w-[40px]">
-                    <div className="flex flex-col justify-end h-full w-full">
-                      <div className="bg-gray-200 rounded-t-md rounded-b-md flex-1 flex items-end justify-center">
+            <div className="flex flex-col">
+              <div
+                className="flex items-end justify-around gap-2 pb-2"
+                style={{ minHeight: '200px' }}
+              >
+                {estadoData.map((item: any, index: number) => {
+                  const cantidad = Number(item.cantidad) || 0;
+                  const alturaPct = maxEstadoCantidad > 0 ? (cantidad / maxEstadoCantidad) * 100 : 0;
+                  const porcentaje = totalEstados > 0 ? (cantidad / totalEstados) * 100 : 0;
+                  const barHeight = Math.max(alturaPct, cantidad > 0 ? 4 : 0);
+                  return (
+                    <div
+                      key={`${item.estado}-${index}`}
+                      className="flex flex-col items-center flex-1 min-w-0 max-w-[120px]"
+                    >
+                      <div
+                        className="w-full h-[200px] flex flex-col justify-end items-center"
+                        title={`${item.estado}: ${cantidad} (${porcentaje.toFixed(1)}%)`}
+                      >
                         <div
-                          className="w-3 sm:w-4 rounded-t-md transition-all duration-300"
-                          style={{ height: `${altura}%`, backgroundColor: item.color }}
+                          role="button"
+                          tabIndex={0}
+                          onClick={() => onEstadoClick && onEstadoClick(item.estado)}
+                          onKeyDown={(e) => e.key === 'Enter' && onEstadoClick && onEstadoClick(item.estado)}
+                          className="w-full min-w-[24px] max-w-[48px] rounded-t transition-all duration-300 hover:opacity-90 cursor-pointer"
+                          style={{
+                            height: `${barHeight}%`,
+                            backgroundColor: item.color,
+                            minHeight: cantidad > 0 ? 6 : 0,
+                          }}
                         />
                       </div>
+                      <span className="mt-2 text-xs font-medium text-center break-words line-clamp-2">
+                        {item.estado}
+                      </span>
+                      <span className="text-[11px] text-gray-600 font-semibold mt-0.5">
+                        {cantidad} ({porcentaje.toFixed(1)}%)
+                      </span>
                     </div>
-                    <span className="mt-2 text-xs font-medium text-center break-words">
-                      {item.estado}
-                    </span>
-                    <span className="text-[11px] text-gray-600 font-semibold">
-                      {item.cantidad} ({porcentaje.toFixed(1)}%)
-                    </span>
-                  </div>
-                );
-              })}
+                  );
+                })}
+              </div>
             </div>
           ) : (
             <div className="flex justify-center items-center h-48">

@@ -118,49 +118,44 @@ export const obrasService = {
   },
 
   /**
-   * Obtener una obra por cualquier identificador
-   * Busca en: id (numérico), codigo (0000-0000), o cualquier campo
-   * NOTA: id_obra NO existe en la BD de Supabase
-   * - "codigo" = formato 0000-0000 (almacenado en codigo)
-   * - "id" en la API probablemente se refiere al codigo o al id numérico
+   * Obtener una obra por cualquier identificador.
+   * En la BD, id es varchar (ej. OB-0000). Solo búsqueda por string; no usar id numérico.
    */
   obtenerObraPorIdObra: async (idObra: string): Promise<Obra | null> => {
+    const isNotFound = (err: any) =>
+      err?.code === 'PGRST116' || err?.status === 406 || (err?.message && String(err.message).includes('406'));
+
     try {
       const idObraNormalizado = idObra.trim().toUpperCase();
       const searchPattern = `%${idObraNormalizado}%`;
-      
-      // Verificar si es numérico (ID interno de Supabase)
-      const isNumeric = /^\d+$/.test(idObraNormalizado);
-      
-      // Intentar búsqueda exacta primero
-      // 1. Por codigo (0000-0000) - esto es "codigo" en la API
+
+      // 1. Búsqueda exacta por id (varchar: OB-0000, MT-0000, 0000, etc.)
       let { data, error } = await supabase
         .from('obras')
         .select('*')
-        .eq('codigo', idObraNormalizado)
-        .single();
+        .eq('id', idObraNormalizado)
+        .maybeSingle();
 
-      // 2. Si es numérico, buscar por ID interno de Supabase
-      if (error && error.code === 'PGRST116' && isNumeric) {
-        const idNumerico = parseInt(idObraNormalizado);
-        const result = await supabase
+      if (!error && data) return data;
+
+      // 2. Si no hay resultado, buscar por codigo (siempre como string)
+      if (isNotFound(error)) {
+        const res = await supabase
           .from('obras')
           .select('*')
-          .eq('id', idNumerico)
-          .single();
-        
-        if (!result.error && result.data) {
-          return result.data;
-        }
-        error = result.error;
+          .eq('codigo', idObraNormalizado)
+          .maybeSingle();
+        if (!res.error && res.data) return res.data;
+        error = res.error;
       }
 
-      // 3. Si aún no encuentra, buscar en todos los campos con LIKE (sin id_obra)
-      if (error && error.code === 'PGRST116') {
+      // 3. Búsqueda parcial por varios campos (evita .single() que devuelve 406 sin filas)
+      if (isNotFound(error)) {
         const { data: searchData, error: searchError } = await supabase
           .from('obras')
           .select('*')
           .or(
+            `id.ilike.${searchPattern},` +
             `codigo.ilike.${searchPattern},` +
             `nombre.ilike.${searchPattern},` +
             `estado.ilike.${searchPattern},` +
@@ -169,28 +164,14 @@ export const obrasService = {
             `municipio.ilike.${searchPattern}`
           )
           .limit(1);
-        
-        if (!searchError && searchData && searchData.length > 0) {
-          return searchData[0];
-        }
+        if (!searchError && searchData && searchData.length > 0) return searchData[0];
       }
 
-      // Si hay error y no es "no encontrado", lanzar error
-      if (error) {
-        // Si no se encuentra, retornar null
-        if (error.code === 'PGRST116') {
-          return null;
-        }
-        throw error;
-      }
-
-      return data;
+      if (error && !isNotFound(error)) throw error;
+      return null;
     } catch (error: any) {
       console.error('Error al obtener obra por id_obra:', error);
-      // Si no se encuentra, retornar null en lugar de lanzar error
-      if (error.code === 'PGRST116') {
-        return null;
-      }
+      if (isNotFound(error)) return null;
       throw new Error(error.message || 'Error al obtener obra');
     }
   },
@@ -250,14 +231,16 @@ export const obrasService = {
   /**
    * Actualizar una obra (id puede ser number o string según el esquema de obras).
    * Trunca strings a 20 caracteres para no exceder varchar(20) si aplica.
+   * No envía id_obra: la tabla obras no tiene esa columna (el identificador es id).
    */
   actualizarObra: async (id: number | string, updates: Partial<Obra>): Promise<Obra> => {
     try {
       const maxLen = 20;
       const truncar = (v: unknown): unknown =>
         typeof v === 'string' && v.length > maxLen ? v.slice(0, maxLen) : v;
+      const { id_obra: _omit, ...rest } = updates as Partial<Obra> & { id_obra?: string };
       const payload = Object.fromEntries(
-        Object.entries(updates).map(([k, v]) => [k, truncar(v)])
+        Object.entries(rest).map(([k, v]) => [k, truncar(v)])
       );
 
       const { data, error } = await supabase
