@@ -6,7 +6,7 @@ import {
   Visibility,
   MoreVert
 } from '@mui/icons-material';
-import { mantenimientosAPI, Obra } from '../services/api';
+import { mantenimientosAPI, statsAPI, Obra } from '../services/api';
 import ObraMap from './ObraMap';
 
 interface ObrasTableProps {
@@ -28,10 +28,27 @@ const ObrasTable: React.FC<ObrasTableProps> = ({ refreshTrigger }) => {
   const [showDetails, setShowDetails] = useState(false);
   const [anchorEl, setAnchorEl] = useState<null | HTMLElement>(null);
   const [selectedId, setSelectedId] = useState<number | null>(null);
+  const [estadosDisponibles, setEstadosDisponibles] = useState<string[]>([]);
 
   useEffect(() => {
     loadObras();
   }, [page, rowsPerPage, refreshTrigger]);
+
+  // Cargar lista de estados desde la base de datos (para filtros)
+  useEffect(() => {
+    const loadEstados = async () => {
+      try {
+        const res = await statsAPI.obtenerResumenDashboard();
+        const porEstado = res?.data?.data?.estadisticas?.porEstado;
+        if (Array.isArray(porEstado)) {
+          setEstadosDisponibles(porEstado.map((e: { estado: string }) => e.estado));
+        }
+      } catch {
+        setEstadosDisponibles([]);
+      }
+    };
+    loadEstados();
+  }, [refreshTrigger]);
 
   // Escuchar eventos desde el Dashboard para aplicar filtros y cargar
   useEffect(() => {
@@ -149,20 +166,10 @@ const ObrasTable: React.FC<ObrasTableProps> = ({ refreshTrigger }) => {
     );
   }
 
-  const estados = [
-    'INAUGURADA',
-    'TERMINADA',
-    'DETENIDA',
-    'NO INICIADA',
-    'ACTIVA',
-    'PRELIMINARES',
-    'INTERVENIDA MANTENIMIENTO',
-    'NO ESPECIFICADO'
-  ];
-
   const totalPages = Math.ceil(totalCount / rowsPerPage);
   const startRow = page * rowsPerPage;
   const endRow = Math.min(startRow + rowsPerPage, totalCount);
+  const estados: string[] = estadosDisponibles;
 
   return (
     <div className="p-0">

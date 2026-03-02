@@ -118,49 +118,44 @@ export const obrasService = {
   },
 
   /**
-   * Obtener una obra por cualquier identificador
-   * Busca en: id (numérico), codigo (0000-0000), o cualquier campo
-   * NOTA: id_obra NO existe en la BD de Supabase
-   * - "codigo" = formato 0000-0000 (almacenado en codigo)
-   * - "id" en la API probablemente se refiere al codigo o al id numérico
+   * Obtener una obra por cualquier identificador.
+   * En la BD, id es varchar (ej. OB-0000). Solo búsqueda por string; no usar id numérico.
    */
   obtenerObraPorIdObra: async (idObra: string): Promise<Obra | null> => {
+    const isNotFound = (err: any) =>
+      err?.code === 'PGRST116' || err?.status === 406 || (err?.message && String(err.message).includes('406'));
+
     try {
       const idObraNormalizado = idObra.trim().toUpperCase();
       const searchPattern = `%${idObraNormalizado}%`;
-      
-      // Verificar si es numérico (ID interno de Supabase)
-      const isNumeric = /^\d+$/.test(idObraNormalizado);
-      
-      // Intentar búsqueda exacta primero
-      // 1. Por codigo (0000-0000) - esto es "codigo" en la API
+
+      // 1. Búsqueda exacta por id (varchar: OB-0000, MT-0000, 0000, etc.)
       let { data, error } = await supabase
         .from('obras')
         .select('*')
-        .eq('codigo', idObraNormalizado)
-        .single();
+        .eq('id', idObraNormalizado)
+        .maybeSingle();
 
-      // 2. Si es numérico, buscar por ID interno de Supabase
-      if (error && error.code === 'PGRST116' && isNumeric) {
-        const idNumerico = parseInt(idObraNormalizado);
-        const result = await supabase
+      if (!error && data) return data;
+
+      // 2. Si no hay resultado, buscar por codigo (siempre como string)
+      if (isNotFound(error)) {
+        const res = await supabase
           .from('obras')
           .select('*')
-          .eq('id', idNumerico)
-          .single();
-        
-        if (!result.error && result.data) {
-          return result.data;
-        }
-        error = result.error;
+          .eq('codigo', idObraNormalizado)
+          .maybeSingle();
+        if (!res.error && res.data) return res.data;
+        error = res.error;
       }
 
-      // 3. Si aún no encuentra, buscar en todos los campos con LIKE (sin id_obra)
-      if (error && error.code === 'PGRST116') {
+      // 3. Búsqueda parcial por varios campos (evita .single() que devuelve 406 sin filas)
+      if (isNotFound(error)) {
         const { data: searchData, error: searchError } = await supabase
           .from('obras')
           .select('*')
           .or(
+            `id.ilike.${searchPattern},` +
             `codigo.ilike.${searchPattern},` +
             `nombre.ilike.${searchPattern},` +
             `estado.ilike.${searchPattern},` +
@@ -169,28 +164,14 @@ export const obrasService = {
             `municipio.ilike.${searchPattern}`
           )
           .limit(1);
-        
-        if (!searchError && searchData && searchData.length > 0) {
-          return searchData[0];
-        }
+        if (!searchError && searchData && searchData.length > 0) return searchData[0];
       }
 
-      // Si hay error y no es "no encontrado", lanzar error
-      if (error) {
-        // Si no se encuentra, retornar null
-        if (error.code === 'PGRST116') {
-          return null;
-        }
-        throw error;
-      }
-
-      return data;
+      if (error && !isNotFound(error)) throw error;
+      return null;
     } catch (error: any) {
       console.error('Error al obtener obra por id_obra:', error);
-      // Si no se encuentra, retornar null en lugar de lanzar error
-      if (error.code === 'PGRST116') {
-        return null;
-      }
+      if (isNotFound(error)) return null;
       throw new Error(error.message || 'Error al obtener obra');
     }
   },
@@ -218,13 +199,22 @@ export const obrasService = {
 
 
   /**
-   * Crear una nueva obra
+   * Crear una nueva obra.
+   * Si la tabla usa id varchar (ej. OB-0000), pasar obra con id incluido.
+   * Trunca strings que excedan límites típicos de la BD (varchar(20) etc.) para evitar error 22001.
    */
-  crearObra: async (obra: Omit<Obra, 'id' | 'created_at' | 'updated_at'>): Promise<Obra> => {
+  crearObra: async (obra: (Omit<Obra, 'id' | 'created_at' | 'updated_at'> & { id?: string }) | Record<string, unknown>): Promise<Obra> => {
     try {
+      const maxLen = 20;
+      const truncar = (v: unknown): unknown =>
+        typeof v === 'string' && v.length > maxLen ? v.slice(0, maxLen) : v;
+      const payload = Object.fromEntries(
+        Object.entries(obra).map(([k, v]) => [k, truncar(v)])
+      );
+
       const { data, error } = await supabase
         .from('obras')
-        .insert([obra])
+        .insert([payload])
         .select()
         .single();
 
@@ -239,13 +229,23 @@ export const obrasService = {
   },
 
   /**
-   * Actualizar una obra
+   * Actualizar una obra (id puede ser number o string según el esquema de obras).
+   * Trunca strings a 20 caracteres para no exceder varchar(20) si aplica.
+   * No envía id_obra: la tabla obras no tiene esa columna (el identificador es id).
    */
-  actualizarObra: async (id: number, updates: Partial<Obra>): Promise<Obra> => {
+  actualizarObra: async (id: number | string, updates: Partial<Obra>): Promise<Obra> => {
     try {
+      const maxLen = 20;
+      const truncar = (v: unknown): unknown =>
+        typeof v === 'string' && v.length > maxLen ? v.slice(0, maxLen) : v;
+      const { id_obra: _omit, ...rest } = updates as Partial<Obra> & { id_obra?: string };
+      const payload = Object.fromEntries(
+        Object.entries(rest).map(([k, v]) => [k, truncar(v)])
+      );
+
       const { data, error } = await supabase
         .from('obras')
-        .update(updates)
+        .update(payload)
         .eq('id', id)
         .select()
         .single();
@@ -287,37 +287,21 @@ export const obrasService = {
         .from('obras')
         .select('*', { count: 'exact', head: true });
 
-      // Obtener obras por estado (estados específicos del dashboard)
-      const estadosEspecificos = ['ACTIVA', 'INAUGURADA', 'TERMINADA', 'DETENIDA', 'PRELIMINARES', 'INTERVENIDA MANTENIMIENTO', 'NO ESPECIFICADO'];
-      const porEstado: Array<{ estado: string; cantidad: number }> = [];
-
-      for (const estado of estadosEspecificos) {
-        const { count } = await supabase
-          .from('obras')
-          .select('*', { count: 'exact', head: true })
-          .eq('estado', estado);
-        porEstado.push({
-          estado: estado,
-          cantidad: count || 0,
-        });
-      }
-
-      // Obtener todas las obras para contar otros estados
+      // Obtener obras por estado: solo estados que existen en la base de datos
       const { data: todasLasObras } = await supabase
         .from('obras')
         .select('estado');
 
-      // Agregar estados que no están en la lista específica
-      if (todasLasObras) {
-        const estadosEncontrados = new Set(todasLasObras.map(o => o.estado));
-        const estadosYaIncluidos = new Set(estadosEspecificos);
-        
-        estadosEncontrados.forEach(estado => {
-          if (!estadosYaIncluidos.has(estado) && estado) {
-            const cantidad = todasLasObras.filter(o => o.estado === estado).length;
-            porEstado.push({ estado, cantidad });
-          }
+      const porEstado: Array<{ estado: string; cantidad: number }> = [];
+      if (todasLasObras && todasLasObras.length > 0) {
+        const conteoPorEstado = new Map<string, number>();
+        todasLasObras.forEach((o: { estado?: string | null }) => {
+          const estado = (o.estado || '').trim() || 'NO ESPECIFICADO';
+          conteoPorEstado.set(estado, (conteoPorEstado.get(estado) || 0) + 1);
         });
+        Array.from(conteoPorEstado.entries())
+          .sort((a, b) => b[1] - a[1])
+          .forEach(([estado, cantidad]) => porEstado.push({ estado, cantidad }));
       }
 
       // Obtener obras próximas a inaugurar (próximos 30 días)
@@ -740,7 +724,7 @@ export const historialUploadsService = {
         if (error.message?.includes('Could not find the table') || 
             error.message?.includes('relation') ||
             error.message?.includes('does not exist')) {
-          const tableError = new Error('Tabla historial_uploads no encontrada. Ejecuta el script SQL en Supabase.');
+          const tableError = new Error('Tabla historial_uploads no encontrada. Ejecuta el script supabase-historial-uploads.sql en Supabase.');
           (tableError as any).isTableNotFound = true;
           throw tableError;
         }
@@ -766,9 +750,19 @@ export const storageService = {
    */
   subirArchivo: async (file: File, bucket: string, path: string): Promise<string> => {
     try {
+      // Algunos buckets no permiten MIME de Excel; subir como octet-stream para que acepte
+      const excelMimes = [
+        'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        'application/vnd.ms-excel',
+      ];
+      const fileToUpload =
+        excelMimes.includes(file.type)
+          ? new File([file], file.name, { type: 'application/octet-stream' })
+          : file;
+
       const { data, error } = await supabase.storage
         .from(bucket)
-        .upload(path, file, {
+        .upload(path, fileToUpload, {
           cacheControl: '3600',
           upsert: false,
         });
