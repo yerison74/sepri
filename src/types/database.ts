@@ -4,10 +4,17 @@
  */
 
 export interface Obra {
-  id: number; // ID auto-incrementado de Supabase (interno del sistema)
-  id_obra?: string | null; // ID de la obra en la API (formato: OB-0000 o MT-0000) - NOTA: En la API esto se llama "id"
-  codigo?: string | null; // Código de contrato (formato: 0000-0000) - NOTA: En la API esto se llama "codigo"
+  /** Identificador de la obra en Supabase (formato: OB-0000 o MT-0000, generado por el sistema). */
+  id: string;
+  /** ID legado de la obra (ej. OB-0000 o MT-0000) usado en algunos flujos antiguos. */
+  id_obra?: string | null;
+  /** Código interno o identificador externo usado para actualizar la obra (ej. 0000-0000). */
+  codigo?: string | null;
+  /** Código de contrato (máx. 9 caracteres, guía: xxxx-xxxx). */
+  contrato?: string | null;
   nombre: string;
+  /** Tipo de obra: por ejemplo "Construccion" o "Mantenimiento". */
+  tipo_obra?: string | null;
   estado: string;
   fecha_inicio?: string | null;
   fecha_fin_estimada?: string | null;
@@ -29,7 +36,10 @@ export interface Obra {
 
 export interface HistorialEstado {
   id: number;
-  obra_id: number;
+  /** Código de la obra (se usa en lugar de obra_id para trazabilidad). */
+  codigo?: string | null;
+  /** Identificador interno legado (si existe en la BD). */
+  obra_id?: number | null;
   estado_anterior?: string | null;
   estado_nuevo: string;
   fecha_cambio?: string | null;

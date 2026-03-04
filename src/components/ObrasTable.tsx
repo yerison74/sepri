@@ -130,7 +130,7 @@ const ObrasTable: React.FC<ObrasTableProps> = ({ refreshTrigger }) => {
     handleMenuClose();
   };
 
-  const handleDelete = async (id: number) => {
+  const handleDelete = async (id: string) => {
     if (window.confirm('¿Estás seguro de que quieres eliminar esta obra?')) {
       try {
         await mantenimientosAPI.eliminarObra(id);
