@@ -203,7 +203,7 @@ export const obrasService = {
    * Si la tabla usa id varchar (ej. OB-0000), pasar obra con id incluido.
    * Trunca strings que excedan límites típicos de la BD (varchar(20) etc.) para evitar error 22001.
    */
-  crearObra: async (obra: (Omit<Obra, 'id' | 'created_at' | 'updated_at'> & { id?: string }) | Record<string, unknown>): Promise<Obra> => {
+  crearObra: async (obra: (Omit<Obra, 'created_at' | 'updated_at'> & { id?: string }) | Record<string, unknown>): Promise<Obra> => {
     try {
       const maxLen = 20;
       const truncar = (v: unknown): unknown =>
@@ -231,16 +231,14 @@ export const obrasService = {
   /**
    * Actualizar una obra (id puede ser number o string según el esquema de obras).
    * Trunca strings a 20 caracteres para no exceder varchar(20) si aplica.
-   * No envía id_obra: la tabla obras no tiene esa columna (el identificador es id).
    */
   actualizarObra: async (id: number | string, updates: Partial<Obra>): Promise<Obra> => {
     try {
       const maxLen = 20;
       const truncar = (v: unknown): unknown =>
         typeof v === 'string' && v.length > maxLen ? v.slice(0, maxLen) : v;
-      const { id_obra: _omit, ...rest } = updates as Partial<Obra> & { id_obra?: string };
       const payload = Object.fromEntries(
-        Object.entries(rest).map(([k, v]) => [k, truncar(v)])
+        Object.entries(updates).map(([k, v]) => [k, truncar(v)])
       );
 
       const { data, error } = await supabase
@@ -261,9 +259,38 @@ export const obrasService = {
   },
 
   /**
-   * Eliminar una obra
+   * Actualizar una obra usando su código (campo codigo).
    */
-  eliminarObra: async (id: number): Promise<void> => {
+  actualizarObraPorCodigo: async (codigo: string, updates: Partial<Obra>): Promise<Obra> => {
+    try {
+      const maxLen = 20;
+      const truncar = (v: unknown): unknown =>
+        typeof v === 'string' && v.length > maxLen ? v.slice(0, maxLen) : v;
+      const payload = Object.fromEntries(
+        Object.entries(updates).map(([k, v]) => [k, truncar(v)])
+      );
+
+      const { data, error } = await supabase
+        .from('obras')
+        .update(payload)
+        .eq('codigo', codigo)
+        .select()
+        .maybeSingle();
+
+      if (error) throw error;
+      if (!data) throw new Error('Obra no encontrada para el código especificado');
+
+      return data;
+    } catch (error: any) {
+      console.error('Error al actualizar obra por código:', error);
+      throw new Error(error.message || 'Error al actualizar obra por código');
+    }
+  },
+
+  /**
+   * Eliminar una obra por su id (string o numérico).
+   */
+  eliminarObra: async (id: number | string): Promise<void> => {
     try {
       const { error } = await supabase
         .from('obras')

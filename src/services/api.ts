@@ -45,7 +45,7 @@ export const mantenimientosAPI = {
     }
   },
 
-  eliminarObra: async (id: number) => {
+  eliminarObra: async (id: string) => {
     try {
       await obrasService.eliminarObra(id);
       return {

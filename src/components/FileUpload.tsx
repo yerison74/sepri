@@ -83,7 +83,8 @@ const FileUpload: React.FC<FileUploadProps> = ({ onUploadComplete, onError, solo
   const [loadingObra, setLoadingObra] = useState(false);
   const [savingObra, setSavingObra] = useState(false);
   const [obraMessage, setObraMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
-  const [obraActualId, setObraActualId] = useState<number | null>(null);
+  // ID actual de la obra seleccionada (en la BD es string: OB-0000, MT-0000, etc.)
+  const [obraActualId, setObraActualId] = useState<string | null>(null);
 
   const resetMessages = () => {
     setError(null);
