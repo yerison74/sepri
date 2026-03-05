@@ -222,15 +222,18 @@ export const uploadAPI = {
   },
 
   descargarPlantilla: () => {
-    // Generar plantilla XML vacía con todas las columnas requeridas
+    // Generar plantilla XML vacía con todas las columnas necesarias para la tabla obras.
+    // El campo id se genera automáticamente según tipo_obra (OB-xxxx o MT-xxxx), por eso no se incluye aquí.
     const xmlTemplate = `<?xml version="1.0" encoding="UTF-8"?>
 <mantenimientos>
   <obra>
     <!-- Campos obligatorios -->
-    <!-- id_obra: ID de la obra (formato: OB-0000 o MT-0000) - OBLIGATORIO -->
-    <id_obra>OB-0000</id_obra>
-    <!-- codigo: Código de contrato (formato: número con guion, ej: 123-456) -->
-    <codigo>123-456</codigo>
+    <!-- codigo: identificador único de la obra (ej: 0001-0001). Se usará para crear/actualizar -->
+    <codigo>0001-0001</codigo>
+    <!-- contrato: Código de contrato (máx. 9 caracteres, guía: xxxx-xxxx) -->
+    <contrato>1234-5678</contrato>
+    <!-- tipo_obra: Construccion o Mantenimiento (controla el prefijo del ID OB/MT) -->
+    <tipo_obra>Construccion</tipo_obra>
     <nombre>Nombre de la obra</nombre>
     <estado>ACTIVA</estado>
     
@@ -265,12 +268,13 @@ export const uploadAPI = {
   },
 
   descargarPlantillaExcel: () => {
-    // Generar plantilla Excel vacía con todas las columnas requeridas
-    // Orden: Obligatorios primero, luego información general, ubicación, fechas, observaciones
+    // Generar plantilla Excel vacía con todas las columnas necesarias para la tabla obras.
+    // Orden: Obligatorios primero, luego información general, ubicación, fechas, observaciones.
     const headers = [
       // Campos obligatorios
-      'id_obra', // ID de la obra (OB-0000, MT-0000) - OBLIGATORIO
-      'codigo', // Código de contrato (número con guion, ej: 123-456)
+      'codigo',       // Identificador único de la obra (ej: 0001-0001)
+      'contrato',     // Código de contrato (xxxx-xxxx)
+      'tipo_obra',    // Construccion o Mantenimiento
       'nombre',
       'estado',
       
@@ -300,8 +304,9 @@ export const uploadAPI = {
     // Crear hoja con encabezados y una fila de ejemplo con valores de muestra
     const ejemplo = [
       // Campos obligatorios
-      'OB-0000', // id_obra (OB-0000 o MT-0000) - OBLIGATORIO
-      '123-456', // codigo (número con guion)
+      '0001-0001',      // codigo
+      '1234-5678',      // contrato
+      'Construccion',   // tipo_obra
       'Nombre de la obra',
       'ACTIVA',
       
@@ -333,6 +338,8 @@ export const uploadAPI = {
     // Ajustar ancho de columnas para mejor visualización
     const colWidths = [
       { wch: 12 },  // codigo
+      { wch: 12 },  // contrato
+      { wch: 14 },  // tipo_obra
       { wch: 30 },  // nombre
       { wch: 15 },  // estado
       { wch: 30 },  // responsable

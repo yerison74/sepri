@@ -182,7 +182,7 @@ const ObrasTable: React.FC<ObrasTableProps> = ({ refreshTrigger }) => {
         <div className="flex flex-wrap gap-3 items-center">
           <input
             type="text"
-            placeholder="Buscar por ID (OB-0000, MT-0000 o número interno), código (0000-0000), nombre, estado, responsable, provincia, municipio, nivel..."
+            placeholder="Buscar por ID, contrato, código, responsable o nombre..."
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             onKeyPress={(e) => e.key === 'Enter' && handleSearch()}

@@ -33,8 +33,9 @@ export const obrasService = {
         query = query.eq('estado', filtros.estado);
       }
 
-      if (filtros.responsable) {
-        query = query.eq('responsable', filtros.responsable);
+      if (filtros.responsable && filtros.responsable.trim()) {
+        const term = filtros.responsable.trim().replace(/'/g, "''");
+        query = query.ilike('responsable', `%${term}%`);
       }
 
       if (filtros.provincia) {
@@ -73,14 +74,14 @@ export const obrasService = {
           searchConditions.push(`id.eq.${searchTerm}`);
         }
         
-        // Buscar en todos los campos de texto que existen en la BD
-        // NOTA: El ID del sistema (OB-0000, MT-0000) se busca en el campo "codigo"
-        // ya que la columna id_obra no existe en la base de datos actual
+        // Buscar en todos los campos: id, contrato, codigo, responsable, nombre, etc.
         searchConditions.push(
-          `codigo.ilike.${searchPattern}`, // Código (formato 0000-0000) - también contiene IDs del sistema (OB-0000, MT-0000)
+          `id.ilike.${searchPattern}`,       // ID sistema (OB-0000, MT-0000)
+          `contrato.ilike.${searchPattern}`, // Contrato (ej. xxxx-xxxx)
+          `codigo.ilike.${searchPattern}`,   // Código (0000-0000)
           `nombre.ilike.${searchPattern}`,
-          `estado.ilike.${searchPattern}`,
           `responsable.ilike.${searchPattern}`,
+          `estado.ilike.${searchPattern}`,
           `descripcion.ilike.${searchPattern}`,
           `provincia.ilike.${searchPattern}`,
           `municipio.ilike.${searchPattern}`,
@@ -149,17 +150,18 @@ export const obrasService = {
         error = res.error;
       }
 
-      // 3. Búsqueda parcial por varios campos (evita .single() que devuelve 406 sin filas)
+      // 3. Búsqueda parcial por id, contrato, codigo, responsable, nombre
       if (isNotFound(error)) {
         const { data: searchData, error: searchError } = await supabase
           .from('obras')
           .select('*')
           .or(
             `id.ilike.${searchPattern},` +
+            `contrato.ilike.${searchPattern},` +
             `codigo.ilike.${searchPattern},` +
             `nombre.ilike.${searchPattern},` +
-            `estado.ilike.${searchPattern},` +
             `responsable.ilike.${searchPattern},` +
+            `estado.ilike.${searchPattern},` +
             `provincia.ilike.${searchPattern},` +
             `municipio.ilike.${searchPattern}`
           )
@@ -203,13 +205,20 @@ export const obrasService = {
    * Si la tabla usa id varchar (ej. OB-0000), pasar obra con id incluido.
    * Trunca strings que excedan límites típicos de la BD (varchar(20) etc.) para evitar error 22001.
    */
-  crearObra: async (obra: (Omit<Obra, 'created_at' | 'updated_at'> & { id?: string }) | Record<string, unknown>): Promise<Obra> => {
+  crearObra: async (
+    obra:
+      | (Omit<Obra, 'created_at' | 'updated_at'> & { id?: string })
+      | Record<string, unknown>,
+  ): Promise<Obra> => {
     try {
       const maxLen = 20;
       const truncar = (v: unknown): unknown =>
         typeof v === 'string' && v.length > maxLen ? v.slice(0, maxLen) : v;
       const payload = Object.fromEntries(
-        Object.entries(obra).map(([k, v]) => [k, truncar(v)])
+        Object.entries(obra)
+          // id_obra es solo de compatibilidad en el frontend; NO existe en la tabla
+          .filter(([k]) => k !== 'id_obra')
+          .map(([k, v]) => [k, truncar(v)]),
       );
 
       const { data, error } = await supabase
@@ -238,7 +247,9 @@ export const obrasService = {
       const truncar = (v: unknown): unknown =>
         typeof v === 'string' && v.length > maxLen ? v.slice(0, maxLen) : v;
       const payload = Object.fromEntries(
-        Object.entries(updates).map(([k, v]) => [k, truncar(v)])
+        Object.entries(updates)
+          .filter(([k]) => k !== 'id_obra')
+          .map(([k, v]) => [k, truncar(v)]),
       );
 
       const { data, error } = await supabase
@@ -267,7 +278,9 @@ export const obrasService = {
       const truncar = (v: unknown): unknown =>
         typeof v === 'string' && v.length > maxLen ? v.slice(0, maxLen) : v;
       const payload = Object.fromEntries(
-        Object.entries(updates).map(([k, v]) => [k, truncar(v)])
+        Object.entries(updates)
+          .filter(([k]) => k !== 'id_obra')
+          .map(([k, v]) => [k, truncar(v)]),
       );
 
       const { data, error } = await supabase

@@ -28,15 +28,19 @@ const UploadInstructions: React.FC = () => {
           <TableChart className="text-[#42A5F5] mt-1" />
           <div>
             <div className="font-medium text-sm">Columnas requeridas:</div>
-            <div className="text-sm text-gray-600">codigo, nombre, estado, fecha_inicio, fecha_fin_estimada, responsable, descripcion</div>
+            <div className="text-sm text-gray-600">
+              codigo, contrato, tipo_obra, nombre, estado, fecha_inicio, fecha_fin_estimada, responsable, descripcion
+            </div>
           </div>
         </div>
         
         <div className="flex items-start gap-3">
           <CheckCircle className="text-green-500 mt-1" />
           <div>
-            <div className="font-medium text-sm">Estados válidos:</div>
-            <div className="text-sm text-gray-600">Pendiente, En Progreso, Completado, Cancelado, Pausado</div>
+            <div className="font-medium text-sm">Estados válidos recomendados:</div>
+            <div className="text-sm text-gray-600">
+              ACTIVA, INAUGURADA, TERMINADA, DETENIDA, PRELIMINARES, INTERVENIDA MANTENIMIENTO, NO ESPECIFICADO
+            </div>
           </div>
         </div>
         
@@ -45,6 +49,13 @@ const UploadInstructions: React.FC = () => {
           <div>
             <div className="font-medium text-sm">Formato de fechas:</div>
             <div className="text-sm text-gray-600">YYYY-MM-DD (ejemplo: 2024-01-15)</div>
+          </div>
+        </div>
+        <div className="flex items-start gap-3">
+          <Info className="text-blue-500 mt-1" />
+          <div>
+            <div className="font-medium text-sm">Valores para tipo_obra:</div>
+            <div className="text-sm text-gray-600">Construccion, Mantenimiento</div>
           </div>
         </div>
       </div>
