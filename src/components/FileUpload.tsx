@@ -60,7 +60,7 @@ const FileUpload: React.FC<FileUploadProps> = ({ onUploadComplete, onError, solo
 
   // Estado para el formulario de edición de obra
   const [obraForm, setObraForm] = useState<Partial<Obra>>({
-    id_obra: '',
+    contrato: '',
     codigo: '',
     nombre: '',
     estado: '',
@@ -288,7 +288,7 @@ const FileUpload: React.FC<FileUploadProps> = ({ onUploadComplete, onError, solo
       if (!obra) {
         setObraMessage({ type: 'error', text: `No se encontró una obra con el ID: ${idObraNormalizado}` });
         setObraForm({
-          id_obra: '',
+          contrato: '',
           codigo: '',
           nombre: '',
           estado: '',
@@ -313,7 +313,7 @@ const FileUpload: React.FC<FileUploadProps> = ({ onUploadComplete, onError, solo
 
       // Llenar el formulario con los datos de la obra
       setObraForm({
-        id_obra: obra.id_obra || '',
+        contrato: obra.contrato || '',
         codigo: obra.codigo || '',
         nombre: obra.nombre || '',
         estado: obra.estado || '',
@@ -354,28 +354,12 @@ const FileUpload: React.FC<FileUploadProps> = ({ onUploadComplete, onError, solo
       return;
     }
 
-    if (!obraForm.id_obra || obraForm.id_obra.trim() === '') {
-      setObraMessage({ type: 'error', text: 'El campo ID de Obra (OB-0000 o MT-0000) es obligatorio' });
-      return;
-    }
-
     try {
       setSavingObra(true);
       setObraMessage(null);
 
-      // Normalizar id_obra si está presente
-      let idObraNormalizado = obraForm.id_obra?.trim().toUpperCase();
-      if (idObraNormalizado) {
-        const idObraPattern = /^(OB|MT)-\d{4}$/;
-        if (!idObraPattern.test(idObraNormalizado)) {
-          setObraMessage({ type: 'error', text: 'El ID de obra debe tener el formato OB-0000 o MT-0000 (4 dígitos)' });
-          setSavingObra(false);
-          return;
-        }
-      }
-
       const updates: Partial<Obra> = {
-        id_obra: idObraNormalizado || undefined,
+        contrato: obraForm.contrato?.trim() || undefined,
         codigo: obraForm.codigo || undefined,
         nombre: obraForm.nombre,
         estado: obraForm.estado,
@@ -683,20 +667,17 @@ const FileUpload: React.FC<FileUploadProps> = ({ onUploadComplete, onError, solo
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-2">
-                      ID de Obra (OB-0000, MT-0000) <span className="text-red-500">*</span>
+                      Contrato
                     </label>
                     <input
                       type="text"
-                      value={obraForm.id_obra || ''}
-                      onChange={(e) => {
-                        const value = e.target.value.toUpperCase();
-                        handleObraFormChange('id_obra')({ target: { value } } as any);
-                      }}
-                      placeholder="OB-0000 o MT-0000"
-                      pattern="^(OB|MT)-\d{4}$"
-                      className="w-full px-4 py-2.5 border-2 border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-[#42A5F5] focus:border-[#42A5F5] transition-all font-mono"
+                      value={obraForm.contrato || ''}
+                      onChange={handleObraFormChange('contrato')}
+                      placeholder="Ej: 1234-5678 (opcional)"
+                      maxLength={9}
+                      className="w-full px-4 py-2.5 border-2 border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-[#42A5F5] focus:border-[#42A5F5] transition-all"
                     />
-                    <p className="text-xs text-gray-500 mt-1">Formato: OB-0000 o MT-0000 (4 dígitos)</p>
+                    <p className="text-xs text-gray-500 mt-1">Opcional. Guía: xxxx-xxxx (máx. 9 caracteres)</p>
                   </div>
 
                   <div>
