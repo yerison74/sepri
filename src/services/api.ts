@@ -1,5 +1,7 @@
 import axios, { AxiosInstance, AxiosResponse } from 'axios';
-import { obrasService, historialUploadsService, storageService, tramitesService } from './supabaseService';
+import { obrasService, historialUploadsService, storageService, tramitesService, notificacionesTiempoService } from './supabaseService';
+import { getDiasMaximosPorArea } from '../constants/procesos';
+import { mensajeNotificacionTiempo } from '../utils/notificacionesTiempo';
 import type { Obra, Tramite, MovimientoTramite } from '../types/database';
 import { 
   procesarArchivoXml, 
@@ -695,6 +697,68 @@ export const tramitesAPI = {
         },
       };
     }
+  },
+
+  /** Evalúa tiempos abiertos y crea notificaciones 50%, 70%, 100% para el área donde corre el proceso. */
+  evaluarNotificacionesTiempo: async (): Promise<void> => {
+    const MS_PER_DAY = 24 * 60 * 60 * 1000;
+    const openTiempos = await tramitesService.obtenerTiemposEnAreaAbiertos();
+    if (openTiempos.length === 0) return;
+    const tramiteIds = Array.from(new Set(openTiempos.map((t: { tramite_id: string }) => t.tramite_id)));
+    const tramites = await tramitesService.obtenerTramitesPorIds(tramiteIds);
+    const tramitesMap: Record<string, { titulo: string; proceso: string | null }> = {};
+    tramites.forEach((t) => { tramitesMap[t.id] = { titulo: t.titulo, proceso: t.proceso ?? null }; });
+    const ids = openTiempos.map((t: { id?: number }) => t.id).filter((id): id is number => id != null);
+    const yaEmitidas = await notificacionesTiempoService.obtenerYaEmitidasPorTiempoEnArea(ids);
+    const yaSet = new Set(yaEmitidas.map((e: { tiempo_en_area_id: number; porcentaje: number }) => `${e.tiempo_en_area_id}-${e.porcentaje}`));
+    const now = Date.now();
+    for (const row of openTiempos) {
+      const rowId = row.id;
+      if (rowId == null) continue;
+      const tramite = tramitesMap[row.tramite_id];
+      if (!tramite?.proceso) continue;
+      const maxDias = getDiasMaximosPorArea(tramite.proceso, row.area_nombre);
+      if (maxDias == null) continue;
+      const entradaMs = new Date(row.fecha_entrada).getTime();
+      const elapsedDays = (now - entradaMs) / MS_PER_DAY;
+      const pct = (elapsedDays / maxDias) * 100;
+      const endMs = entradaMs + maxDias * MS_PER_DAY;
+      const remainingMs = Math.max(0, endMs - now);
+      for (const threshold of [50, 70, 100] as const) {
+        if (pct >= threshold && !yaSet.has(`${rowId}-${threshold}`)) {
+          const mensaje = mensajeNotificacionTiempo(
+            threshold,
+            tramite.titulo,
+            threshold === 100 ? undefined : remainingMs
+          );
+          const inserted = await notificacionesTiempoService.insertar({
+            tiempo_en_area_id: rowId as number,
+            tramite_id: row.tramite_id,
+            tramite_titulo: tramite.titulo,
+            area_nombre: row.area_nombre,
+            porcentaje: threshold,
+            mensaje,
+          });
+          if (inserted) yaSet.add(`${rowId}-${threshold}`);
+        }
+      }
+    }
+  },
+
+  /** Notificaciones por tiempo (50/70/100%) para usuarios del área indicada. */
+  obtenerNotificacionesTiempo: async (areaNombre: string, usuarioId?: string) => {
+    try {
+      const data = usuarioId
+        ? await notificacionesTiempoService.obtenerNoLeidasPorAreaYUsuario(areaNombre, usuarioId)
+        : await notificacionesTiempoService.obtenerPorArea(areaNombre);
+      return { data: { data } } as AxiosResponse<{ data: import('../types/database').NotificacionTiempo[] }>;
+    } catch (error: any) {
+      return { data: { data: [] } } as unknown as AxiosResponse<{ data: import('../types/database').NotificacionTiempo[] }>;
+    }
+  },
+
+  marcarNotificacionTiempoLeida: async (notificacionId: number, usuarioId: string): Promise<void> => {
+    await notificacionesTiempoService.marcarLeida(notificacionId, usuarioId);
   },
 };
 
