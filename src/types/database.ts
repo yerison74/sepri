@@ -88,6 +88,18 @@ export interface TiempoEnArea {
   proceso_id: string;
 }
 
+/** Notificación cuando un trámite alcanza 50%, 70% o 100% del tiempo estimado en un área. */
+export interface NotificacionTiempo {
+  id: number;
+  tiempo_en_area_id: number;
+  tramite_id: string;
+  tramite_titulo: string;
+  area_nombre: string;
+  porcentaje: 50 | 70 | 100;
+  mensaje: string;
+  created_at: string;
+}
+
 export interface HistorialUpload {
   id: number;
   nombre_archivo: string;

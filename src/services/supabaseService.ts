@@ -4,6 +4,7 @@ import type {
   Tramite,
   MovimientoTramite,
   TiempoEnArea,
+  NotificacionTiempo,
   HistorialUpload,
   ObrasFilters,
   TramitesFilters,
@@ -721,6 +722,162 @@ export const tramitesService = {
       if (error?.code === '42P01') return [];
       console.warn('Error al obtener todos los tiempos en área:', error?.message);
       return [];
+    }
+  },
+
+  /** Registros de tiempo_en_area abiertos (sin fecha_salida) para evaluar notificaciones 50/70/100%. */
+  obtenerTiemposEnAreaAbiertos: async (): Promise<TiempoEnArea[]> => {
+    try {
+      const { data, error } = await supabase
+        .from('tiempo_en_area')
+        .select('*')
+        .is('fecha_salida', null)
+        .order('fecha_entrada', { ascending: true });
+      if (error) throw error;
+      return data || [];
+    } catch (error: any) {
+      if (error?.code === '42P01') return [];
+      console.warn('Error al obtener tiempos en área abiertos:', error?.message);
+      return [];
+    }
+  },
+
+  /** Obtener trámites por lista de IDs (solo campos necesarios para notificaciones). */
+  obtenerTramitesPorIds: async (ids: string[]): Promise<Pick<Tramite, 'id' | 'titulo' | 'proceso'>[]> => {
+    if (ids.length === 0) return [];
+    try {
+      const { data, error } = await supabase
+        .from('tramites')
+        .select('id, titulo, proceso')
+        .in('id', ids);
+      if (error) throw error;
+      return (data || []) as Pick<Tramite, 'id' | 'titulo' | 'proceso'>[];
+    } catch (error: any) {
+      if (error?.code === '42P01') return [];
+      return [];
+    }
+  },
+};
+
+// ============================================
+// SERVICIO DE NOTIFICACIONES POR TIEMPO (50%, 70%, 100%)
+// ============================================
+
+export const notificacionesTiempoService = {
+  /** Notificaciones para usuarios de un área (donde corre el tiempo del proceso). */
+  obtenerPorArea: async (areaNombre: string): Promise<NotificacionTiempo[]> => {
+    try {
+      const { data, error } = await supabase
+        .from('notificaciones_tiempo')
+        .select('*')
+        .eq('area_nombre', areaNombre)
+        .order('created_at', { ascending: false })
+        .limit(100);
+      if (error) throw error;
+      return data || [];
+    } catch (error: any) {
+      if (error?.code === '42P01') return [];
+      console.warn('Error al obtener notificaciones por área:', error?.message);
+      return [];
+    }
+  },
+
+  /** Notificaciones NO leídas para un usuario concreto de un área. */
+  obtenerNoLeidasPorAreaYUsuario: async (
+    areaNombre: string,
+    usuarioId: string
+  ): Promise<NotificacionTiempo[]> => {
+    try {
+      const [notifsRes, leidasRes] = await Promise.all([
+        supabase
+          .from('notificaciones_tiempo')
+          .select('*')
+          .eq('area_nombre', areaNombre)
+          .order('created_at', { ascending: false })
+          .limit(100),
+        supabase
+          .from('notificacion_leida')
+          .select('notificacion_id')
+          .eq('usuario_id', usuarioId),
+      ]);
+
+      const notifError = (notifsRes as any).error;
+      const leidasError = (leidasRes as any).error;
+      if (notifError) throw notifError;
+      if (leidasError) throw leidasError;
+
+      const notifs = (notifsRes as any).data as NotificacionTiempo[] | null;
+      const leidas = ((leidasRes as any).data as { notificacion_id: number }[] | null) ?? [];
+      const leidasSet = new Set(leidas.map((r) => r.notificacion_id));
+
+      return (notifs || []).filter((n) => !leidasSet.has(n.id));
+    } catch (error: any) {
+      if (error?.code === '42P01') return [];
+      console.warn('Error al obtener notificaciones no leídas:', error?.message);
+      return [];
+    }
+  },
+
+  /** Pares (tiempo_en_area_id, porcentaje) ya emitidos para no duplicar. */
+  obtenerYaEmitidasPorTiempoEnArea: async (
+    tiempoEnAreaIds: number[]
+  ): Promise<{ tiempo_en_area_id: number; porcentaje: number }[]> => {
+    if (tiempoEnAreaIds.length === 0) return [];
+    try {
+      const { data, error } = await supabase
+        .from('notificaciones_tiempo')
+        .select('tiempo_en_area_id, porcentaje')
+        .in('tiempo_en_area_id', tiempoEnAreaIds);
+      if (error) throw error;
+      return (data || []).map((r: any) => ({
+        tiempo_en_area_id: r.tiempo_en_area_id,
+        porcentaje: r.porcentaje,
+      }));
+    } catch (error: any) {
+      if (error?.code === '42P01') return [];
+      return [];
+    }
+  },
+
+  /** Insertar una notificación (evitar duplicados con unique en BD). */
+  insertar: async (payload: {
+    tiempo_en_area_id: number;
+    tramite_id: string;
+    tramite_titulo: string;
+    area_nombre: string;
+    porcentaje: 50 | 70 | 100;
+    mensaje: string;
+  }): Promise<NotificacionTiempo | null> => {
+    try {
+      const { data, error } = await supabase
+        .from('notificaciones_tiempo')
+        .insert(payload)
+        .select()
+        .single();
+      if (error) {
+        if (error.code === '23505') return null; // unique violation = ya existe
+        throw error;
+      }
+      return data;
+    } catch (error: any) {
+      console.warn('Error al insertar notificación tiempo:', error?.message);
+      return null;
+    }
+  },
+
+  /** Marca una notificación como leída para un usuario (tabla notificacion_leida). */
+  marcarLeida: async (notificacionId: number, usuarioId: string): Promise<void> => {
+    try {
+      const { error } = await supabase
+        .from('notificacion_leida')
+        .insert({
+          notificacion_id: notificacionId,
+          usuario_id: usuarioId,
+        });
+      if (error && error.code !== '23505') throw error;
+    } catch (error: any) {
+      if (error?.code === '42P01') return;
+      console.warn('Error al marcar notificación como leída:', error?.message);
     }
   },
 };

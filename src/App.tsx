@@ -13,6 +13,7 @@ import StatsDashboard from './components/StatsDashboard';
 import ObrasTable from './components/ObrasTable';
 import TramiteHistory from './components/UploadHistory';
 import Login from './components/Login';
+import NotificacionesTiempo from './components/NotificacionesTiempo';
 import { useAuth } from './context/AuthContext';
 import { TAB_PERMISOS } from './constants/permisos';
 import GestionUsuarios from './components/GestionUsuarios';
@@ -92,31 +93,38 @@ function App() {
 
   return (
     <div className="min-h-screen bg-gray-50">
-      <header className="bg-[#42A5F5] text-white shadow-md">
-        <div className="px-2 sm:px-3 md:px-4 py-2 sm:py-3">
-          <div className="flex items-center">
+      <header className="bg-gradient-to-r from-[#1976D2] to-[#42A5F5] text-white shadow-lg">
+        <div className="px-3 sm:px-4 md:px-6 py-3 sm:py-3.5">
+          <div className="flex items-center gap-3">
             {tramitesOnly ? (
-              <FollowTheSigns className="mr-2 sm:mr-3 text-xl sm:text-2xl" />
+              <FollowTheSigns className="shrink-0 text-2xl sm:text-3xl text-white/95" />
             ) : (
-              <Assignment className="mr-2 sm:mr-3 text-xl sm:text-2xl" />
+              <Assignment className="shrink-0 text-2xl sm:text-3xl text-white/95" />
             )}
-            <h1 className="text-base sm:text-lg md:text-xl font-semibold flex-grow">
+            <h1 className="text-base sm:text-lg md:text-xl font-semibold flex-grow text-white drop-shadow-sm">
               {tramitesOnly
                 ? 'Sistema de Seguimiento de Trámites'
                 : 'Seguimiento de Procesos Internos'}
             </h1>
-            <div className="flex items-center gap-2">
-              <span className="hidden sm:inline text-sm flex items-center gap-1">
-                <Person fontSize="small" />
-                {user.nombre} {user.apellido}
+            <div className="flex items-center gap-2 sm:gap-3">
+              {hasPermission('ver_tramites') && (
+                <NotificacionesTiempo
+                  areaUsuario={user?.area}
+                  usuarioId={user?.id}
+                  evaluarAlAbrir={true}
+                />
+              )}
+              <span className="hidden sm:inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-white/15 text-sm font-medium text-white backdrop-blur-sm border border-white/20">
+                <Person sx={{ fontSize: 18 }} />
+                <span className="text-white">{user.nombre} {user.apellido}</span>
               </span>
               <button
                 type="button"
                 onClick={logout}
-                className="flex items-center gap-1 px-3 py-1.5 rounded-lg bg-white/20 hover:bg-white/30 text-sm font-medium"
+                className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-white/20 hover:bg-white/35 text-white text-sm font-medium border border-white/25 hover:border-white/40 transition-all duration-200 shadow-sm hover:shadow"
                 title="Cerrar sesión"
               >
-                <Logout fontSize="small" />
+                <Logout sx={{ fontSize: 18 }} />
                 <span className="hidden sm:inline">Salir</span>
               </button>
             </div>

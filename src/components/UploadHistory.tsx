@@ -30,7 +30,8 @@ import {
   TableHead,
   TableRow,
   Switch,
-  FormControlLabel
+  FormControlLabel,
+  Snackbar
 } from '@mui/material';
 import {
   Search,
@@ -59,6 +60,7 @@ import { AREAS_TRAMITES, getCodigoPorArea } from '../constants/areas';
 import { PROCESOS, getDiasMaximosPorArea } from '../constants/procesos';
 import { useAuth } from '../context/AuthContext';
 import JsBarcode from 'jsbarcode';
+import { supabase } from '../lib/supabase';
 
 // Logo DIE en base64
 const DIE_LOGO_BASE64 = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAGcAAABbAQAAAABGgqaCAAABdklEQVR4nMWTMY7bMBBFH2dVqAmiAwSwDhIkOkKOk8KBGcAH2CPRbrzHoMutzDQJgaU4KUjbkuFVNtWyob7+zJ8h59Mo16VS9lA2UzjJE07Vlp8A5JpYUMJNEDMO/ARFZhVm1XemfZUbD8NChfdB/3uGBU03ReoglXxVHXXzI+lX1SzA71FV7LfKHWJab1aHyj09J1z4VFUePfjvHwoa+30kfG4tCKRhGyA3DgTiBk9ciQeBkFtI/AwgcEw46FwEgX3sIOPXgOpDWLE28eNOs0ATelDiCgRtvQINWISMGwCbOhBSV8yTcQhgy7FbjxB7LOAUEIKSAEMTEPgCgMdGBI+5XJjAuhrLJeRymdaAYKIABHxGsBePz+YQNohKZYYpF8+RTcWDldz4aur70ywr9U5Se/4unLsbWVGNzZ2/8UScR3Z2SeVNKPBH9WRVVU/6km/deuSXZcvY003zlDqus+S/38O1+kVT21kv7Vu7NrcVlnpZ6uwvP/W29c5zRTMAAAAASUVORK5CYII=';
@@ -211,6 +213,8 @@ const TramiteHistory: React.FC<TramiteHistoryProps> = ({ soloLectura = false }) 
   const [viewMode, setViewMode] = useState<'list' | 'cards'>('list');
   const [hideCompleted, setHideCompleted] = useState(false);
   const [tiempoStatus, setTiempoStatus] = useState<Record<string, 'ok' | 'warning' | 'exceeded'>>({});
+  const [nuevoTramiteMensaje, setNuevoTramiteMensaje] = useState<string | null>(null);
+  const [openNuevoTramiteSnackbar, setOpenNuevoTramiteSnackbar] = useState(false);
 
   // Formulario nuevo trámite (destinatario y área se rellenan con el usuario logueado)
   const [nuevoTramite, setNuevoTramite] = useState({
@@ -267,6 +271,69 @@ const TramiteHistory: React.FC<TramiteHistoryProps> = ({ soloLectura = false }) 
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // Abrir detalle de trámite cuando se hace clic en una notificación de tiempo
+  useEffect(() => {
+    const handler = async (event: Event) => {
+      const custom = event as CustomEvent<{ tramiteId?: string }>;
+      const tramiteId = custom.detail?.tramiteId;
+      if (!tramiteId) return;
+
+      try {
+        setLoading(true);
+        setError(null);
+        const tramiteRes = await tramitesAPI.obtenerTramitePorId(tramiteId);
+        const tramite = tramiteRes.data.data;
+        setSelectedTramite(tramite);
+        setOpenHistoryDialog(true);
+        setLoadingHistorial(true);
+        setHistorial([]);
+        const histRes = await tramitesAPI.obtenerHistorialTramite(tramite.id);
+        setHistorial(histRes.data.data || []);
+      } catch (err: any) {
+        setError(err.response?.data?.error || 'Error al abrir el trámite desde la notificación');
+      } finally {
+        setLoading(false);
+        setLoadingHistorial(false);
+      }
+    };
+
+    window.addEventListener('openTramiteDesdeNotificacion', handler as EventListener);
+    return () => {
+      window.removeEventListener('openTramiteDesdeNotificacion', handler as EventListener);
+    };
+  }, []);
+
+  // Suscribirse a nuevos trámites que lleguen al área del usuario y notificar
+  useEffect(() => {
+    if (!user?.area) return;
+
+    const channel = supabase
+      .channel(`tramites-nuevos-${user.area}`)
+      .on(
+        'postgres_changes',
+        {
+          schema: 'public',
+          table: 'tramites',
+          event: 'INSERT',
+          filter: `area_destinatario=eq.${user.area}`,
+        },
+        (payload) => {
+          const nuevo = payload.new as any;
+          const titulo = nuevo?.titulo || nuevo?.id || 'Nuevo trámite';
+          setNuevoTramiteMensaje(`Nuevo trámite recibido en tu área: ${titulo}`);
+          setOpenNuevoTramiteSnackbar(true);
+          // Refrescar lista para incluir el nuevo trámite
+          loadTramites();
+        },
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user?.area]);
 
   const loadTramites = async () => {
     try {
@@ -1083,7 +1150,7 @@ const TramiteHistory: React.FC<TramiteHistoryProps> = ({ soloLectura = false }) 
                     <TableCell sx={{ color: 'white', fontWeight: 600 }}>ID</TableCell>
                     <TableCell sx={{ color: 'white', fontWeight: 600 }}>Título</TableCell>
                     <TableCell sx={{ color: 'white', fontWeight: 600 }}>Remitente</TableCell>
-                    <TableCell sx={{ color: 'white', fontWeight: 600 }}>Primera área de envío</TableCell>
+                    <TableCell sx={{ color: 'white', fontWeight: 600 }}>Área actual</TableCell>
                     <TableCell sx={{ color: 'white', fontWeight: 600 }}>Área Destino Final</TableCell>
                     <TableCell sx={{ color: 'white', fontWeight: 600 }}>Estado</TableCell>
                     <TableCell sx={{ color: 'white', fontWeight: 600 }}>Fecha Creación</TableCell>
@@ -1311,7 +1378,7 @@ const TramiteHistory: React.FC<TramiteHistoryProps> = ({ soloLectura = false }) 
                           </Typography>
                         </Box>
                         <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
-                          <strong>Primera área de envío:</strong> {tramite.area_destinatario}
+                          <strong>Área actual:</strong> {tramite.area_destinatario}
                         </Typography>
                         <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
                           <strong>Destino Final:</strong> {tramite.area_destino_final}
@@ -2166,6 +2233,25 @@ const TramiteHistory: React.FC<TramiteHistoryProps> = ({ soloLectura = false }) 
           </Button>
         </DialogActions>
       </Dialog>
+
+      {/* Notificación de nuevo trámite recibido */}
+      <Snackbar
+        open={openNuevoTramiteSnackbar}
+        autoHideDuration={6000}
+        onClose={(_, reason) => {
+          if (reason === 'clickaway') return;
+          setOpenNuevoTramiteSnackbar(false);
+        }}
+        anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
+      >
+        <Alert
+          onClose={() => setOpenNuevoTramiteSnackbar(false)}
+          severity="info"
+          sx={{ width: '100%' }}
+        >
+          {nuevoTramiteMensaje}
+        </Alert>
+      </Snackbar>
     </Box>
   );
 };
