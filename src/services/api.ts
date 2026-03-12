@@ -1,8 +1,8 @@
 import axios, { AxiosInstance, AxiosResponse } from 'axios';
-import { obrasService, historialUploadsService, storageService, tramitesService, notificacionesTiempoService } from './supabaseService';
+import { obrasService, historialUploadsService, storageService, tramitesService, notificacionesTiempoService, areasService } from './supabaseService';
 import { getDiasMaximosPorArea } from '../constants/procesos';
 import { mensajeNotificacionTiempo } from '../utils/notificacionesTiempo';
-import type { Obra, Tramite, MovimientoTramite } from '../types/database';
+import type { Obra, Tramite, MovimientoTramite, Area } from '../types/database';
 import { 
   procesarArchivoXml, 
   procesarArchivoExcel, 
@@ -12,7 +12,7 @@ import {
 import * as XLSX from 'xlsx';
 
 // Re-exportar tipos para compatibilidad
-export type { Obra, Tramite, MovimientoTramite };
+export type { Obra, Tramite, MovimientoTramite, Area };
 
 // Mantener apiClient para operaciones que aún requieren el backend (uploads, etc.)
 // Usar backend local para seguimiento de trámites
@@ -759,6 +759,25 @@ export const tramitesAPI = {
 
   marcarNotificacionTiempoLeida: async (notificacionId: number, usuarioId: string): Promise<void> => {
     await notificacionesTiempoService.marcarLeida(notificacionId, usuarioId);
+  },
+};
+
+// Catálogos (áreas, etc.) usando Supabase
+export const areasAPI = {
+  obtenerAreas: async () => {
+    try {
+      const data = await areasService.obtenerAreas();
+      return {
+        data: { data },
+      } as AxiosResponse<{ data: Area[] }>;
+    } catch (error: any) {
+      throw {
+        response: {
+          data: { error: error.message || 'Error al obtener áreas' },
+          status: 500,
+        },
+      };
+    }
   },
 };
 

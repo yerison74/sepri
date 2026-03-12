@@ -88,6 +88,16 @@ export interface TiempoEnArea {
   proceso_id: string;
 }
 
+/** Catálogo de áreas institucionales. */
+export interface Area {
+  /** Código del área (ej: DIGE, OAIP, JURI). */
+  id: string;
+  /** Nombre descriptivo del área. */
+  area: string;
+  /** ID del usuario encargado del área (tabla usuarios_app), si existe. */
+  encargado_id?: string | null;
+}
+
 /** Notificación cuando un trámite alcanza 50%, 70% o 100% del tiempo estimado en un área. */
 export interface NotificacionTiempo {
   id: number;

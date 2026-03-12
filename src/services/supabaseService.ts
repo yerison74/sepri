@@ -9,11 +9,33 @@ import type {
   ObrasFilters,
   TramitesFilters,
   ApiResponse,
+  Area,
 } from '../types/database';
 
 /**
  * Servicio de Supabase para reemplazar las llamadas API del backend
  */
+
+// ============================================
+// SERVICIO DE ÁREAS
+// ============================================
+
+export const areasService = {
+  /** Obtener todas las áreas definidas en la tabla `area`. */
+  obtenerAreas: async (): Promise<Area[]> => {
+    try {
+      const { data, error } = await supabase
+        .from('area')
+        .select('*')
+        .order('area', { ascending: true });
+      if (error) throw error;
+      return (data as Area[]) || [];
+    } catch (error: any) {
+      console.error('Error al obtener áreas:', error);
+      throw new Error(error.message || 'Error al obtener áreas');
+    }
+  },
+};
 
 // ============================================
 // SERVICIO DE OBRAS

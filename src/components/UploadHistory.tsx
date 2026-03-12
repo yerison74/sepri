@@ -31,7 +31,8 @@ import {
   TableRow,
   Switch,
   FormControlLabel,
-  Snackbar
+  Snackbar,
+  Checkbox,
 } from '@mui/material';
 import {
   Search,
@@ -55,8 +56,7 @@ import {
   ViewList,
   ViewModule
 } from '@mui/icons-material';
-import { tramitesAPI, Tramite, MovimientoTramite } from '../services/api';
-import { AREAS_TRAMITES, getCodigoPorArea } from '../constants/areas';
+import { tramitesAPI, Tramite, MovimientoTramite, areasAPI, Area } from '../services/api';
 import { PROCESOS, getDiasMaximosPorArea } from '../constants/procesos';
 import { useAuth } from '../context/AuthContext';
 import JsBarcode from 'jsbarcode';
@@ -215,6 +215,8 @@ const TramiteHistory: React.FC<TramiteHistoryProps> = ({ soloLectura = false }) 
   const [tiempoStatus, setTiempoStatus] = useState<Record<string, 'ok' | 'warning' | 'exceeded'>>({});
   const [nuevoTramiteMensaje, setNuevoTramiteMensaje] = useState<string | null>(null);
   const [openNuevoTramiteSnackbar, setOpenNuevoTramiteSnackbar] = useState(false);
+  const [areas, setAreas] = useState<Area[]>([]);
+  const [loadingAreas, setLoadingAreas] = useState(false);
 
   // Formulario nuevo trámite (destinatario y área se rellenan con el usuario logueado)
   const [nuevoTramite, setNuevoTramite] = useState({
@@ -245,6 +247,23 @@ const TramiteHistory: React.FC<TramiteHistoryProps> = ({ soloLectura = false }) 
     loadTramites();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [page, searchQuery]);
+
+  // Cargar catálogo de áreas desde Supabase
+  useEffect(() => {
+    const fetchAreas = async () => {
+      try {
+        setLoadingAreas(true);
+        const res = await areasAPI.obtenerAreas();
+        setAreas(res.data.data || []);
+      } catch (error) {
+        console.error('Error al cargar áreas:', error);
+        setAreas([]);
+      } finally {
+        setLoadingAreas(false);
+      }
+    };
+    fetchAreas();
+  }, []);
 
   // Al abrir el diálogo de nuevo trámite, rellenar solo el remitente con el usuario logueado.
   // Primera área de envío queda vacía para que el usuario la elija.
@@ -455,6 +474,12 @@ const TramiteHistory: React.FC<TramiteHistoryProps> = ({ soloLectura = false }) 
 
       let nuevoTramiteData: Tramite;
 
+      const getCodigoArea = (nombreArea: string | undefined | null): string => {
+        if (!nombreArea) return 'TR';
+        const match = areas.find((a) => a.area === nombreArea);
+        return match?.id || 'TR';
+      };
+
       if (nuevoTramite.archivo_pdf) {
         const formData = new FormData();
         formData.append('titulo', nuevoTramite.titulo);
@@ -463,7 +488,7 @@ const TramiteHistory: React.FC<TramiteHistoryProps> = ({ soloLectura = false }) 
         formData.append('area_destinatario', nuevoTramite.area_destinatario);
         formData.append('area_destino_final', nuevoTramite.area_destino_final);
         if (nuevoTramite.proceso) formData.append('proceso', nuevoTramite.proceso);
-        formData.append('codigo_area', getCodigoPorArea(user?.area || ''));
+        formData.append('codigo_area', getCodigoArea(user?.area || ''));
         formData.append('archivo_pdf', nuevoTramite.archivo_pdf);
 
         const response = await tramitesAPI.crearTramiteConArchivo(formData);
@@ -481,7 +506,7 @@ const TramiteHistory: React.FC<TramiteHistoryProps> = ({ soloLectura = false }) 
           area_destinatario: nuevoTramite.area_destinatario,
           area_destino_final: nuevoTramite.area_destino_final,
           proceso: nuevoTramite.proceso || undefined,
-          codigo_area: getCodigoPorArea(user?.area || ''),
+          codigo_area: getCodigoArea(user?.area || ''),
         });
         nuevoTramiteData = response.data.data;
       }
@@ -736,8 +761,16 @@ const TramiteHistory: React.FC<TramiteHistoryProps> = ({ soloLectura = false }) 
   const handleRegistrarSeguimiento = async () => {
     if (!selectedTramite) return;
 
-    if (!seguimientoData.area_destino || !seguimientoData.usuario) {
-      setError('Por favor complete el área destino y el usuario');
+    const esDetenido = seguimientoData.actualizar_estado === 'detenido';
+    const esCompletado = seguimientoData.actualizar_estado === 'completado';
+    const requiereAreaDestino = !esDetenido && !esCompletado;
+
+    if ((!seguimientoData.area_destino && requiereAreaDestino) || !seguimientoData.usuario) {
+      setError(
+        requiereAreaDestino
+          ? 'Por favor complete el área destino y el usuario'
+          : 'Por favor complete el usuario'
+      );
       return;
     }
 
@@ -745,7 +778,9 @@ const TramiteHistory: React.FC<TramiteHistoryProps> = ({ soloLectura = false }) 
       setError(null);
       await tramitesAPI.registrarMovimiento(selectedTramite.id, {
         area_origen: seguimientoData.area_origen,
-        area_destino: seguimientoData.area_destino,
+        area_destino: esDetenido || esCompletado
+          ? seguimientoData.area_origen
+          : seguimientoData.area_destino,
         usuario: seguimientoData.usuario,
         observaciones: seguimientoData.observaciones,
         actualizar_estado: seguimientoData.actualizar_estado
@@ -1151,7 +1186,6 @@ const TramiteHistory: React.FC<TramiteHistoryProps> = ({ soloLectura = false }) 
                     <TableCell sx={{ color: 'white', fontWeight: 600 }}>Título</TableCell>
                     <TableCell sx={{ color: 'white', fontWeight: 600 }}>Remitente</TableCell>
                     <TableCell sx={{ color: 'white', fontWeight: 600 }}>Área actual</TableCell>
-                    <TableCell sx={{ color: 'white', fontWeight: 600 }}>Área Destino Final</TableCell>
                     <TableCell sx={{ color: 'white', fontWeight: 600 }}>Estado</TableCell>
                     <TableCell sx={{ color: 'white', fontWeight: 600 }}>Fecha Creación</TableCell>
                     <TableCell sx={{ color: 'white', fontWeight: 600 }} align="center">Documento</TableCell>
@@ -1191,11 +1225,6 @@ const TramiteHistory: React.FC<TramiteHistoryProps> = ({ soloLectura = false }) 
                       <TableCell>
                         <Typography variant="body2">
                           {tramite.area_destinatario}
-                        </Typography>
-                      </TableCell>
-                      <TableCell>
-                        <Typography variant="body2">
-                          {tramite.area_destino_final}
                         </Typography>
                       </TableCell>
                       <TableCell>
@@ -1380,9 +1409,6 @@ const TramiteHistory: React.FC<TramiteHistoryProps> = ({ soloLectura = false }) 
                         <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
                           <strong>Área actual:</strong> {tramite.area_destinatario}
                         </Typography>
-                        <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
-                          <strong>Destino Final:</strong> {tramite.area_destino_final}
-                        </Typography>
                         <Chip
                           label={getEstadoLabel(tramite.estado)}
                           size="small"
@@ -1526,32 +1552,18 @@ const TramiteHistory: React.FC<TramiteHistoryProps> = ({ soloLectura = false }) 
               InputProps={{ readOnly: true }}
               placeholder="Se rellena con el usuario logueado"
             />
-            <Box sx={{ display: 'flex', gap: 2 }}>
-              <FormControl fullWidth required>
-                <InputLabel>Primera área de envío</InputLabel>
-                <Select
-                  value={nuevoTramite.area_destinatario}
-                  label="Primera área de envío"
-                  onChange={(e) => setNuevoTramite({ ...nuevoTramite, area_destinatario: e.target.value })}
-                >
-                  {AREAS_TRAMITES.map((area) => (
-                    <MenuItem key={area.codigo} value={area.nombre}>{area.nombre}</MenuItem>
-                  ))}
-                </Select>
-              </FormControl>
-              <FormControl fullWidth required>
-                <InputLabel>Área Destino Final</InputLabel>
-                <Select
-                  value={nuevoTramite.area_destino_final}
-                  label="Área Destino Final"
-                  onChange={(e) => setNuevoTramite({ ...nuevoTramite, area_destino_final: e.target.value })}
-                >
-                  {AREAS_TRAMITES.map((area) => (
-                    <MenuItem key={area.codigo} value={area.nombre}>{area.nombre}</MenuItem>
-                  ))}
-                </Select>
-              </FormControl>
-            </Box>
+            <FormControl fullWidth required disabled={loadingAreas || areas.length === 0}>
+              <InputLabel>Área de envío</InputLabel>
+              <Select
+                value={nuevoTramite.area_destinatario}
+                label="Área de envío"
+                onChange={(e) => setNuevoTramite({ ...nuevoTramite, area_destinatario: e.target.value })}
+              >
+                {areas.map((area) => (
+                  <MenuItem key={area.id} value={area.area}>{area.area}</MenuItem>
+                ))}
+              </Select>
+            </FormControl>
             <FormControl fullWidth>
               <InputLabel>Proceso (opcional)</InputLabel>
               <Select
@@ -1915,16 +1927,28 @@ const TramiteHistory: React.FC<TramiteHistoryProps> = ({ soloLectura = false }) 
                 <MenuItem value={seguimientoData.area_origen}>{seguimientoData.area_origen}</MenuItem>
               </Select>
             </FormControl>
-            <FormControl fullWidth required>
+            <FormControl
+              fullWidth
+              required={!(
+                seguimientoData.actualizar_estado === 'detenido' ||
+                seguimientoData.actualizar_estado === 'completado'
+              )}
+              disabled={
+                loadingAreas ||
+                areas.length === 0 ||
+                seguimientoData.actualizar_estado === 'detenido' ||
+                seguimientoData.actualizar_estado === 'completado'
+              }
+            >
               <InputLabel>Área Destino</InputLabel>
               <Select
                 value={seguimientoData.area_destino}
                 label="Área Destino"
                 onChange={(e) => setSeguimientoData({ ...seguimientoData, area_destino: e.target.value })}
               >
-{AREAS_TRAMITES.map((area) => (
-                    <MenuItem key={area.codigo} value={area.nombre}>{area.nombre}</MenuItem>
-                  ))}
+                {areas.map((area) => (
+                  <MenuItem key={area.id} value={area.area}>{area.area}</MenuItem>
+                ))}
               </Select>
             </FormControl>
             <TextField
@@ -1938,17 +1962,61 @@ const TramiteHistory: React.FC<TramiteHistoryProps> = ({ soloLectura = false }) 
             <FormControl fullWidth>
               <InputLabel>Actualizar Estado</InputLabel>
               <Select
-                value={seguimientoData.actualizar_estado}
+                value={
+                  seguimientoData.actualizar_estado === 'detenido' ||
+                  seguimientoData.actualizar_estado === 'completado'
+                    ? ''
+                    : seguimientoData.actualizar_estado
+                }
                 label="Actualizar Estado"
-                onChange={(e) => setSeguimientoData({ ...seguimientoData, actualizar_estado: e.target.value })}
+                onChange={(e) =>
+                  setSeguimientoData({
+                    ...seguimientoData,
+                    actualizar_estado: e.target.value as string,
+                  })
+                }
+                displayEmpty
               >
+                <MenuItem value="">
+                  <em>Sin cambio</em>
+                </MenuItem>
                 <MenuItem value="en_transito">En Tránsito</MenuItem>
-                <MenuItem value="detenido">Detenido</MenuItem>
                 <MenuItem value="firmado">Firmado</MenuItem>
                 <MenuItem value="procesado">Procesado</MenuItem>
-                <MenuItem value="completado">Completado</MenuItem>
               </Select>
             </FormControl>
+            <Box sx={{ display: 'flex', gap: 3, mt: 1 }}>
+              <FormControlLabel
+                control={
+                  <Checkbox
+                    checked={seguimientoData.actualizar_estado === 'detenido'}
+                    onChange={(e) =>
+                      setSeguimientoData({
+                        ...seguimientoData,
+                        actualizar_estado: e.target.checked ? 'detenido' : '',
+                      })
+                    }
+                    color="error"
+                  />
+                }
+                label="Detenido"
+              />
+              <FormControlLabel
+                control={
+                  <Checkbox
+                    checked={seguimientoData.actualizar_estado === 'completado'}
+                    onChange={(e) =>
+                      setSeguimientoData({
+                        ...seguimientoData,
+                        actualizar_estado: e.target.checked ? 'completado' : '',
+                      })
+                    }
+                    color="success"
+                  />
+                }
+                label="Completado"
+              />
+            </Box>
             <TextField
               label="Observaciones"
               fullWidth
