@@ -87,51 +87,51 @@ export default function NotificacionesTiempo({
       <button
         type="button"
         onClick={() => setAbierto((o) => !o)}
-        className="relative inline-flex items-center justify-center w-10 h-10 rounded-full bg-white/15 hover:bg-white/30 border border-white/20 hover:border-white/35 transition-all duration-200 shadow-sm hover:shadow"
+        className="relative inline-flex items-center justify-center w-10 h-10 rounded-full bg-warm-100 hover:bg-primary-light border border-warm-200 hover:border-primary-soft transition-all duration-200 text-stone-600 hover:text-primary"
         title="Notificaciones por tiempo del trámite"
         aria-label="Notificaciones"
       >
-        <Notifications sx={{ fontSize: 22 }} className="text-white" />
+        <Notifications sx={{ fontSize: 22 }} />
         {notificaciones.length > 0 && (
-          <span className="absolute -top-0.5 -right-0.5 min-w-[20px] h-5 rounded-full bg-red-500 text-white text-xs font-semibold flex items-center justify-center px-1.5 ring-2 ring-[#1976D2]">
+          <span className="absolute -top-0.5 -right-0.5 min-w-[20px] h-5 rounded-full bg-amber-500 text-white text-xs font-semibold flex items-center justify-center px-1.5 ring-2 ring-white shadow-soft">
             {notificaciones.length > 99 ? '99+' : notificaciones.length}
           </span>
         )}
       </button>
       {abierto && (
-        <div className="absolute right-0 top-full mt-1 w-[360px] max-w-[calc(100vw-2rem)] max-h-[70vh] overflow-hidden bg-white rounded-lg shadow-xl border border-gray-200 z-50">
-          <div className="px-3 py-2 border-b border-gray-200 bg-gray-50 font-semibold text-gray-800">
+        <div className="absolute right-0 top-full mt-1 w-[360px] max-w-[calc(100vw-2rem)] max-h-[70vh] overflow-hidden bg-white rounded-xl shadow-soft-lg border border-warm-200 z-50">
+          <div className="px-3 py-2.5 border-b border-warm-200 bg-warm-50 font-semibold text-stone-700">
             Notificaciones de trámites (tiempo)
           </div>
           <div className="overflow-y-auto max-h-[60vh]">
             {cargando ? (
-              <div className="p-4 text-center text-gray-500 text-sm">Cargando...</div>
+              <div className="p-4 text-center text-stone-500 text-sm">Cargando...</div>
             ) : notificaciones.length === 0 ? (
-              <div className="p-4 text-center text-gray-500 text-sm">
+              <div className="p-4 text-center text-stone-500 text-sm">
                 No hay notificaciones para tu área.
               </div>
             ) : (
-              <ul className="divide-y divide-gray-100">
+              <ul className="divide-y divide-warm-200">
                 {notificaciones.map((n) => (
                   <li
                     key={n.id}
-                    className="px-3 py-2.5 hover:bg-gray-50 cursor-pointer"
+                    className="px-3 py-2.5 hover:bg-warm-50 cursor-pointer transition-colors"
                     onClick={() => handleClickNotificacion(n)}
                   >
                     <div className="flex items-start gap-2">
                       <span
                         className={`shrink-0 mt-0.5 w-2 h-2 rounded-full ${
                           n.porcentaje === 100
-                            ? 'bg-red-500'
-                            : n.porcentaje === 70
                             ? 'bg-amber-500'
-                            : 'bg-blue-500'
+                            : n.porcentaje === 70
+                            ? 'bg-amber-400'
+                            : 'bg-primary-soft'
                         }`}
                         title={`${n.porcentaje}% del tiempo`}
                       />
                       <div className="min-w-0 flex-1">
-                        <p className="text-sm text-gray-800">{n.mensaje}</p>
-                        <p className="text-xs text-gray-500 mt-0.5">
+                        <p className="text-sm text-stone-800">{n.mensaje}</p>
+                        <p className="text-xs text-stone-500 mt-0.5">
                           {n.tramite_titulo} · {new Date(n.created_at).toLocaleString()}
                         </p>
                       </div>

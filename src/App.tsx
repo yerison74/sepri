@@ -7,6 +7,8 @@ import {
   FollowTheSigns,
   Logout,
   Person,
+  Menu as MenuIcon,
+  ChevronLeft,
 } from '@mui/icons-material';
 import FileUpload from './components/FileUpload';
 import StatsDashboard from './components/StatsDashboard';
@@ -48,6 +50,7 @@ function App() {
   const tramitesOnly = false;
   const [tabValue, setTabValue] = useState(0);
   const [refreshTrigger, setRefreshTrigger] = useState(0);
+  const [sidebarOpen, setSidebarOpen] = useState(true);
 
   const handleTabChange = (newValue: number) => {
     setTabValue(newValue);
@@ -81,8 +84,8 @@ function App() {
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-        <div className="animate-spin rounded-full h-16 w-16 border-t-2 border-b-2 border-[#42A5F5]" />
+      <div className="min-h-screen bg-warm-50 flex items-center justify-center">
+        <div className="animate-spin rounded-full h-16 w-16 border-2 border-primary-light border-t-primary" />
       </div>
     );
   }
@@ -92,80 +95,115 @@ function App() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      <header className="bg-gradient-to-r from-[#1976D2] to-[#42A5F5] text-white shadow-lg">
-        <div className="px-3 sm:px-4 md:px-6 py-3 sm:py-3.5">
-          <div className="flex items-center gap-3">
+    <div className="min-h-screen bg-warm-50 flex">
+      {/* Sidebar minimalista desplegable */}
+      {tabs.length > 0 && (!tramitesOnly || tabs.length > 1) && (
+        <aside
+          className={`
+            flex-shrink-0 bg-white border-r border-warm-200 flex flex-col shadow-soft
+            transition-[width] duration-300 ease-in-out overflow-hidden
+            ${sidebarOpen ? 'w-56 sm:w-64' : 'w-[72px]'}
+          `}
+          role="navigation"
+          aria-label="Menú principal"
+        >
+          <div className={`border-b border-warm-200 flex items-center ${sidebarOpen ? 'p-4 gap-2' : 'p-3 justify-center'}`}>
             {tramitesOnly ? (
-              <FollowTheSigns className="shrink-0 text-2xl sm:text-3xl text-white/95" />
+              <FollowTheSigns className="shrink-0 text-2xl text-primary" />
             ) : (
-              <Assignment className="shrink-0 text-2xl sm:text-3xl text-white/95" />
+              <Assignment className="shrink-0 text-2xl text-primary" />
             )}
-            <h1 className="text-base sm:text-lg md:text-xl font-semibold flex-grow text-white drop-shadow-sm">
-              {tramitesOnly
-                ? 'Sistema de Seguimiento de Trámites'
-                : 'Seguimiento de Procesos Internos'}
-            </h1>
-            <div className="flex items-center gap-2 sm:gap-3">
-              {hasPermission('ver_tramites') && (
-                <NotificacionesTiempo
-                  areaUsuario={user?.area}
-                  usuarioId={user?.id}
-                  evaluarAlAbrir={true}
-                />
-              )}
-              <span className="hidden sm:inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-white/15 text-sm font-medium text-white backdrop-blur-sm border border-white/20">
-                <Person sx={{ fontSize: 18 }} />
-                <span className="text-white">{user.nombre} {user.apellido}</span>
+            {sidebarOpen && (
+              <span className="font-semibold text-sm sm:text-base truncate text-stone-700">
+                {tramitesOnly ? 'Trámites' : 'SEPRI'}
               </span>
-              <button
-                type="button"
-                onClick={logout}
-                className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-white/20 hover:bg-white/35 text-white text-sm font-medium border border-white/25 hover:border-white/40 transition-all duration-200 shadow-sm hover:shadow"
-                title="Cerrar sesión"
-              >
-                <Logout sx={{ fontSize: 18 }} />
-                <span className="hidden sm:inline">Salir</span>
-              </button>
-            </div>
+            )}
           </div>
-        </div>
-      </header>
+          <nav className="flex-1 py-3 overflow-y-auto overflow-x-hidden">
+            {tabs.map((tab) => (
+              <button
+                key={tab.index}
+                onClick={() => handleTabChange(tab.index)}
+                role="tab"
+                aria-selected={tabValue === tab.index}
+                aria-controls={`simple-tabpanel-${tab.index}`}
+                id={`simple-tab-${tab.index}`}
+                title={!sidebarOpen ? tab.label : undefined}
+                className={`
+                  w-full flex items-center font-medium text-sm
+                  transition-all duration-200
+                  ${sidebarOpen ? 'gap-3 px-4 py-3 text-left' : 'justify-center p-3'}
+                  ${
+                    tabValue === tab.index
+                      ? 'bg-primary-light text-primary border-l-4 border-primary'
+                      : 'text-stone-600 hover:bg-warm-50 border-l-4 border-transparent'
+                  }
+                `}
+              >
+                <span className="shrink-0 [&>.MuiSvgIcon-root]:!text-xl">
+                  {tab.icon}
+                </span>
+                {sidebarOpen && <span className="truncate">{tab.label}</span>}
+              </button>
+            ))}
+          </nav>
+        </aside>
+      )}
 
-      <div className="px-1 sm:px-2 md:px-3 lg:px-4 py-2 sm:py-3 md:py-4 w-full">
-        <div className="bg-white rounded-lg shadow-lg w-full">
-          {(!tramitesOnly || tabs.length > 1) && tabs.length > 0 && (
-            <div className="border-b border-gray-200 overflow-x-auto">
-              <div className="flex flex-nowrap min-w-full" role="tablist" aria-label="navigation tabs">
-                {tabs.map((tab) => (
-                  <button
-                    key={tab.index}
-                    onClick={() => handleTabChange(tab.index)}
-                    role="tab"
-                    aria-selected={tabValue === tab.index}
-                    aria-controls={`simple-tabpanel-${tab.index}`}
-                    id={`simple-tab-${tab.index}`}
-                    className={`
-                      flex items-center gap-1 sm:gap-2 px-2 sm:px-4 md:px-6 py-2 sm:py-3 md:py-4 font-medium text-xs sm:text-sm
-                      transition-colors duration-200 whitespace-nowrap
-                      border-b-2 border-transparent
-                      ${
-                        tabValue === tab.index
-                          ? 'text-[#42A5F5] border-[#42A5F5] bg-blue-50'
-                          : 'text-gray-600 hover:text-[#42A5F5] hover:bg-gray-50'
-                      }
-                    `}
-                  >
-                    <span className="text-base sm:text-lg">{tab.icon}</span>
-                    <span className="hidden sm:inline">{tab.label}</span>
-                    <span className="sm:hidden">{tab.label.split(' ')[0]}</span>
-                  </button>
-                ))}
+      {/* Contenido principal: header + área de contenido */}
+      <div className="flex-1 flex flex-col min-w-0">
+        <header className="bg-white border-b border-warm-200 shadow-soft flex-shrink-0">
+          <div className="px-3 sm:px-4 md:px-6 py-3 sm:py-3.5">
+            <div className="flex items-center gap-3">
+              {tabs.length > 0 && (!tramitesOnly || tabs.length > 1) && (
+                <button
+                  type="button"
+                  onClick={() => setSidebarOpen((o) => !o)}
+                  className="flex-shrink-0 p-2 rounded-lg text-stone-600 hover:bg-warm-100 hover:text-stone-800 transition-colors"
+                  title={sidebarOpen ? 'Contraer menú' : 'Expandir menú'}
+                  aria-label={sidebarOpen ? 'Contraer menú' : 'Expandir menú'}
+                >
+                  {sidebarOpen ? (
+                    <ChevronLeft sx={{ fontSize: 24 }} />
+                  ) : (
+                    <MenuIcon sx={{ fontSize: 24 }} />
+                  )}
+                </button>
+              )}
+              <h1 className="text-base sm:text-lg md:text-xl font-semibold flex-grow text-stone-800 truncate min-w-0">
+                {tramitesOnly
+                  ? 'Sistema de Seguimiento de Trámites'
+                  : 'Seguimiento de Procesos Internos'}
+              </h1>
+              <div className="flex items-center gap-2 sm:gap-3 flex-shrink-0">
+                {hasPermission('ver_tramites') && (
+                  <NotificacionesTiempo
+                    areaUsuario={user?.area}
+                    usuarioId={user?.id}
+                    evaluarAlAbrir={true}
+                  />
+                )}
+                <span className="hidden sm:inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-warm-100 text-sm font-medium text-stone-700 border border-warm-200">
+                  <Person sx={{ fontSize: 18 }} className="text-stone-500" />
+                  <span>{user.nombre} {user.apellido}</span>
+                </span>
+                <button
+                  type="button"
+                  onClick={logout}
+                  className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-warm-100 hover:bg-warm-200 text-stone-700 text-sm font-medium border border-warm-200 hover:border-stone-300 transition-all duration-200"
+                  title="Cerrar sesión"
+                >
+                  <Logout sx={{ fontSize: 18 }} />
+                  <span className="hidden sm:inline">Salir</span>
+                </button>
               </div>
             </div>
-          )}
+          </div>
+        </header>
 
-          {!tramitesOnly && (
+        <main className="flex-1 px-1 sm:px-2 md:px-3 lg:px-4 py-2 sm:py-3 md:py-4 overflow-auto">
+          <div className="bg-white rounded-xl shadow-soft border border-warm-200/80 w-full min-h-0">
+            {!tramitesOnly && (
             <>
               {hasPermission('ver_dashboard') && (
                 <TabPanel value={tabValue} index={0}>
@@ -202,7 +240,7 @@ function App() {
               {hasPermission('ver_configuracion') && (
                 <TabPanel value={tabValue} index={4}>
                   <div>
-                    <h2 className="text-2xl font-semibold mb-4 text-gray-800">
+                    <h2 className="text-2xl font-semibold mb-4 text-stone-800">
                       Configuración del Sistema
                     </h2>
                     <GestionUsuarios />
@@ -219,11 +257,12 @@ function App() {
           )}
 
           {tabs.length === 0 && (
-            <div className="p-8 text-center text-gray-500">
+            <div className="p-8 text-center text-stone-500">
               No tienes permisos para acceder a ninguna sección. Contacta al administrador.
             </div>
           )}
-        </div>
+          </div>
+        </main>
       </div>
     </div>
   );
