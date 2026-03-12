@@ -50,7 +50,7 @@ function App() {
   const tramitesOnly = false;
   const [tabValue, setTabValue] = useState(0);
   const [refreshTrigger, setRefreshTrigger] = useState(0);
-  const [sidebarOpen, setSidebarOpen] = useState(true);
+  const [sidebarOpen, setSidebarOpen] = useState(false);
 
   const handleTabChange = (newValue: number) => {
     setTabValue(newValue);
