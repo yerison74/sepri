@@ -146,7 +146,7 @@ const BarcodeDisplay: React.FC<{ codigo: string; id: string; año?: string }> = 
         {/* Logo DIE */}
         <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', flexShrink: 0, width: 64 }}>
           <img
-            src="/die-logo.png"
+            src="logo-die.png"
             alt="DIE Logo"
             style={{ width: 58, height: 'auto', imageRendering: 'crisp-edges' }}
           />
