@@ -68,6 +68,7 @@ import NuevoTramiteDialog from './tramites/NuevoTramiteDialog';
 import SeguimientoDialog, { SeguimientoData } from './tramites/SeguimientoDialog';
 import HistorialDialog from './tramites/HistorialDialog';
 import BarcodeDialog from './tramites/BarcodeDialog';
+import DetalleTramiteDialog from './tramites/DetalleTramiteDialog';
 const LazyPdfViewerDialog = React.lazy(() => import('./tramites/PdfViewerDialog'));
 
 // Componente para generar código de barras usando jsbarcode - Estilo DIE
@@ -225,6 +226,7 @@ const TramiteHistory: React.FC<TramiteHistoryProps> = ({ soloLectura = false }) 
   const [openBarcodeDialog, setOpenBarcodeDialog] = useState(false);
   const [openSeguimientoDialog, setOpenSeguimientoDialog] = useState(false);
   const [selectedTramite, setSelectedTramite] = useState<Tramite | null>(null);
+  const [openDetalleDialog, setOpenDetalleDialog] = useState(false);
   const [openHistoryDialog, setOpenHistoryDialog] = useState(false);
   const [historial, setHistorial] = useState<MovimientoTramite[]>([]);
   const [loadingHistorial, setLoadingHistorial] = useState(false);
@@ -940,7 +942,10 @@ const TramiteHistory: React.FC<TramiteHistoryProps> = ({ soloLectura = false }) 
                   {paginatedTramites.map((tramite) => (
                     <TableRow
                       key={tramite.id}
-                      onClick={() => handleViewHistory(tramite)}
+                      onClick={() => {
+                        setSelectedTramite(tramite);
+                        setOpenDetalleDialog(true);
+                      }}
                       sx={{
                         cursor: 'pointer',
                         '&:hover': { backgroundColor: 'action.hover' },
@@ -1049,13 +1054,16 @@ const TramiteHistory: React.FC<TramiteHistoryProps> = ({ soloLectura = false }) 
               gap: 3,
               mb: 3
             }}>
-            {paginatedTramites.map((tramite) => {
+              {paginatedTramites.map((tramite) => {
               const codigoBarras = getCodigoBarras(tramite.id);
               return (
                 <Box key={tramite.id}>
                   <Card 
                     elevation={3}
-                    onClick={() => handleViewHistory(tramite)}
+                    onClick={() => {
+                      setSelectedTramite(tramite);
+                      setOpenDetalleDialog(true);
+                    }}
                     sx={{
                       height: '100%',
                       display: 'flex',
@@ -1419,6 +1427,18 @@ const TramiteHistory: React.FC<TramiteHistoryProps> = ({ soloLectura = false }) 
               }
             : undefined
         }
+      />
+
+      {/* Dialog para detalle de trámite */}
+      <DetalleTramiteDialog
+        open={openDetalleDialog}
+        onClose={() => setOpenDetalleDialog(false)}
+        tramite={selectedTramite}
+        onVerHistorial={() => {
+          if (selectedTramite) {
+            handleViewHistory(selectedTramite);
+          }
+        }}
       />
 
       {/* Notificación de nuevo trámite recibido */}
