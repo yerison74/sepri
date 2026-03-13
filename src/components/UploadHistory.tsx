@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo, Suspense } from 'react';
 import {
   Box,
   Paper,
@@ -56,24 +56,36 @@ import {
   ViewList,
   ViewModule
 } from '@mui/icons-material';
-import { tramitesAPI, Tramite, MovimientoTramite, areasAPI, Area } from '../services/api';
+import { tramitesAPI, Tramite, MovimientoTramite, Area } from '../services/api';
 import { PROCESOS, getDiasMaximosPorArea } from '../constants/procesos';
 import { useAuth } from '../context/AuthContext';
 import JsBarcode from 'jsbarcode';
 import { supabase } from '../lib/supabase';
-
-// Logo DIE en base64
-const DIE_LOGO_BASE64 = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAGcAAABbAQAAAABGgqaCAAABdklEQVR4nMWTMY7bMBBFH2dVqAmiAwSwDhIkOkKOk8KBGcAH2CPRbrzHoMutzDQJgaU4KUjbkuFVNtWyob7+zJ8h59Mo16VS9lA2UzjJE07Vlp8A5JpYUMJNEDMO/ARFZhVm1XemfZUbD8NChfdB/3uGBU03ReoglXxVHXXzI+lX1SzA71FV7LfKHWJab1aHyj09J1z4VFUePfjvHwoa+30kfG4tCKRhGyA3DgTiBk9ciQeBkFtI/AwgcEw46FwEgX3sIOPXgOpDWLE28eNOs0ATelDiCgRtvQINWISMGwCbOhBSV8yTcQhgy7FbjxB7LOAUEIKSAEMTEPgCgMdGBI+5XJjAuhrLJeRymdaAYKIABHxGsBePz+YQNohKZYYpF8+RTcWDldz4aur70ywr9U5Se/4unLsbWVGNzZ2/8UScR3Z2SeVNKPBH9WRVVU/6km/deuSXZcvY003zlDqus+S/38O1+kVT21kv7Vu7NrcVlnpZ6uwvP/W29c5zRTMAAAAASUVORK5CYII=';
+import { useAreas } from '../hooks/useAreas';
+import { getEstadoColor, getEstadoLabel } from '../utils/estadoTramite';
+import TramitesToolbar from './tramites/TramitesToolbar';
+import NuevoTramiteDialog from './tramites/NuevoTramiteDialog';
+import SeguimientoDialog, { SeguimientoData } from './tramites/SeguimientoDialog';
+import HistorialDialog from './tramites/HistorialDialog';
+import BarcodeDialog from './tramites/BarcodeDialog';
+const LazyPdfViewerDialog = React.lazy(() => import('./tramites/PdfViewerDialog'));
 
 // Componente para generar código de barras usando jsbarcode - Estilo DIE
 const BarcodeDisplay: React.FC<{ codigo: string; id: string; año?: string }> = ({ codigo, id, año }) => {
   const barcodeRef = useRef<SVGSVGElement>(null);
 
   useEffect(() => {
-    if (barcodeRef.current && codigo) {
+    if (!barcodeRef.current || !codigo) return;
+
+    let cancelled = false;
+
+    const renderBarcode = async () => {
       try {
+        const module = await import('jsbarcode');
+        if (cancelled || !barcodeRef.current) return;
+        const JsBarcodeDynamic = module.default || (module as any);
         barcodeRef.current.innerHTML = '';
-        JsBarcode(barcodeRef.current, codigo, {
+        JsBarcodeDynamic(barcodeRef.current, codigo, {
           format: 'CODE128',
           width: 2,
           height: 80,
@@ -85,7 +97,13 @@ const BarcodeDisplay: React.FC<{ codigo: string; id: string; año?: string }> = 
       } catch (error) {
         console.error('Error al generar código de barras:', error);
       }
-    }
+    };
+
+    renderBarcode();
+
+    return () => {
+      cancelled = true;
+    };
   }, [codigo]);
 
   return (
@@ -127,7 +145,7 @@ const BarcodeDisplay: React.FC<{ codigo: string; id: string; año?: string }> = 
         {/* Logo DIE */}
         <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', flexShrink: 0, width: 64 }}>
           <img
-            src={DIE_LOGO_BASE64}
+            src="/die-logo.png"
             alt="DIE Logo"
             style={{ width: 58, height: 'auto', imageRendering: 'crisp-edges' }}
           />
@@ -215,8 +233,7 @@ const TramiteHistory: React.FC<TramiteHistoryProps> = ({ soloLectura = false }) 
   const [tiempoStatus, setTiempoStatus] = useState<Record<string, 'ok' | 'warning' | 'exceeded'>>({});
   const [nuevoTramiteMensaje, setNuevoTramiteMensaje] = useState<string | null>(null);
   const [openNuevoTramiteSnackbar, setOpenNuevoTramiteSnackbar] = useState(false);
-  const [areas, setAreas] = useState<Area[]>([]);
-  const [loadingAreas, setLoadingAreas] = useState(false);
+  const { areas, loadingAreas } = useAreas();
 
   // Formulario nuevo trámite (destinatario y área se rellenan con el usuario logueado)
   const [nuevoTramite, setNuevoTramite] = useState({
@@ -235,35 +252,18 @@ const TramiteHistory: React.FC<TramiteHistoryProps> = ({ soloLectura = false }) 
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Formulario de seguimiento
-  const [seguimientoData, setSeguimientoData] = useState({
+  const [seguimientoData, setSeguimientoData] = useState<SeguimientoData>({
     area_origen: '',
     area_destino: '',
     usuario: '',
     observaciones: '',
-    actualizar_estado: ''
+    actualizar_estado: '',
   });
 
   useEffect(() => {
     loadTramites();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [page, searchQuery]);
-
-  // Cargar catálogo de áreas desde Supabase
-  useEffect(() => {
-    const fetchAreas = async () => {
-      try {
-        setLoadingAreas(true);
-        const res = await areasAPI.obtenerAreas();
-        setAreas(res.data.data || []);
-      } catch (error) {
-        console.error('Error al cargar áreas:', error);
-        setAreas([]);
-      } finally {
-        setLoadingAreas(false);
-      }
-    };
-    fetchAreas();
-  }, []);
 
   // Al abrir el diálogo de nuevo trámite, rellenar solo el remitente con el usuario logueado.
   // Primera área de envío queda vacía para que el usuario la elija.
@@ -824,28 +824,6 @@ const TramiteHistory: React.FC<TramiteHistoryProps> = ({ soloLectura = false }) 
     }
   };
 
-  const getEstadoColor = (estado: string) => {
-    const colores: { [key: string]: 'default' | 'primary' | 'secondary' | 'error' | 'info' | 'success' | 'warning' } = {
-      'en_transito': 'warning',
-      'detenido': 'error',
-      'firmado': 'info',
-      'procesado': 'primary',
-      'completado': 'success'
-    };
-    return colores[estado] || 'default';
-  };
-
-  const getEstadoLabel = (estado: string) => {
-    const labels: { [key: string]: string } = {
-      'en_transito': 'En Tránsito',
-      'detenido': 'Detenido',
-      'firmado': 'Firmado',
-      'procesado': 'Procesado',
-      'completado': 'Completado'
-    };
-    return labels[estado] || estado;
-  };
-
   // Obtener código de barras del ID (solo números)
   const getCodigoBarras = (id: string) => {
     // Usar el ID completo (ej. TECO-1771359309039)
@@ -853,294 +831,60 @@ const TramiteHistory: React.FC<TramiteHistoryProps> = ({ soloLectura = false }) 
   };
 
   // Filtrar trámites según búsqueda y estado completado
-  const filteredTramites = tramites.filter(tramite => {
-    // Ocultar trámites completados si está activado
-    if (hideCompleted && tramite.estado === 'completado') {
-      return false;
-    }
-    
-    const searchLower = searchQuery.toLowerCase();
-    const codigoBarras = getCodigoBarras(tramite.id);
-    
-    return (
-      tramite.titulo.toLowerCase().includes(searchLower) ||
-      (tramite.oficio && tramite.oficio.toLowerCase().includes(searchLower)) ||
-      tramite.nombre_destinatario.toLowerCase().includes(searchLower) ||
-      tramite.id.toLowerCase().includes(searchLower) ||
-      tramite.area_destinatario.toLowerCase().includes(searchLower) ||
-      tramite.area_destino_final.toLowerCase().includes(searchLower) ||
-      codigoBarras.includes(searchQuery.replace(/[^0-9]/g, '')) // Buscar por código de barras (solo números)
-    );
-  });
+  const filteredTramites = useMemo(
+    () =>
+      tramites.filter((tramite) => {
+        if (hideCompleted && tramite.estado === 'completado') {
+          return false;
+        }
+
+        const searchLower = searchQuery.toLowerCase();
+        const codigoBarras = getCodigoBarras(tramite.id);
+
+        return (
+          tramite.titulo.toLowerCase().includes(searchLower) ||
+          (tramite.oficio && tramite.oficio.toLowerCase().includes(searchLower)) ||
+          tramite.nombre_destinatario.toLowerCase().includes(searchLower) ||
+          tramite.id.toLowerCase().includes(searchLower) ||
+          tramite.area_destinatario.toLowerCase().includes(searchLower) ||
+          tramite.area_destino_final.toLowerCase().includes(searchLower) ||
+          codigoBarras.includes(searchQuery.replace(/[^0-9]/g, ''))
+        );
+      }),
+    [tramites, hideCompleted, searchQuery],
+  );
 
   const totalPages = Math.max(1, Math.ceil(totalCount / rowsPerPage));
   const paginatedTramites = filteredTramites;
 
   return (
     <Box sx={{ p: 3 }}>
-      <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 3 }}>
-        <Box sx={{ display: 'flex', alignItems: 'center' }}>
-          <FollowTheSigns sx={{ mr: 2, fontSize: 32, color: 'primary.main' }} />
-          <Typography 
-            variant="h4" 
-            sx={{ 
-              fontWeight: 600,
-              color: 'primary.main'
-            }}
-          >
-            Seguimiento de Trámites
-          </Typography>
-        </Box>
-        {!soloLectura && (
-          <Button
-            variant="contained"
-            startIcon={<Add />}
-            onClick={() => setOpenDialog(true)}
-            sx={{
-              px: 3,
-              py: 1.5,
-              borderRadius: 2,
-              textTransform: 'none',
-              fontWeight: 600
-            }}
-          >
-            Nuevo Trámite
-          </Button>
-        )}
-      </Box>
-
-      <Typography variant="body1" color="text.secondary" sx={{ mb: 3 }}>
-        Sistema de seguimiento de documentos físicos. Registre y rastree el movimiento de trámites entre áreas.
-      </Typography>
-
-      {/* Buscador Mejorado */}
-      <Paper 
-        elevation={3} 
-        sx={{ 
-          p: 2.5, 
-          mb: 3,
-          background: 'linear-gradient(135deg, rgba(66, 165, 245, 0.05) 0%, rgba(255, 255, 255, 1) 100%)',
-          border: '1px solid',
-          borderColor: 'divider',
-          borderRadius: 3
-        }}
-      >
-        <Box 
-          display="flex" 
-          gap={1.5} 
-          alignItems="stretch"
-          sx={{ flexWrap: { xs: 'wrap', sm: 'nowrap' } }}
+      <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, mb: 1 }}>
+        <FollowTheSigns sx={{ fontSize: 32, color: 'primary.main' }} />
+        <Typography
+          variant="h4"
+          sx={{
+            fontWeight: 600,
+            color: 'primary.main',
+          }}
         >
-          <Box sx={{ flexGrow: 1, minWidth: 0 }}>
-            <TextField
-              inputRef={searchInputRef}
-              label="Buscar trámite"
-              variant="outlined"
-              size="medium"
-              fullWidth
-              value={searchQuery}
-              onChange={handleSearchChange}
-              onKeyPress={handleSearchKeyPress}
-              placeholder="ID, título, oficio, destinatario, área o código de barras..."
-              sx={{
-                '& .MuiOutlinedInput-root': {
-                  borderRadius: 2,
-                  backgroundColor: 'background.paper',
-                  '&:hover': {
-                    '& .MuiOutlinedInput-notchedOutline': {
-                      borderColor: 'primary.main',
-                    },
-                  },
-                  '&.Mui-focused': {
-                    '& .MuiOutlinedInput-notchedOutline': {
-                      borderWidth: 2,
-                    },
-                  },
-                },
-              }}
-              InputProps={{
-                startAdornment: (
-                  <Box sx={{ display: 'flex', alignItems: 'center', mr: 1 }}>
-                    <Search sx={{ color: 'primary.main', fontSize: 22 }} />
-                  </Box>
-                ),
-                endAdornment: searchQuery && (
-                  <IconButton
-                    size="small"
-                    onClick={() => {
-                      setSearchQuery('');
-                      searchInputRef.current?.focus();
-                    }}
-                    sx={{ mr: 0.5 }}
-                  >
-                    <Clear fontSize="small" />
-                  </IconButton>
-                ),
-              }}
-            />
-          </Box>
-          
-          <Box display="flex" gap={1} alignItems="stretch">
-            <Tooltip 
-              title={scanning ? "Detener escaneo con cámara" : "Escanear código de barras con cámara"} 
-              arrow
-            >
-              <Button
-                variant={scanning ? "contained" : "outlined"}
-                onClick={scanning ? stopCameraScan : startCameraScan}
-                color={scanning ? "error" : "primary"}
-                startIcon={scanning ? <Stop /> : <CameraAlt />}
-                sx={{
-                  minWidth: { xs: 'auto', sm: 140 },
-                  px: 2.5,
-                  py: 1.5,
-                  borderRadius: 2,
-                  textTransform: 'none',
-                  fontWeight: 600,
-                  borderWidth: scanning ? 0 : 2,
-                  boxShadow: scanning ? 2 : 0,
-                  '&:hover': {
-                    borderWidth: scanning ? 0 : 2,
-                    boxShadow: scanning ? 4 : 2,
-                  },
-                }}
-              >
-                <Box component="span" sx={{ display: { xs: 'none', sm: 'inline' } }}>
-                  {scanning ? 'Detener' : 'Cámara'}
-                </Box>
-              </Button>
-            </Tooltip>
-            
-            <Tooltip title="Buscar trámites" arrow>
-              <Button
-                variant="contained"
-                onClick={handleSearch}
-                startIcon={<Search />}
-                sx={{
-                  minWidth: { xs: 'auto', sm: 120 },
-                  px: 3,
-                  py: 1.5,
-                  borderRadius: 2,
-                  textTransform: 'none',
-                  fontWeight: 600,
-                  boxShadow: 2,
-                  '&:hover': {
-                    boxShadow: 4,
-                  },
-                }}
-              >
-                <Box component="span" sx={{ display: { xs: 'none', sm: 'inline' } }}>
-                  Buscar
-                </Box>
-              </Button>
-            </Tooltip>
-          </Box>
-        </Box>
-
-        {/* Indicador de escaneo profesional */}
-        {!scanning && searchQuery && (
-          <Box sx={{ mt: 1.5, display: 'flex', alignItems: 'center', gap: 1 }}>
-            <Scanner sx={{ fontSize: 16, color: 'text.secondary' }} />
-            <Typography variant="caption" color="text.secondary">
-              También puedes usar un escáner de código de barras profesional
-            </Typography>
-          </Box>
-        )}
-
-        {/* Vista de cámara */}
-        {scanning && (
-          <Box 
-            sx={{ 
-              mt: 2.5, 
-              textAlign: 'center',
-              p: 2,
-              backgroundColor: 'rgba(0, 0, 0, 0.02)',
-              borderRadius: 2,
-              border: '2px dashed',
-              borderColor: 'primary.main'
-            }}
-          >
-            <video
-              ref={videoRef}
-              autoPlay
-              playsInline
-              style={{
-                width: '100%',
-                maxWidth: '500px',
-                borderRadius: '12px',
-                boxShadow: '0 4px 12px rgba(0, 0, 0, 0.15)',
-                backgroundColor: '#000'
-              }}
-            />
-            <Box sx={{ mt: 2, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 1 }}>
-              <Box
-                sx={{
-                  width: 12,
-                  height: 12,
-                  borderRadius: '50%',
-                  backgroundColor: 'error.main',
-                  animation: 'pulse 2s infinite',
-                  '@keyframes pulse': {
-                    '0%, 100%': { opacity: 1 },
-                    '50%': { opacity: 0.5 },
-                  },
-                }}
-              />
-              <Typography variant="body2" color="text.secondary" sx={{ fontWeight: 500 }}>
-                Apunta la cámara al código de barras
-              </Typography>
-            </Box>
-          </Box>
-        )}
-      </Paper>
-
-      {/* Switches de control */}
-      <Box sx={{ display: 'flex', justifyContent: 'flex-end', gap: 3, mb: 3, flexWrap: 'wrap' }}>
-        <FormControlLabel
-          control={
-            <Switch
-              checked={viewMode === 'list'}
-              onChange={(e) => setViewMode(e.target.checked ? 'list' : 'cards')}
-              color="primary"
-            />
-          }
-          label={
-            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-              {viewMode === 'list' ? <ViewList /> : <ViewModule />}
-              <Typography variant="body2" sx={{ fontWeight: 500 }}>
-                {viewMode === 'list' ? 'Vista de Lista' : 'Vista de Tarjetas'}
-              </Typography>
-            </Box>
-          }
-          sx={{
-            '& .MuiFormControlLabel-label': {
-              ml: 1
-            }
-          }}
-        />
-        <FormControlLabel
-          control={
-            <Switch
-              checked={hideCompleted}
-              onChange={(e) => setHideCompleted(e.target.checked)}
-              color="primary"
-            />
-          }
-          label={
-            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-              <CheckCircle fontSize="small" color={hideCompleted ? 'action' : 'success'} />
-              <Typography variant="body2" sx={{ fontWeight: 500 }}>
-                Ocultar Completados
-              </Typography>
-            </Box>
-          }
-          sx={{
-            '& .MuiFormControlLabel-label': {
-              ml: 1
-            }
-          }}
-        />
+          Seguimiento de Trámites
+        </Typography>
       </Box>
+
+      <TramitesToolbar
+        searchQuery={searchQuery}
+        onSearchChange={setSearchQuery}
+        onSearchSubmit={handleSearch}
+        viewMode={viewMode}
+        onViewModeChange={setViewMode}
+        hideCompleted={hideCompleted}
+        onHideCompletedChange={setHideCompleted}
+        scanning={scanning}
+        onToggleScan={scanning ? stopCameraScan : startCameraScan}
+        searchInputRef={searchInputRef}
+        onOpenNuevoTramite={() => setOpenDialog(true)}
+      />
 
       {error && (
         <Alert severity="warning" sx={{ mb: 3 }} onClose={() => setError(null)}>
@@ -1525,142 +1269,18 @@ const TramiteHistory: React.FC<TramiteHistoryProps> = ({ soloLectura = false }) 
       )}
 
       {/* Dialog para nuevo trámite */}
-      <Dialog open={openDialog} onClose={() => setOpenDialog(false)} maxWidth="md" fullWidth>
-        <DialogTitle>Crear Nuevo Trámite</DialogTitle>
-        <DialogContent>
-          <Stack spacing={2} sx={{ pt: 2 }}>
-            <TextField
-              label="Título del Documento"
-              fullWidth
-              required
-              value={nuevoTramite.titulo}
-              onChange={(e) => setNuevoTramite({ ...nuevoTramite, titulo: e.target.value })}
-              placeholder="Ej: Solicitud de Presupuesto"
-            />
-            <TextField
-              label="Oficio"
-              fullWidth
-              value={nuevoTramite.oficio}
-              onChange={(e) => setNuevoTramite({ ...nuevoTramite, oficio: e.target.value })}
-              placeholder="Ej: OF-2025-001"
-            />
-            <TextField
-              label="Remitente"
-              fullWidth
-              required
-              value={nuevoTramite.nombre_destinatario}
-              InputProps={{ readOnly: true }}
-              placeholder="Se rellena con el usuario logueado"
-            />
-            <FormControl fullWidth required disabled={loadingAreas || areas.length === 0}>
-              <InputLabel>Área de envío</InputLabel>
-              <Select
-                value={nuevoTramite.area_destinatario}
-                label="Área de envío"
-                onChange={(e) => setNuevoTramite({ ...nuevoTramite, area_destinatario: e.target.value })}
-              >
-                {areas.map((area) => (
-                  <MenuItem key={area.id} value={area.area}>{area.area}</MenuItem>
-                ))}
-              </Select>
-            </FormControl>
-            <FormControl fullWidth>
-              <InputLabel>Proceso (opcional)</InputLabel>
-              <Select
-                value={nuevoTramite.proceso}
-                label="Proceso (opcional)"
-                onChange={(e) => setNuevoTramite({ ...nuevoTramite, proceso: e.target.value })}
-                displayEmpty
-              >
-                <MenuItem value="">
-                  <em>Ninguno</em>
-                </MenuItem>
-                {PROCESOS.map((p) => (
-                  <MenuItem key={p.id} value={p.id}>{p.nombre}</MenuItem>
-                ))}
-              </Select>
-              <Typography variant="caption" color="text.secondary" sx={{ mt: 0.5, display: 'block' }}>
-                Si selecciona un proceso, se activa el control y monitoreo de tiempo por área.
-              </Typography>
-            </FormControl>
-            <Box>
-              <Typography variant="body2" sx={{ mb: 1, fontWeight: 500 }}>
-                Archivo PDF (opcional)
-              </Typography>
-              <input
-                ref={fileInputRef}
-                type="file"
-                accept=".pdf,application/pdf"
-                onChange={handleFileChange}
-                style={{ display: 'none' }}
-              />
-              <Button
-                variant="outlined"
-                component="label"
-                startIcon={<AttachFile />}
-                fullWidth
-                sx={{ mb: 1 }}
-              >
-                {nuevoTramite.archivo_pdf ? nuevoTramite.archivo_pdf.name : 'Seleccionar archivo PDF'}
-                <input
-                  type="file"
-                  accept=".pdf,application/pdf"
-                  onChange={handleFileChange}
-                  style={{ display: 'none' }}
-                />
-              </Button>
-              {nuevoTramite.archivo_pdf && (
-                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, p: 1, bgcolor: 'success.light', borderRadius: 1 }}>
-                  <PictureAsPdf color="error" />
-                  <Typography variant="body2" sx={{ flexGrow: 1 }}>
-                    {nuevoTramite.archivo_pdf.name} ({(nuevoTramite.archivo_pdf.size / 1024 / 1024).toFixed(2)} MB)
-                  </Typography>
-                  <IconButton
-                    size="small"
-                    onClick={() => {
-                      setNuevoTramite({ ...nuevoTramite, archivo_pdf: null });
-                      if (fileInputRef.current) {
-                        fileInputRef.current.value = '';
-                      }
-                    }}
-                  >
-                    <Typography variant="body2">✕</Typography>
-                  </IconButton>
-                </Box>
-              )}
-              <Typography variant="caption" color="text.secondary">
-                Solo se permiten archivos PDF. Tamaño máximo: 10MB
-              </Typography>
-            </Box>
-          </Stack>
-        </DialogContent>
-        <DialogActions>
-          <Button onClick={() => {
-            setOpenDialog(false);
-            setNuevoTramite({
-              titulo: '',
-              oficio: '',
-              nombre_destinatario: '',
-              area_destinatario: '',
-              area_destino_final: '',
-              proceso: '',
-              archivo_pdf: null
-            });
-            if (fileInputRef.current) {
-              fileInputRef.current.value = '';
-            }
-          }}>
-            Cancelar
-          </Button>
-          <Button 
-            onClick={handleCreateTramite} 
-            variant="contained"
-            disabled={uploadingPdf}
-          >
-            {uploadingPdf ? 'Creando...' : 'Crear Trámite'}
-          </Button>
-        </DialogActions>
-      </Dialog>
+      <NuevoTramiteDialog
+        open={openDialog}
+        onClose={() => setOpenDialog(false)}
+        nuevoTramite={nuevoTramite}
+        setNuevoTramite={(updater) => setNuevoTramite((prev) => updater({ ...prev } as any))}
+        areas={areas}
+        loadingAreas={loadingAreas}
+        uploadingPdf={uploadingPdf}
+        onCreate={handleCreateTramite}
+        onFileChange={handleFileChange}
+        fileInputRef={fileInputRef}
+      />
 
       {/* Estilos de impresión - solo muestra la etiqueta */}
       <style>{`
@@ -1698,609 +1318,108 @@ const TramiteHistory: React.FC<TramiteHistoryProps> = ({ soloLectura = false }) 
       )}
 
       {/* Dialog para código de barras */}
-      <Dialog open={openBarcodeDialog} onClose={() => setOpenBarcodeDialog(false)} maxWidth="sm" fullWidth>
-        <DialogTitle>
-          Código de Barras - {selectedTramite?.id}
-        </DialogTitle>
-        <DialogContent>
-          {selectedTramite && (
-            <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', py: 3, gap: 3 }}>
-              <BarcodeDisplay 
-                codigo={getCodigoBarras(selectedTramite.id)} 
-                id={selectedTramite.id}
-                año={selectedTramite.fecha_creacion
-                  ? new Date(selectedTramite.fecha_creacion).getFullYear().toString()
-                  : selectedTramite.created_at
-                    ? new Date(selectedTramite.created_at).getFullYear().toString()
+      <BarcodeDialog
+        open={openBarcodeDialog}
+        onClose={() => setOpenBarcodeDialog(false)}
+        tramite={selectedTramite}
+        renderBarcode={(tramite) => (
+          <>
+            <BarcodeDisplay
+              codigo={getCodigoBarras(tramite.id)}
+              id={tramite.id}
+              año={
+                tramite.fecha_creacion
+                  ? new Date(tramite.fecha_creacion).getFullYear().toString()
+                  : tramite.created_at
+                    ? new Date(tramite.created_at).getFullYear().toString()
                     : new Date().getFullYear().toString()
-                }
-              />
-              <Box sx={{ textAlign: 'center' }}>
-                <Typography variant="body2" color="text.secondary" gutterBottom>
-                  <strong>Título:</strong> {selectedTramite.titulo}
-                </Typography>
-                <Typography variant="body2" color="text.secondary">
-                  <strong>Remitente:</strong> {selectedTramite.nombre_destinatario}
-                </Typography>
-              </Box>
+              }
+            />
+            <Box sx={{ textAlign: 'center', mt: 2 }}>
+              <Typography variant="body2" color="text.secondary" gutterBottom>
+                <strong>Título:</strong> {tramite.titulo}
+              </Typography>
+              <Typography variant="body2" color="text.secondary">
+                <strong>Remitente:</strong> {tramite.nombre_destinatario}
+              </Typography>
             </Box>
-          )}
-        </DialogContent>
-        <DialogActions>
-          <Button onClick={() => setOpenBarcodeDialog(false)}>Cerrar</Button>
-          <Button
-            variant="contained"
-            startIcon={<Print />}
-            onClick={() => window.print()}
-          >
-            Imprimir
-          </Button>
-        </DialogActions>
-      </Dialog>
+          </>
+        )}
+        onPrint={() => window.print()}
+      />
 
-      {/* Dialog para visualizar PDF */}
-      <Dialog 
-        open={openPdfDialog} 
-        onClose={() => {
-          setOpenPdfDialog(false);
-          setPdfUrl(null);
-          setPdfError(false);
-        }} 
-        maxWidth="lg" 
-        fullWidth
-        PaperProps={{
-          sx: {
-            borderRadius: 3,
-            boxShadow: '0 8px 32px rgba(0, 0, 0, 0.12)',
-            height: '90vh',
-            maxHeight: '90vh'
-          }
-        }}
-      >
-        <DialogTitle sx={{ 
-          pb: 2,
-          borderBottom: '2px solid',
-          borderColor: 'divider',
-          backgroundColor: 'error.main',
-          color: 'white',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'space-between'
-        }}>
-          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, flex: 1 }}>
-            <PictureAsPdf />
-            <Box sx={{ flex: 1, minWidth: 0 }}>
-              <Typography variant="h6" component="div" sx={{ fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                {selectedTramite?.nombre_archivo || 'Documento PDF'}
-              </Typography>
-              {selectedTramite && (
-                <Typography variant="body2" sx={{ opacity: 0.9, mt: 0.5, overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                  {selectedTramite.id} - {selectedTramite.titulo}
-                </Typography>
-              )}
-            </Box>
-          </Box>
-          <Box sx={{ display: 'flex', gap: 1 }}>
-            {pdfUrl && (
-              <Tooltip title="Abrir en nueva pestaña">
-                <IconButton
-                  size="small"
-                  onClick={() => window.open(pdfUrl || '', '_blank')}
-                  sx={{ color: 'white' }}
-                >
-                  <Visibility />
-                </IconButton>
-              </Tooltip>
-            )}
-            {selectedTramite && (
-              <Tooltip title="Descargar PDF">
-                <IconButton
-                  size="small"
-                  onClick={() => handleDownloadPdf(selectedTramite)}
-                  sx={{ color: 'white' }}
-                >
-                  <Download />
-                </IconButton>
-              </Tooltip>
-            )}
-          </Box>
-        </DialogTitle>
-        <DialogContent sx={{ p: 0, height: '100%', overflow: 'hidden', position: 'relative' }}>
-          {pdfError ? (
-            <Box sx={{ 
-              display: 'flex', 
-              flexDirection: 'column', 
-              alignItems: 'center', 
-              justifyContent: 'center', 
-              py: 6,
-              height: '100%',
-              backgroundColor: '#f5f5f5'
-            }}>
-              <PictureAsPdf sx={{ fontSize: 80, color: 'text.secondary', mb: 2, opacity: 0.5 }} />
-              <Typography variant="h6" color="text.secondary" gutterBottom>
-                No se pudo cargar el PDF
-              </Typography>
-              <Typography variant="body2" color="text.secondary" sx={{ mb: 3, textAlign: 'center', maxWidth: 400 }}>
-                El PDF no se puede mostrar en el visor. Puedes intentar abrirlo en una nueva pestaña o descargarlo.
-              </Typography>
-              <Box sx={{ display: 'flex', gap: 2 }}>
-                {pdfUrl && (
-                  <Button
-                    variant="contained"
-                    startIcon={<Visibility />}
-                    onClick={() => window.open(pdfUrl, '_blank')}
-                  >
-                    Abrir en nueva pestaña
-                  </Button>
-                )}
-                {selectedTramite && (
-                  <Button
-                    variant="outlined"
-                    startIcon={<Download />}
-                    onClick={() => handleDownloadPdf(selectedTramite)}
-                  >
-                    Descargar PDF
-                  </Button>
-                )}
-              </Box>
-            </Box>
-          ) : pdfUrl ? (
-            <Box sx={{ 
-              width: '100%', 
-              height: '100%', 
-              display: 'flex',
-              flexDirection: 'column',
-              backgroundColor: '#525252',
-              position: 'relative'
-            }}>
-              {/* Usar embed para mejor soporte de PDFs en navegadores */}
-              <embed
-                src={`${pdfUrl}#toolbar=1&navpanes=1&scrollbar=1`}
-                type="application/pdf"
-                style={{
-                  width: '100%',
-                  height: '100%',
-                  border: 'none',
-                  flex: 1,
-                  minHeight: '500px'
-                }}
-              />
-            </Box>
-          ) : (
-            <Box sx={{ 
-              display: 'flex', 
-              flexDirection: 'column', 
-              alignItems: 'center', 
-              justifyContent: 'center', 
-              py: 6,
-              height: '100%'
-            }}>
-              <CircularProgress size={48} sx={{ mb: 2 }} />
-              <Typography variant="body1" color="text.secondary">
-                Cargando PDF...
-              </Typography>
-            </Box>
-          )}
-        </DialogContent>
-        <DialogActions sx={{ px: 3, py: 2, borderTop: '1px solid', borderColor: 'divider' }}>
-          <Button 
-            onClick={() => {
-              setOpenPdfDialog(false);
-              setPdfUrl(null);
-              setPdfError(false);
-            }}
-            variant="outlined"
-            sx={{ minWidth: 100 }}
-          >
-            Cerrar
-          </Button>
-          {pdfUrl && (
-            <Button
-              variant="contained"
-              startIcon={<Download />}
-              onClick={() => {
-                if (selectedTramite) {
-                  handleDownloadPdf(selectedTramite);
-                }
+      {/* Dialog para visualizar PDF (lazy) */}
+      <Suspense
+        fallback={
+          <Dialog open={openPdfDialog} maxWidth="lg" fullWidth>
+            <DialogContent
+              sx={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                minHeight: 200,
               }}
             >
-              Descargar
-            </Button>
-          )}
-        </DialogActions>
-      </Dialog>
+              <CircularProgress />
+            </DialogContent>
+          </Dialog>
+        }
+      >
+        <LazyPdfViewerDialog
+          open={openPdfDialog}
+          onClose={() => {
+            setOpenPdfDialog(false);
+            setPdfUrl(null);
+            setPdfError(false);
+          }}
+          tramite={selectedTramite}
+          pdfUrl={pdfUrl}
+          pdfError={pdfError}
+          onRetryOpenInNewTab={() => {
+            if (pdfUrl) window.open(pdfUrl, '_blank');
+          }}
+          onDownload={() => {
+            if (selectedTramite) {
+              handleDownloadPdf(selectedTramite);
+            }
+          }}
+        />
+      </Suspense>
 
       {/* Dialog para registrar seguimiento */}
-      <Dialog open={openSeguimientoDialog} onClose={() => setOpenSeguimientoDialog(false)} maxWidth="md" fullWidth>
-        <DialogTitle>
-          Registrar Seguimiento - {selectedTramite?.id}
-        </DialogTitle>
-        <DialogContent>
-          <Stack spacing={2} sx={{ pt: 2 }}>
-            <FormControl fullWidth>
-              <InputLabel>Área Origen</InputLabel>
-              <Select
-                value={seguimientoData.area_origen}
-                label="Área Origen"
-                disabled
-              >
-                <MenuItem value={seguimientoData.area_origen}>{seguimientoData.area_origen}</MenuItem>
-              </Select>
-            </FormControl>
-            <FormControl
-              fullWidth
-              required={!(
-                seguimientoData.actualizar_estado === 'detenido' ||
-                seguimientoData.actualizar_estado === 'completado'
-              )}
-              disabled={
-                loadingAreas ||
-                areas.length === 0 ||
-                seguimientoData.actualizar_estado === 'detenido' ||
-                seguimientoData.actualizar_estado === 'completado'
-              }
-            >
-              <InputLabel>Área Destino</InputLabel>
-              <Select
-                value={seguimientoData.area_destino}
-                label="Área Destino"
-                onChange={(e) => setSeguimientoData({ ...seguimientoData, area_destino: e.target.value })}
-              >
-                {areas.map((area) => (
-                  <MenuItem key={area.id} value={area.area}>{area.area}</MenuItem>
-                ))}
-              </Select>
-            </FormControl>
-            <TextField
-              label="Usuario / Quién envía (Remitente)"
-              fullWidth
-              required
-              value={seguimientoData.usuario}
-              InputProps={{ readOnly: true }}
-              placeholder="Se rellena con el usuario logueado"
-            />
-            <FormControl fullWidth>
-              <InputLabel>Actualizar Estado</InputLabel>
-              <Select
-                value={
-                  seguimientoData.actualizar_estado === 'detenido' ||
-                  seguimientoData.actualizar_estado === 'completado'
-                    ? ''
-                    : seguimientoData.actualizar_estado
-                }
-                label="Actualizar Estado"
-                onChange={(e) =>
-                  setSeguimientoData({
-                    ...seguimientoData,
-                    actualizar_estado: e.target.value as string,
-                  })
-                }
-                displayEmpty
-              >
-                <MenuItem value="">
-                  <em>Sin cambio</em>
-                </MenuItem>
-                <MenuItem value="en_transito">En Tránsito</MenuItem>
-                <MenuItem value="firmado">Firmado</MenuItem>
-                <MenuItem value="procesado">Procesado</MenuItem>
-              </Select>
-            </FormControl>
-            <Box sx={{ display: 'flex', gap: 3, mt: 1 }}>
-              <FormControlLabel
-                control={
-                  <Checkbox
-                    checked={seguimientoData.actualizar_estado === 'detenido'}
-                    onChange={(e) =>
-                      setSeguimientoData({
-                        ...seguimientoData,
-                        actualizar_estado: e.target.checked ? 'detenido' : '',
-                      })
-                    }
-                    color="error"
-                  />
-                }
-                label="Detenido"
-              />
-              <FormControlLabel
-                control={
-                  <Checkbox
-                    checked={seguimientoData.actualizar_estado === 'completado'}
-                    onChange={(e) =>
-                      setSeguimientoData({
-                        ...seguimientoData,
-                        actualizar_estado: e.target.checked ? 'completado' : '',
-                      })
-                    }
-                    color="success"
-                  />
-                }
-                label="Completado"
-              />
-            </Box>
-            <TextField
-              label="Observaciones"
-              fullWidth
-              multiline
-              rows={3}
-              value={seguimientoData.observaciones}
-              onChange={(e) => setSeguimientoData({ ...seguimientoData, observaciones: e.target.value })}
-              placeholder="Notas adicionales sobre el movimiento..."
-            />
-          </Stack>
-        </DialogContent>
-        <DialogActions>
-          <Button onClick={() => setOpenSeguimientoDialog(false)}>Cancelar</Button>
-          <Button onClick={handleRegistrarSeguimiento} variant="contained" startIcon={<Send />}>
-            Registrar Seguimiento
-          </Button>
-        </DialogActions>
-      </Dialog>
+      <SeguimientoDialog
+        open={openSeguimientoDialog}
+        onClose={() => setOpenSeguimientoDialog(false)}
+        tramite={selectedTramite}
+        areas={areas}
+        loadingAreas={loadingAreas}
+        seguimientoData={seguimientoData}
+        setSeguimientoData={(updater) =>
+          setSeguimientoData((prev) => updater(prev))
+        }
+        onSubmit={handleRegistrarSeguimiento}
+      />
 
       {/* Dialog para historial */}
-      <Dialog 
-        open={openHistoryDialog} 
+      <HistorialDialog
+        open={openHistoryDialog}
         onClose={() => {
           setOpenHistoryDialog(false);
           setHistorial([]);
           setLoadingHistorial(false);
-        }} 
-        maxWidth="md" 
-        fullWidth
-        PaperProps={{
-          sx: {
-            borderRadius: 3,
-            boxShadow: '0 8px 32px rgba(0, 0, 0, 0.12)'
-          }
         }}
-      >
-                <DialogTitle sx={{ 
-          pb: 2,
-          borderBottom: '2px solid',
-          borderColor: 'divider',
-          backgroundColor: 'primary.main',
-          color: 'white'
-        }}>
-          <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 2 }}>
-            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-              <HistoryIcon />
-              <Box>
-                <Typography variant="h6" component="div" sx={{ fontWeight: 600 }}>
-                  Historial de Movimientos
-                </Typography>
-              {selectedTramite && (
-                <Typography variant="body2" sx={{ opacity: 0.9, mt: 0.5 }}>
-                  {selectedTramite.id} - {selectedTramite.titulo}
-                  {selectedTramite.oficio && ` · Oficio: ${selectedTramite.oficio}`}
-                </Typography>
-              )}
-              </Box>
-            </Box>
-            {selectedTramite?.archivo_pdf && (
-              <Button
-                variant="contained"
-                size="small"
-                color="error"
-                startIcon={<PictureAsPdf />}
-                onClick={() => {
-                  setOpenHistoryDialog(false);
-                  handleViewPdf(selectedTramite);
-                }}
-                sx={{ whiteSpace: 'nowrap' }}
-              >
-                Ver PDF del trámite
-              </Button>
-            )}
-          </Box>
-        </DialogTitle>
-        <DialogContent sx={{ pt: 3, minHeight: '300px' }}>
-          {loadingHistorial ? (
-            <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', py: 6 }}>
-              <CircularProgress size={48} sx={{ mb: 2 }} />
-              <Typography variant="body1" color="text.secondary">
-                Cargando historial de movimientos...
-              </Typography>
-            </Box>
-          ) : historial.length === 0 ? (
-            <Box sx={{ textAlign: 'center', py: 6 }}>
-              <HistoryIcon sx={{ fontSize: 80, color: 'text.secondary', mb: 2, opacity: 0.5 }} />
-              <Typography variant="h6" color="text.secondary" gutterBottom>
-                Sin movimientos registrados
-              </Typography>
-              <Typography variant="body2" color="text.secondary">
-                Aún no hay movimientos registrados para este trámite
-              </Typography>
-            </Box>
-          ) : (
-            <Box sx={{ mt: 1 }}>
-              <Typography variant="subtitle2" color="text.secondary" sx={{ mb: 2, fontWeight: 600 }}>
-                Total de movimientos: {historial.length}
-              </Typography>
-              <Box sx={{ 
-                display: 'flex', 
-                flexDirection: 'column', 
-                gap: 2,
-                maxHeight: '500px',
-                overflowY: 'auto',
-                pr: 1,
-                '&::-webkit-scrollbar': {
-                  width: '8px',
-                },
-                '&::-webkit-scrollbar-track': {
-                  backgroundColor: 'rgba(0,0,0,0.05)',
-                  borderRadius: '4px',
-                },
-                '&::-webkit-scrollbar-thumb': {
-                  backgroundColor: 'rgba(0,0,0,0.2)',
-                  borderRadius: '4px',
-                  '&:hover': {
-                    backgroundColor: 'rgba(0,0,0,0.3)',
-                  },
-                },
-              }}>
-                {historial.map((movimiento, index) => {
-                  const esUltimo = index === 0;
-                  const movimientoDetenido = movimiento.estado_resultante === 'detenido';
-                  const colorBorde = movimientoDetenido ? '#c62828' : (esUltimo ? 'primary.main' : 'divider');
-                  const colorFondo = movimientoDetenido ? 'rgba(198, 40, 40, 0.06)' : (esUltimo ? 'rgba(66, 165, 245, 0.05)' : 'background.paper');
-                  const colorCirculo = movimientoDetenido ? '#c62828' : 'primary.main';
-                  return (
-                    <Paper 
-                      key={movimiento.id || index} 
-                      elevation={esUltimo ? 3 : 1} 
-                      sx={{ 
-                        p: 2.5, 
-                        position: 'relative',
-                        borderLeft: esUltimo ? '4px solid' : '2px solid',
-                        borderColor: colorBorde,
-                        backgroundColor: movimientoDetenido ? colorFondo : (esUltimo ? 'rgba(66, 165, 245, 0.05)' : 'background.paper'),
-                        transition: 'all 0.2s',
-                        '&:hover': {
-                          boxShadow: 4,
-                          transform: 'translateX(4px)',
-                        }
-                      }}
-                    >
-                      {esUltimo && (
-                        <Chip 
-                          label="Más Reciente" 
-                          size="small" 
-                          color={movimientoDetenido ? 'error' : 'primary'} 
-                          sx={{ 
-                            position: 'absolute', 
-                            top: 8, 
-                            right: 8,
-                            fontWeight: 600
-                          }} 
-                        />
-                      )}
-                      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'start', mb: 1.5 }}>
-                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                          <Box sx={{
-                            width: 32,
-                            height: 32,
-                            borderRadius: '50%',
-                            backgroundColor: colorCirculo,
-                            color: 'white',
-                            display: 'flex',
-                            alignItems: 'center',
-                            justifyContent: 'center',
-                            fontWeight: 600,
-                            fontSize: '0.875rem'
-                          }}>
-                            {historial.length - index}
-                          </Box>
-                          <Typography variant="subtitle2" sx={{ fontWeight: 600, fontSize: '1rem' }}>
-                            Movimiento #{historial.length - index}
-                          </Typography>
-                        </Box>
-                        <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 500 }}>
-                          {movimiento.fecha_movimiento
-                            ? new Date(movimiento.fecha_movimiento).toLocaleString('es-DO', {
-                                year: 'numeric',
-                                month: 'short',
-                                day: 'numeric',
-                                hour: '2-digit',
-                                minute: '2-digit'
-                              })
-                            : 'Fecha no disponible'}
-                        </Typography>
-                      </Box>
-                      
-                      <Box sx={{ 
-                        display: 'flex', 
-                        gap: 2, 
-                        mb: 1.5,
-                        flexWrap: 'wrap'
-                      }}>
-                        <Box sx={{ 
-                          flex: 1, 
-                          minWidth: '200px',
-                          p: 1.5,
-                          backgroundColor: 'rgba(255, 152, 0, 0.1)',
-                          borderRadius: 1,
-                          border: '1px solid',
-                          borderColor: 'warning.light'
-                        }}>
-                          <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 0.5 }}>
-                            Desde
-                          </Typography>
-                          <Typography variant="body2" sx={{ fontWeight: 600 }}>
-                            {movimiento.area_origen || 'N/A'}
-                          </Typography>
-                        </Box>
-                        <Box sx={{ 
-                          flex: 1, 
-                          minWidth: '200px',
-                          p: 1.5,
-                          backgroundColor: 'rgba(76, 175, 80, 0.1)',
-                          borderRadius: 1,
-                          border: '1px solid',
-                          borderColor: 'success.light'
-                        }}>
-                          <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 0.5 }}>
-                            Hacia
-                          </Typography>
-                          <Typography variant="body2" sx={{ fontWeight: 600 }}>
-                            {movimiento.area_destino || 'N/A'}
-                          </Typography>
-                        </Box>
-                      </Box>
-                      
-                      {movimiento.usuario && (
-                        <Box sx={{ 
-                          display: 'flex', 
-                          alignItems: 'center', 
-                          gap: 1, 
-                          mb: 1,
-                          p: 1,
-                          backgroundColor: 'rgba(0, 0, 0, 0.02)',
-                          borderRadius: 1
-                        }}>
-                          <Person fontSize="small" color="action" />
-                          <Typography variant="body2" color="text.secondary">
-                            <strong>Usuario:</strong> {movimiento.usuario}
-                          </Typography>
-                        </Box>
-                      )}
-                      
-                      {movimiento.observaciones && (
-                        <Box sx={{ 
-                          mt: 1.5,
-                          p: 1.5,
-                          backgroundColor: movimiento.estado_resultante === 'detenido' ? 'rgba(198, 40, 40, 0.06)' : 'rgba(0, 0, 0, 0.02)',
-                          borderRadius: 1,
-                          borderLeft: '3px solid',
-                          borderColor: movimiento.estado_resultante === 'detenido' ? '#c62828' : 'info.main'
-                        }}>
-                          <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 0.5, fontWeight: 600 }}>
-                            Observaciones
-                          </Typography>
-                          <Typography variant="body2" color="text.secondary" sx={{ whiteSpace: 'pre-wrap' }}>
-                            {movimiento.observaciones}
-                          </Typography>
-                        </Box>
-                      )}
-                    </Paper>
-                  );
-                })}
-              </Box>
-            </Box>
-          )}
-        </DialogContent>
-        <DialogActions sx={{ px: 3, py: 2, borderTop: '1px solid', borderColor: 'divider' }}>
-          <Button 
-            onClick={() => {
-              setOpenHistoryDialog(false);
-              setHistorial([]);
-              setLoadingHistorial(false);
-            }}
-            variant="outlined"
-            sx={{ minWidth: 100 }}
-          >
-            Cerrar
-          </Button>
-        </DialogActions>
-      </Dialog>
+        tramite={selectedTramite}
+        historial={historial}
+        loadingHistorial={loadingHistorial}
+        onVerPdf={
+          selectedTramite?.archivo_pdf
+            ? () => {
+                setOpenHistoryDialog(false);
+                handleViewPdf(selectedTramite);
+              }
+            : undefined
+        }
+      />
 
       {/* Notificación de nuevo trámite recibido */}
       <Snackbar
