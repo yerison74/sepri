@@ -98,6 +98,21 @@ export interface Area {
   encargado_id?: string | null;
 }
 
+export interface FormularioContratista {
+  id: string;
+  fecha_visita: string;
+  nombres: string;
+  apellidos: string;
+  nombre_empresa: string;
+  motivo_visita: string;
+  nombre_obra?: string | null;
+  nombre_obra_inaugurada?: string | null;
+  provincia: string;
+  numero_contrato: string;
+  correo: string;
+  nota?: string | null;
+}
+
 /** Notificación cuando un trámite alcanza 50%, 70% o 100% del tiempo estimado en un área. */
 export interface NotificacionTiempo {
   id: number;

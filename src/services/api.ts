@@ -1,8 +1,8 @@
 import axios, { AxiosInstance, AxiosResponse } from 'axios';
-import { obrasService, historialUploadsService, storageService, tramitesService, notificacionesTiempoService, areasService } from './supabaseService';
+import { obrasService, historialUploadsService, storageService, tramitesService, notificacionesTiempoService, areasService, formularioContratistaService } from './supabaseService';
 import { getDiasMaximosPorArea } from '../constants/procesos';
 import { mensajeNotificacionTiempo } from '../utils/notificacionesTiempo';
-import type { Obra, Tramite, MovimientoTramite, Area } from '../types/database';
+import type { Obra, Tramite, MovimientoTramite, Area, FormularioContratista } from '../types/database';
 import { 
   procesarArchivoXml, 
   procesarArchivoExcel, 
@@ -12,7 +12,7 @@ import {
 import * as XLSX from 'xlsx';
 
 // Re-exportar tipos para compatibilidad
-export type { Obra, Tramite, MovimientoTramite, Area };
+export type { Obra, Tramite, MovimientoTramite, Area, FormularioContratista };
 
 // Mantener apiClient para operaciones que aún requieren el backend (uploads, etc.)
 // Usar backend local para seguimiento de trámites
@@ -774,6 +774,56 @@ export const areasAPI = {
       throw {
         response: {
           data: { error: error.message || 'Error al obtener áreas' },
+          status: 500,
+        },
+      };
+    }
+  },
+};
+
+export const formularioContratistaAPI = {
+  crear: async (payload: Omit<FormularioContratista, 'id'>) => {
+    try {
+      const data = await formularioContratistaService.crear(payload);
+      return {
+        data: { data },
+      } as AxiosResponse<{ data: FormularioContratista }>;
+    } catch (error: any) {
+      throw {
+        response: {
+          data: { error: error.message || 'Error al crear formulario de contratista' },
+          status: 500,
+        },
+      };
+    }
+  },
+
+  obtener: async (limit = 50) => {
+    try {
+      const data = await formularioContratistaService.obtener(limit);
+      return {
+        data: { data },
+      } as AxiosResponse<{ data: FormularioContratista[] }>;
+    } catch (error: any) {
+      throw {
+        response: {
+          data: { error: error.message || 'Error al obtener formularios de contratista' },
+          status: 500,
+        },
+      };
+    }
+  },
+
+  obtenerPorId: async (id: string) => {
+    try {
+      const data = await formularioContratistaService.obtenerPorId(id);
+      return {
+        data: { data },
+      } as AxiosResponse<{ data: FormularioContratista | null }>;
+    } catch (error: any) {
+      throw {
+        response: {
+          data: { error: error.message || 'Error al obtener la solicitud' },
           status: 500,
         },
       };

@@ -9,6 +9,7 @@ import {
   Person,
   Menu as MenuIcon,
   ChevronLeft,
+  SupportAgent,
 } from '@mui/icons-material';
 import FileUpload from './components/FileUpload';
 import StatsDashboard from './components/StatsDashboard';
@@ -19,6 +20,7 @@ import NotificacionesTiempo from './components/NotificacionesTiempo';
 import { useAuth } from './context/AuthContext';
 import { TAB_PERMISOS } from './constants/permisos';
 import GestionUsuarios from './components/GestionUsuarios';
+import AtencionContratista from './components/AtencionContratista';
 
 interface TabPanelProps {
   children?: React.ReactNode;
@@ -66,7 +68,8 @@ function App() {
     { icon: <Assignment />, label: 'Obras', index: 1 },
     { icon: <CloudUpload />, label: 'Cargar Obras', index: 2 },
     { icon: <FollowTheSigns />, label: 'Seguimiento de Trámites', index: 3 },
-    { icon: <Settings />, label: 'Configuración', index: 4 },
+    { icon: <SupportAgent />, label: 'Atención al contratista', index: 4 },
+    { icon: <Settings />, label: 'Configuración', index: 5 },
   ];
 
   // Solo mostrar pestañas para las que el usuario tiene permiso
@@ -239,6 +242,12 @@ function App() {
 
               {hasPermission('ver_configuracion') && (
                 <TabPanel value={tabValue} index={4}>
+                  <AtencionContratista />
+                </TabPanel>
+              )}
+
+              {hasPermission('ver_configuracion') && (
+                <TabPanel value={tabValue} index={5}>
                   <div>
                     <h2 className="text-2xl font-semibold mb-4 text-stone-800">
                       Configuración del Sistema

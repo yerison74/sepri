@@ -36,7 +36,8 @@ export const TAB_PERMISOS: Record<number, PermisoCode> = {
   1: PERMISOS.VER_OBRAS,
   2: PERMISOS.VER_CARGA_OBRAS,
   3: PERMISOS.VER_TRAMITES,
-  4: PERMISOS.VER_CONFIGURACION,
+  4: PERMISOS.VER_CONFIGURACION, // Atencion al contratista
+  5: PERMISOS.VER_CONFIGURACION, // Configuración del sistema
 };
 
 export function tienePermiso(permisosUsuario: string[] | null | undefined, codigo: PermisoCode): boolean {

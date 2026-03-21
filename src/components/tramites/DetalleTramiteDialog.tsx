@@ -55,14 +55,34 @@ const DetalleTramiteDialog: React.FC<DetalleTramiteDialogProps> = ({
             >
               Detalle del Trámite
             </Typography>
-            <Typography variant="body2" sx={{ opacity: 0.9, mt: 0.5 }}>
-              {tramite.id} - {tramite.titulo}
-            </Typography>
           </Box>
         </Box>
       </DialogTitle>
       <DialogContent sx={{ pt: 3 }}>
-        <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', sm: '1fr 1fr' }, gap: 2, mb: 2 }}>
+        <Box
+          sx={{
+            display: 'grid',
+            gridTemplateColumns: { xs: '1fr', sm: '1fr 1fr' },
+            gap: 2,
+            mb: 2,
+          }}
+        >
+          <Box>
+            <Typography variant="caption" color="text.secondary">
+              ID del trámite
+            </Typography>
+            <Typography variant="body2" sx={{ mt: 0.5 }}>
+              {tramite.id}
+            </Typography>
+          </Box>
+          <Box>
+            <Typography variant="caption" color="text.secondary">
+              Título
+            </Typography>
+            <Typography variant="body2" sx={{ mt: 0.5 }}>
+              {tramite.titulo}
+            </Typography>
+          </Box>
           <Box>
             <Typography variant="caption" color="text.secondary">
               Remitente

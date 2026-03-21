@@ -10,6 +10,7 @@ import type {
   TramitesFilters,
   ApiResponse,
   Area,
+  FormularioContratista,
 } from '../types/database';
 
 /**
@@ -33,6 +34,60 @@ export const areasService = {
     } catch (error: any) {
       console.error('Error al obtener áreas:', error);
       throw new Error(error.message || 'Error al obtener áreas');
+    }
+  },
+};
+
+// ============================================
+// SERVICIO DE FORMULARIO CONTRATISTA
+// ============================================
+
+export const formularioContratistaService = {
+  crear: async (
+    payload: Omit<FormularioContratista, 'id'>
+  ): Promise<FormularioContratista> => {
+    try {
+      const { data, error } = await supabase
+        .from('formulario_contratista')
+        .insert([payload])
+        .select('*')
+        .single();
+      if (error) throw error;
+      if (!data) throw new Error('No se pudo crear el formulario');
+      return data as FormularioContratista;
+    } catch (error: any) {
+      console.error('Error al crear formulario de contratista:', error);
+      throw new Error(error.message || 'Error al crear formulario de contratista');
+    }
+  },
+
+  obtener: async (limit = 50): Promise<FormularioContratista[]> => {
+    try {
+      const { data, error } = await supabase
+        .from('formulario_contratista')
+        .select('*')
+        .order('fecha_visita', { ascending: false })
+        .limit(limit);
+      if (error) throw error;
+      return (data || []) as FormularioContratista[];
+    } catch (error: any) {
+      console.error('Error al obtener formularios de contratista:', error);
+      throw new Error(error.message || 'Error al obtener formularios de contratista');
+    }
+  },
+
+  obtenerPorId: async (id: string): Promise<FormularioContratista | null> => {
+    try {
+      const { data, error } = await supabase
+        .from('formulario_contratista')
+        .select('*')
+        .eq('id', id)
+        .maybeSingle();
+      if (error) throw error;
+      return (data as FormularioContratista) || null;
+    } catch (error: any) {
+      console.error('Error al obtener formulario de contratista por id:', error);
+      throw new Error(error.message || 'Error al obtener la solicitud');
     }
   },
 };

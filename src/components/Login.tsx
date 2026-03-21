@@ -1,9 +1,13 @@
 import { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { loginUsuario } from '../services/login.service';
 import { useAuth } from '../context/AuthContext';
 
+const REDIRECT_AFTER_LOGIN_KEY = 'redirectAfterLogin';
+
 export default function Login() {
   const { login } = useAuth();
+  const navigate = useNavigate();
   const [usuario, setUsuario] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
@@ -14,6 +18,15 @@ export default function Login() {
     try {
       const user = await loginUsuario(usuario, password);
       login(user);
+      try {
+        const redirect = sessionStorage.getItem(REDIRECT_AFTER_LOGIN_KEY);
+        if (redirect) {
+          sessionStorage.removeItem(REDIRECT_AFTER_LOGIN_KEY);
+          navigate(redirect, { replace: true });
+        }
+      } catch {
+        /* sessionStorage no disponible */
+      }
     } catch {
       setError('Usuario o contraseña incorrectos');
     }
