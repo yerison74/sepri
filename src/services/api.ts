@@ -2,7 +2,14 @@ import axios, { AxiosInstance, AxiosResponse } from 'axios';
 import { obrasService, historialUploadsService, storageService, tramitesService, notificacionesTiempoService, areasService, formularioContratistaService } from './supabaseService';
 import { getDiasMaximosPorArea } from '../constants/procesos';
 import { mensajeNotificacionTiempo } from '../utils/notificacionesTiempo';
-import type { Obra, Tramite, MovimientoTramite, Area, FormularioContratista } from '../types/database';
+import type {
+  Obra,
+  Tramite,
+  MovimientoTramite,
+  Area,
+  FormularioContratista,
+  MovimientoSolicitudContratista,
+} from '../types/database';
 import { 
   procesarArchivoXml, 
   procesarArchivoExcel, 
@@ -12,7 +19,14 @@ import {
 import * as XLSX from 'xlsx';
 
 // Re-exportar tipos para compatibilidad
-export type { Obra, Tramite, MovimientoTramite, Area, FormularioContratista };
+export type {
+  Obra,
+  Tramite,
+  MovimientoTramite,
+  Area,
+  FormularioContratista,
+  MovimientoSolicitudContratista,
+};
 
 // Mantener apiClient para operaciones que aún requieren el backend (uploads, etc.)
 // Usar backend local para seguimiento de trámites
@@ -798,9 +812,12 @@ export const formularioContratistaAPI = {
     }
   },
 
-  obtener: async (limit = 50) => {
+  obtener: async (
+    limit = 50,
+    filtros?: { areaUsuario?: string; esAdmin?: boolean }
+  ) => {
     try {
-      const data = await formularioContratistaService.obtener(limit);
+      const data = await formularioContratistaService.obtener(limit, filtros || {});
       return {
         data: { data },
       } as AxiosResponse<{ data: FormularioContratista[] }>;
@@ -814,9 +831,9 @@ export const formularioContratistaAPI = {
     }
   },
 
-  obtenerPorId: async (id: string) => {
+  obtenerPorId: async (id: string, filtros?: { areaUsuario?: string; esAdmin?: boolean }) => {
     try {
-      const data = await formularioContratistaService.obtenerPorId(id);
+      const data = await formularioContratistaService.obtenerPorId(id, filtros);
       return {
         data: { data },
       } as AxiosResponse<{ data: FormularioContratista | null }>;
@@ -824,6 +841,64 @@ export const formularioContratistaAPI = {
       throw {
         response: {
           data: { error: error.message || 'Error al obtener la solicitud' },
+          status: 500,
+        },
+      };
+    }
+  },
+
+  asignarArea: async (
+    id: string,
+    payload: { area_nombre: string; usuario: string; nota?: string | null }
+  ) => {
+    try {
+      const data = await formularioContratistaService.asignarArea(id, payload);
+      return { data: { data } } as AxiosResponse<{ data: FormularioContratista }>;
+    } catch (error: any) {
+      throw {
+        response: {
+          data: { error: error.message || 'Error al asignar área' },
+          status: 500,
+        },
+      };
+    }
+  },
+
+  registrarMovimiento: async (
+    id: string,
+    payload: {
+      area_origen: string;
+      area_destino: string;
+      nota?: string | null;
+      estado_resultante: '' | 'detenido' | 'completado';
+      usuario: string;
+      nuevo_estado: 'en_seguimiento' | 'detenido' | 'completado';
+      nueva_area_actual: string;
+    }
+  ) => {
+    try {
+      const data = await formularioContratistaService.registrarMovimiento(id, payload);
+      return { data: { data } } as AxiosResponse<{ data: FormularioContratista }>;
+    } catch (error: any) {
+      throw {
+        response: {
+          data: { error: error.message || 'Error al registrar seguimiento' },
+          status: 500,
+        },
+      };
+    }
+  },
+
+  obtenerMovimientos: async (id: string) => {
+    try {
+      const data = await formularioContratistaService.obtenerMovimientos(id);
+      return {
+        data: { data },
+      } as AxiosResponse<{ data: MovimientoSolicitudContratista[] }>;
+    } catch (error: any) {
+      throw {
+        response: {
+          data: { error: error.message || 'Error al obtener historial' },
           status: 500,
         },
       };

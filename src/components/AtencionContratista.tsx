@@ -4,14 +4,35 @@ import {
   Alert,
   Box,
   Button,
+  Chip,
   Grid,
+  IconButton,
   MenuItem,
   Paper,
   Stack,
   TextField,
+  Tooltip,
   Typography,
 } from '@mui/material';
-import { formularioContratistaAPI } from '../services/api';
+import { AssignmentTurnedIn, Send } from '@mui/icons-material';
+import { formularioContratistaAPI, type FormularioContratista } from '../services/api';
+import { useAreas } from '../hooks/useAreas';
+import { useAuth } from '../context/AuthContext';
+import AsignarAreaSolicitudDialog from './contratista/AsignarAreaSolicitudDialog';
+import SeguimientoSolicitudContratistaDialog, {
+  type SeguimientoSolicitudForm,
+} from './contratista/SeguimientoSolicitudContratistaDialog';
+import {
+  labelEstadoSolicitudContratista,
+  normalizarEstadoSolicitud,
+  esEstadoTerminal,
+} from '../utils/solicitudContratista';
+import { APP_TAB_INDEX } from '../constants/appTabs';
+import {
+  hrefContratistaDetalleDesdeApp,
+  urlAbsolutaDetalleContratista,
+  urlImagenQrDetalleContratista,
+} from '../constants/contratistaDetalle';
 
 const MOTIVOS_VISITA = [
   'Adenda',
@@ -73,8 +94,6 @@ type FormState = {
   nota: string;
 };
 
-type RegistroContratista = FormState & { id: string };
-
 const initialForm: FormState = {
   fecha_visita: new Date().toISOString().split('T')[0],
   nombres: '',
@@ -89,20 +108,37 @@ const initialForm: FormState = {
   nota: '',
 };
 
-function solicitudContratistaDetailUrl(id: string) {
-  return `${window.location.origin}/contratista/${encodeURIComponent(id)}`;
+function detalleContratistaState() {
+  return { returnTab: APP_TAB_INDEX.ATENCION_CONTRATISTA };
 }
 
 export default function AtencionContratista() {
   const navigate = useNavigate();
+  const { user } = useAuth();
+  const { areas, loadingAreas } = useAreas();
   const [form, setForm] = useState<FormState>(initialForm);
-  const [registros, setRegistros] = useState<RegistroContratista[]>([]);
+  const [registros, setRegistros] = useState<FormularioContratista[]>([]);
   const [loading, setLoading] = useState(false);
   const [loadingRegistros, setLoadingRegistros] = useState(false);
   const [showForm, setShowForm] = useState(false);
-  const [qrData, setQrData] = useState<RegistroContratista | null>(null);
+  const [qrData, setQrData] = useState<FormularioContratista | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
+  const [openAsignar, setOpenAsignar] = useState(false);
+  const [openSeguimiento, setOpenSeguimiento] = useState(false);
+  const [solicitudSeleccionada, setSolicitudSeleccionada] = useState<FormularioContratista | null>(null);
+  const [seguimientoForm, setSeguimientoForm] = useState<SeguimientoSolicitudForm>({
+    area_origen: '',
+    area_destino: '',
+    usuario: '',
+    nota: '',
+    actualizar_estado: '',
+  });
+
+  const nombreUsuarioLogueado = useMemo(
+    () => (user ? [user.nombre, user.apellido].filter(Boolean).join(' ').trim() : ''),
+    [user]
+  );
 
   const canSubmit = useMemo(() => {
     return (
@@ -117,11 +153,19 @@ export default function AtencionContratista() {
     );
   }, [form]);
 
+  const verTodosSolicitudes = user?.rol === 'admin' || user?.rol === 'supervision';
+  const areaUsuarioFiltro = user?.area?.trim() ?? '';
+
   const cargarRegistros = async () => {
     setLoadingRegistros(true);
     try {
-      const resp = await formularioContratistaAPI.obtener(20);
-      setRegistros((resp.data.data as RegistroContratista[]) || []);
+      const verTodos = user?.rol === 'admin' || user?.rol === 'supervision';
+      const areaUsuario = user?.area?.trim() ?? '';
+      const resp = await formularioContratistaAPI.obtener(100, {
+        esAdmin: verTodos,
+        areaUsuario: areaUsuario || undefined,
+      });
+      setRegistros(resp.data.data || []);
     } catch (e: any) {
       setError(e?.response?.data?.error || 'No se pudieron cargar los registros.');
     } finally {
@@ -131,7 +175,8 @@ export default function AtencionContratista() {
 
   useEffect(() => {
     cargarRegistros();
-  }, []);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user?.id, user?.area, user?.rol]);
 
   const handleChange =
     (field: keyof FormState) =>
@@ -151,7 +196,7 @@ export default function AtencionContratista() {
         nombre_obra_inaugurada: form.nombre_obra_inaugurada.trim() || null,
         nota: form.nota.trim() || null,
       });
-      const creado = resp.data.data as RegistroContratista;
+      const creado = resp.data.data;
       setSuccess('Formulario guardado correctamente.');
       setQrData(creado);
       setShowForm(false);
@@ -167,22 +212,114 @@ export default function AtencionContratista() {
   /** URL interna de la app: al escanear se abre la vista de detalle de la solicitud. */
   const qrDetailUrl = useMemo(() => {
     if (!qrData) return '';
-    return solicitudContratistaDetailUrl(qrData.id);
+    return urlAbsolutaDetalleContratista(qrData.id);
   }, [qrData]);
 
   const qrImageUrl = useMemo(() => {
-    if (!qrDetailUrl) return '';
-    return `https://api.qrserver.com/v1/create-qr-code/?size=260x260&data=${encodeURIComponent(qrDetailUrl)}`;
-  }, [qrDetailUrl]);
+    if (!qrData) return '';
+    return urlImagenQrDetalleContratista(qrData.id);
+  }, [qrData]);
+
+  const abrirAsignar = (s: FormularioContratista) => {
+    setError(null);
+    setSolicitudSeleccionada(s);
+    setOpenAsignar(true);
+  };
+
+  const abrirSeguimiento = (s: FormularioContratista) => {
+    setError(null);
+    setSolicitudSeleccionada(s);
+    setSeguimientoForm({
+      area_origen: s.area_actual || '',
+      area_destino: '',
+      usuario: nombreUsuarioLogueado,
+      nota: '',
+      actualizar_estado: '',
+    });
+    setOpenSeguimiento(true);
+  };
+
+  const handleAsignarArea = async (areaNombre: string, nota: string | null) => {
+    if (!solicitudSeleccionada || !nombreUsuarioLogueado) {
+      setError('No se pudo identificar al usuario.');
+      throw new Error('Usuario no disponible');
+    }
+    try {
+      await formularioContratistaAPI.asignarArea(solicitudSeleccionada.id, {
+        area_nombre: areaNombre,
+        usuario: nombreUsuarioLogueado,
+        nota,
+      });
+      setError(null);
+      setSuccess('Solicitud asignada al área correctamente.');
+      await cargarRegistros();
+    } catch (e: any) {
+      setError(e?.response?.data?.error || 'Error al asignar el área.');
+      throw e;
+    }
+  };
+
+  const handleRegistrarSeguimiento = async () => {
+    if (!solicitudSeleccionada) return;
+    const esDetenido = seguimientoForm.actualizar_estado === 'detenido';
+    const esCompletado = seguimientoForm.actualizar_estado === 'completado';
+    const requiereDestino = !esDetenido && !esCompletado;
+
+    if ((requiereDestino && !seguimientoForm.area_destino) || !seguimientoForm.usuario) {
+      setError(
+        requiereDestino
+          ? 'Seleccione el área destino e indique el usuario.'
+          : 'Indique el usuario que registra el movimiento.'
+      );
+      return;
+    }
+
+    const destino =
+      esDetenido || esCompletado ? seguimientoForm.area_origen : seguimientoForm.area_destino;
+    const nuevoEstado = esDetenido ? 'detenido' : esCompletado ? 'completado' : 'en_seguimiento';
+
+    try {
+      setError(null);
+      await formularioContratistaAPI.registrarMovimiento(solicitudSeleccionada.id, {
+        area_origen: seguimientoForm.area_origen,
+        area_destino: destino,
+        nota: seguimientoForm.nota.trim() || null,
+        estado_resultante: esDetenido ? 'detenido' : esCompletado ? 'completado' : '',
+        usuario: seguimientoForm.usuario,
+        nuevo_estado: nuevoEstado,
+        nueva_area_actual: destino,
+      });
+      setSuccess('Seguimiento registrado correctamente.');
+      setOpenSeguimiento(false);
+      setSolicitudSeleccionada(null);
+      await cargarRegistros();
+    } catch (e: any) {
+      setError(e?.response?.data?.error || 'Error al registrar el seguimiento.');
+    }
+  };
 
   return (
     <Box sx={{ p: 2 }}>
       <Typography variant="h4" sx={{ fontWeight: 600, mb: 2, color: 'primary.main' }}>
         Atención al contratista
       </Typography>
-      <Typography variant="body1" sx={{ color: 'text.secondary', mb: 3 }}>
-        Registro de visitas y requerimientos de contratistas.
+      <Typography variant="body1" sx={{ color: 'text.secondary', mb: 2 }}>
+        Cree la solicitud, asígnela a un área y registre el seguimiento entre áreas (detenido / completado y notas).
       </Typography>
+      {verTodosSolicitudes ? (
+        <Alert severity="info" sx={{ mb: 2 }}>
+          Estás viendo <strong>todas</strong> las solicitudes (administración / supervisión).
+        </Alert>
+      ) : areaUsuarioFiltro ? (
+        <Alert severity="info" sx={{ mb: 2 }}>
+          Solo se muestran solicitudes asignadas a tu área: <strong>{areaUsuarioFiltro}</strong>.
+        </Alert>
+      ) : (
+        <Alert severity="warning" sx={{ mb: 2 }}>
+          Tu usuario no tiene <strong>área</strong> definida; no se listan solicitudes por área. Contacta al administrador
+          o usa un perfil con rol administración/supervisión para ver el total.
+        </Alert>
+      )}
 
       <Stack direction="row" justifyContent="space-between" alignItems="center" sx={{ mb: 2 }}>
         <Typography variant="h6" sx={{ fontWeight: 600 }}>
@@ -338,7 +475,9 @@ export default function AtencionContratista() {
                 variant="outlined"
                 size="small"
                 sx={{ mt: 1.5 }}
-                onClick={() => navigate(`/contratista/${encodeURIComponent(qrData.id)}`)}
+                onClick={() =>
+                  navigate(hrefContratistaDetalleDesdeApp(qrData.id), { state: detalleContratistaState() })
+                }
               >
                 Ver solicitud en pantalla
               </Button>
@@ -361,36 +500,99 @@ export default function AtencionContratista() {
           </Typography>
         ) : (
           <Stack spacing={1.5}>
-            {registros.map((r) => (
-              <Paper
-                key={r.id}
-                variant="outlined"
-                role="button"
-                tabIndex={0}
-                onClick={() => navigate(`/contratista/${encodeURIComponent(r.id)}`)}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter' || e.key === ' ') {
-                    e.preventDefault();
-                    navigate(`/contratista/${encodeURIComponent(r.id)}`);
-                  }
-                }}
-                sx={{
-                  p: 1.5,
-                  cursor: 'pointer',
-                  '&:hover': { bgcolor: 'action.hover' },
-                }}
-              >
-                <Typography variant="subtitle2" sx={{ fontWeight: 600 }}>
-                  {r.id} - {r.nombres} {r.apellidos}
-                </Typography>
-                <Typography variant="body2" color="text.secondary">
-                  {r.fecha_visita} | {r.nombre_empresa} | {r.motivo_visita} | {r.provincia}
-                </Typography>
-              </Paper>
-            ))}
+            {registros.map((r) => {
+              const estado = normalizarEstadoSolicitud(r.estado);
+              const terminal = esEstadoTerminal(estado);
+              return (
+                <Paper key={r.id} variant="outlined" sx={{ p: 1.5 }}>
+                  <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1} alignItems={{ sm: 'center' }}>
+                    <Box
+                      sx={{ flex: 1, minWidth: 0, cursor: 'pointer' }}
+                      onClick={() =>
+                        navigate(hrefContratistaDetalleDesdeApp(r.id), { state: detalleContratistaState() })
+                      }
+                      role="presentation"
+                    >
+                      <Typography variant="subtitle2" sx={{ fontWeight: 600 }}>
+                        {r.id} — {r.nombres} {r.apellidos}
+                      </Typography>
+                      <Typography variant="body2" color="text.secondary">
+                        {r.fecha_visita} | {r.nombre_empresa} | {r.motivo_visita} | {r.provincia}
+                      </Typography>
+                    </Box>
+                    <Stack direction="row" spacing={0.5} flexWrap="wrap" alignItems="center" useFlexGap>
+                      <Chip size="small" label={labelEstadoSolicitudContratista(estado)} color={terminal ? 'default' : 'primary'} variant={terminal ? 'filled' : 'outlined'} />
+                      <Chip
+                        size="small"
+                        label={r.area_actual || 'Sin área'}
+                        variant="outlined"
+                        sx={{ maxWidth: 200 }}
+                      />
+                      <Tooltip title="Asignar a un área">
+                        <span>
+                          <IconButton
+                            size="small"
+                            color="primary"
+                            disabled={estado !== 'pendiente_asignacion'}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              abrirAsignar(r);
+                            }}
+                          >
+                            <AssignmentTurnedIn fontSize="small" />
+                          </IconButton>
+                        </span>
+                      </Tooltip>
+                      <Tooltip title="Registrar seguimiento">
+                        <span>
+                          <IconButton
+                            size="small"
+                            color="secondary"
+                            disabled={estado !== 'en_seguimiento' || !r.area_actual}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              abrirSeguimiento(r);
+                            }}
+                          >
+                            <Send fontSize="small" />
+                          </IconButton>
+                        </span>
+                      </Tooltip>
+                    </Stack>
+                  </Stack>
+                </Paper>
+              );
+            })}
           </Stack>
         )}
       </Paper>
+
+      <AsignarAreaSolicitudDialog
+        open={openAsignar}
+        onClose={() => {
+          setOpenAsignar(false);
+          setSolicitudSeleccionada(null);
+        }}
+        solicitud={solicitudSeleccionada}
+        areas={areas}
+        loadingAreas={loadingAreas}
+        usuario={nombreUsuarioLogueado}
+        onAsignar={handleAsignarArea}
+      />
+
+      <SeguimientoSolicitudContratistaDialog
+        open={openSeguimiento}
+        onClose={() => {
+          setOpenSeguimiento(false);
+          setSolicitudSeleccionada(null);
+        }}
+        solicitud={solicitudSeleccionada}
+        areas={areas}
+        loadingAreas={loadingAreas}
+        form={seguimientoForm}
+        setForm={setSeguimientoForm}
+        onSubmit={handleRegistrarSeguimiento}
+      />
     </Box>
   );
 }

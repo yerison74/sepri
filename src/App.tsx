@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { useLocation, useNavigate } from 'react-router-dom';
 import {
   Dashboard,
   Assignment,
@@ -49,6 +50,8 @@ function TabPanel(props: TabPanelProps) {
 
 function App() {
   const { user, loading, logout, hasPermission } = useAuth();
+  const location = useLocation();
+  const navigate = useNavigate();
   const tramitesOnly = false;
   const [tabValue, setTabValue] = useState(0);
   const [refreshTrigger, setRefreshTrigger] = useState(0);
@@ -84,6 +87,17 @@ function App() {
     const allowedSet = new Set(tabs.map((t) => t.index));
     setTabValue((prev) => (allowedSet.has(prev) ? prev : tabs[0].index));
   }, [user?.id, allowedTabIndices]);
+
+  // Al volver desde rutas como /contratista/:id, restaurar la pestaña (evita ir al Dashboard)
+  useEffect(() => {
+    const openTab = (location.state as { openTab?: number } | null)?.openTab;
+    if (typeof openTab !== 'number' || !user) return;
+    const indices = allowedTabIndices.split(',').filter(Boolean).map((s) => parseInt(s, 10));
+    const allowedSet = new Set(indices);
+    if (!allowedSet.has(openTab)) return;
+    setTabValue(openTab);
+    navigate(location.pathname, { replace: true, state: {} });
+  }, [location.state, location.pathname, user, allowedTabIndices, navigate]);
 
   if (loading) {
     return (

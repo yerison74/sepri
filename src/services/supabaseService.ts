@@ -11,6 +11,7 @@ import type {
   ApiResponse,
   Area,
   FormularioContratista,
+  MovimientoSolicitudContratista,
 } from '../types/database';
 
 /**
@@ -61,13 +62,31 @@ export const formularioContratistaService = {
     }
   },
 
-  obtener: async (limit = 50): Promise<FormularioContratista[]> => {
+  /**
+   * Listado: si no es admin/supervisión, solo solicitudes cuyo `area_actual` coincide con el área del usuario
+   * (misma lógica que trámites con `area_destinatario`).
+   */
+  obtener: async (
+    limit = 50,
+    filtros: { areaUsuario?: string; esAdmin?: boolean } = {}
+  ): Promise<FormularioContratista[]> => {
     try {
-      const { data, error } = await supabase
+      if (!filtros.esAdmin && !filtros.areaUsuario) {
+        return [];
+      }
+
+      let query = supabase
         .from('formulario_contratista')
         .select('*')
-        .order('fecha_visita', { ascending: false })
-        .limit(limit);
+        .order('fecha_visita', { ascending: false });
+
+      if (!filtros.esAdmin && filtros.areaUsuario) {
+        query = query.eq('area_actual', filtros.areaUsuario);
+      }
+
+      query = query.limit(limit);
+
+      const { data, error } = await query;
       if (error) throw error;
       return (data || []) as FormularioContratista[];
     } catch (error: any) {
@@ -76,18 +95,137 @@ export const formularioContratistaService = {
     }
   },
 
-  obtenerPorId: async (id: string): Promise<FormularioContratista | null> => {
+  obtenerPorId: async (
+    id: string,
+    filtros?: { areaUsuario?: string; esAdmin?: boolean }
+  ): Promise<FormularioContratista | null> => {
     try {
+      if (!filtros?.esAdmin && !filtros?.areaUsuario) {
+        return null;
+      }
+
       const { data, error } = await supabase
         .from('formulario_contratista')
         .select('*')
         .eq('id', id)
         .maybeSingle();
       if (error) throw error;
-      return (data as FormularioContratista) || null;
+      if (!data) return null;
+
+      if (!filtros?.esAdmin && filtros?.areaUsuario) {
+        if ((data as FormularioContratista).area_actual !== filtros.areaUsuario) {
+          return null;
+        }
+      }
+
+      return data as FormularioContratista;
     } catch (error: any) {
       console.error('Error al obtener formulario de contratista por id:', error);
       throw new Error(error.message || 'Error al obtener la solicitud');
+    }
+  },
+
+  /** Primera asignación a un área (pasa a en_seguimiento). */
+  asignarArea: async (
+    solicitudId: string,
+    payload: { area_nombre: string; usuario: string; nota?: string | null }
+  ): Promise<FormularioContratista> => {
+    try {
+      const { data, error } = await supabase
+        .from('formulario_contratista')
+        .update({
+          area_actual: payload.area_nombre,
+          estado: 'en_seguimiento',
+        })
+        .eq('id', solicitudId)
+        .select('*')
+        .single();
+      if (error) throw error;
+      if (!data) throw new Error('No se pudo actualizar la solicitud');
+
+      const { error: movError } = await supabase.from('movimientos_solicitud_contratista').insert({
+        solicitud_id: solicitudId,
+        area_origen: 'Pendiente de asignación',
+        area_destino: payload.area_nombre,
+        nota: payload.nota ?? null,
+        estado_resultante: null,
+        usuario: payload.usuario,
+      });
+      if (movError) throw movError;
+
+      return data as FormularioContratista;
+    } catch (error: any) {
+      if (error?.code === '42P01') {
+        throw new Error(
+          'Falta la tabla movimientos_solicitud_contratista o columnas area_actual/estado. Ejecuta supabase-solicitud-contratista-seguimiento.sql en Supabase.'
+        );
+      }
+      console.error('Error al asignar área a solicitud:', error);
+      throw new Error(error.message || 'Error al asignar área');
+    }
+  },
+
+  /** Envío a otra área y/o detenido / completado (misma lógica que trámites). */
+  registrarMovimiento: async (
+    solicitudId: string,
+    payload: {
+      area_origen: string;
+      area_destino: string;
+      nota?: string | null;
+      estado_resultante: '' | 'detenido' | 'completado';
+      usuario: string;
+      nuevo_estado: 'en_seguimiento' | 'detenido' | 'completado';
+      nueva_area_actual: string;
+    }
+  ): Promise<FormularioContratista> => {
+    try {
+      const { error: movError } = await supabase.from('movimientos_solicitud_contratista').insert({
+        solicitud_id: solicitudId,
+        area_origen: payload.area_origen,
+        area_destino: payload.area_destino,
+        nota: payload.nota ?? null,
+        estado_resultante: payload.estado_resultante || null,
+        usuario: payload.usuario,
+      });
+      if (movError) throw movError;
+
+      const { data, error } = await supabase
+        .from('formulario_contratista')
+        .update({
+          area_actual: payload.nueva_area_actual,
+          estado: payload.nuevo_estado,
+        })
+        .eq('id', solicitudId)
+        .select('*')
+        .single();
+
+      if (error) throw error;
+      if (!data) throw new Error('No se pudo actualizar la solicitud');
+      return data as FormularioContratista;
+    } catch (error: any) {
+      if (error?.code === '42P01') {
+        throw new Error(
+          'Falta la tabla movimientos_solicitud_contratista. Ejecuta supabase-solicitud-contratista-seguimiento.sql en Supabase.'
+        );
+      }
+      console.error('Error al registrar movimiento de solicitud:', error);
+      throw new Error(error.message || 'Error al registrar seguimiento');
+    }
+  },
+
+  obtenerMovimientos: async (solicitudId: string): Promise<MovimientoSolicitudContratista[]> => {
+    try {
+      const { data, error } = await supabase
+        .from('movimientos_solicitud_contratista')
+        .select('*')
+        .eq('solicitud_id', solicitudId)
+        .order('fecha_movimiento', { ascending: false });
+      if (error) throw error;
+      return (data || []) as MovimientoSolicitudContratista[];
+    } catch (error: any) {
+      if (error?.code === '42P01') return [];
+      console.error('Error al obtener movimientos de solicitud:', error);
+      throw new Error(error.message || 'Error al obtener el historial');
     }
   },
 };

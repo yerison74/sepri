@@ -98,6 +98,13 @@ export interface Area {
   encargado_id?: string | null;
 }
 
+/** Estado del flujo: asignación a área y seguimiento entre áreas. */
+export type EstadoSolicitudContratista =
+  | 'pendiente_asignacion'
+  | 'en_seguimiento'
+  | 'detenido'
+  | 'completado';
+
 export interface FormularioContratista {
   id: string;
   fecha_visita: string;
@@ -111,6 +118,21 @@ export interface FormularioContratista {
   numero_contrato: string;
   correo: string;
   nota?: string | null;
+  /** Nombre descriptivo del área (misma convención que trámites: `area.area`). */
+  area_actual?: string | null;
+  estado?: EstadoSolicitudContratista | string | null;
+}
+
+/** Movimiento de una solicitud entre áreas (seguimiento). */
+export interface MovimientoSolicitudContratista {
+  id: number;
+  solicitud_id: string;
+  area_origen: string;
+  area_destino: string;
+  nota?: string | null;
+  estado_resultante?: 'detenido' | 'completado' | string | null;
+  usuario?: string | null;
+  fecha_movimiento?: string | null;
 }
 
 /** Notificación cuando un trámite alcanza 50%, 70% o 100% del tiempo estimado en un área. */

@@ -1,5 +1,7 @@
 -- Tabla para registrar formularios de atencion al contratista
 -- id autogenerado con formato: FC-000001
+--
+-- Seguridad (RLS): tras crear tablas, revisa y ejecuta supabase-rls-formulario-contratista.sql
 
 CREATE SEQUENCE IF NOT EXISTS formulario_contratista_id_seq START 1;
 
@@ -61,6 +63,29 @@ CREATE TABLE IF NOT EXISTS formulario_contratista (
   ),
   numero_contrato text NOT NULL,
   correo text NOT NULL,
-  nota text
+  nota text,
+  -- Flujo: solicitud -> asignación a área -> seguimiento entre áreas (detenido/completado)
+  area_actual text,
+  estado text NOT NULL DEFAULT 'pendiente_asignacion' CHECK (
+    estado IN ('pendiente_asignacion', 'en_seguimiento', 'detenido', 'completado')
+  )
 );
+
+-- Movimientos / seguimiento entre áreas (ejecutar también supabase-solicitud-contratista-seguimiento.sql si la tabla ya existía sin estas columnas)
+
+CREATE TABLE IF NOT EXISTS movimientos_solicitud_contratista (
+  id bigserial PRIMARY KEY,
+  solicitud_id text NOT NULL REFERENCES formulario_contratista(id) ON DELETE CASCADE,
+  area_origen text NOT NULL,
+  area_destino text NOT NULL,
+  nota text,
+  estado_resultante text CHECK (
+    estado_resultante IS NULL OR estado_resultante IN ('detenido', 'completado')
+  ),
+  usuario text,
+  fecha_movimiento timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS idx_movimientos_solicitud_contratista_solicitud
+  ON movimientos_solicitud_contratista (solicitud_id);
 
