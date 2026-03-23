@@ -6,7 +6,6 @@ import {
   TextField,
   Select,
   MenuItem,
-  Checkbox,
   FormControlLabel,
   Button,
   Typography,
@@ -28,18 +27,14 @@ import {
   Security as SecurityIcon,
   VpnKey as VpnKeyIcon
 } from '@mui/icons-material';
-
-const PERMISOS = [
-  { key: 'crear_usuarios', label: 'Creación de usuarios', icon: '👥' },
-  { key: 'editar_usuarios', label: 'Edición de usuarios', icon: '✏️' },
-  { key: 'ver_dashboard', label: 'Visualización del Dashboard', icon: '📊' },
-  { key: 'ver_obras', label: 'Visualización de Obras', icon: '🏗️' },
-  { key: 'ver_carga_obras', label: 'Visualización de Carga de Obras', icon: '📋' },
-  { key: 'editar_carga_obras', label: 'Carga y edición en Carga de Obras', icon: '📝' },
-  { key: 'ver_tramites', label: 'Visualización de Seguimiento de Trámite', icon: '📄' },
-  { key: 'editar_tramites', label: 'Creación y seguimiento de Trámites', icon: '✅' },
-  { key: 'ver_configuracion', label: 'Visualización de Configuración', icon: '⚙️' },
-];
+const MODULOS_PERMISOS = [
+  { id: 'dashboard', label: 'Dashboard', icon: '📊', verKey: 'ver_dashboard', editarKey: 'editar_dashboard' },
+  { id: 'obras', label: 'Obras', icon: '🏗️', verKey: 'ver_obras', editarKey: 'editar_obras' },
+  { id: 'carga_obras', label: 'Carga de Obras', icon: '📋', verKey: 'ver_carga_obras', editarKey: 'editar_carga_obras' },
+  { id: 'tramites', label: 'Seguimiento de Trámite', icon: '📄', verKey: 'ver_tramites', editarKey: 'editar_tramites' },
+  { id: 'atencion_contratista', label: 'Atención al contratista', icon: '🧑‍💼', verKey: 'ver_atencion_contratista', editarKey: 'editar_atencion_contratista' },
+  { id: 'configuracion', label: 'Configuración', icon: '⚙️', verKey: 'ver_configuracion', editarKey: 'editar_configuracion' },
+] as const;
 
 const AREAS = [
   'Ninguna',
@@ -81,24 +76,45 @@ export default function UsuarioModal({
   isEdit,
   loading = false 
 }: UsuarioModalProps) {
-  
-  const togglePermiso = (key: string) => {
+
+  const actualizarPermiso = (key: string, enabled: boolean) => {
     setForm({
       ...form,
-      permisos: { ...form.permisos, [key]: !form.permisos?.[key] },
+      permisos: { ...(form.permisos || {}), [key]: enabled },
     });
   };
 
+  const cambiarPermisoModulo = (
+    verKey: string,
+    editarKey: string,
+    tipo: 'ver' | 'editar',
+    enabled: boolean
+  ) => {
+    const permisosActuales = { ...(form.permisos || {}) };
+    if (tipo === 'ver') {
+      permisosActuales[verKey] = enabled;
+      if (!enabled) permisosActuales[editarKey] = false;
+    } else {
+      permisosActuales[editarKey] = enabled;
+      if (enabled) permisosActuales[verKey] = true;
+    }
+    setForm({ ...form, permisos: permisosActuales });
+  };
+
   const seleccionarTodosPermisos = () => {
-    const todosSeleccionados = PERMISOS.every(p => form.permisos?.[p.key]);
+    const allKeys = MODULOS_PERMISOS.flatMap((m) => [m.verKey, m.editarKey]);
+    const todosSeleccionados = allKeys.every((key) => form.permisos?.[key]);
     const nuevosPermisos: any = {};
-    PERMISOS.forEach(p => {
-      nuevosPermisos[p.key] = !todosSeleccionados;
+    allKeys.forEach((key) => {
+      nuevosPermisos[key] = !todosSeleccionados;
     });
     setForm({ ...form, permisos: nuevosPermisos });
   };
 
-  const permisosSeleccionados = PERMISOS.filter(p => form.permisos?.[p.key]).length;
+  const totalPermisos = MODULOS_PERMISOS.length * 2;
+  const permisosSeleccionados = MODULOS_PERMISOS.flatMap((m) => [m.verKey, m.editarKey]).filter(
+    (key) => form.permisos?.[key]
+  ).length;
 
   return (
     <Dialog 
@@ -247,7 +263,10 @@ export default function UsuarioModal({
                     const updates = { ...form, rol: newRol };
                     if (newRol === 'admin') {
                       const todosPermisos: Record<string, boolean> = {};
-                      PERMISOS.forEach(p => { todosPermisos[p.key] = true; });
+                      MODULOS_PERMISOS.forEach((m) => {
+                        todosPermisos[m.verKey] = true;
+                        todosPermisos[m.editarKey] = true;
+                      });
                       updates.permisos = todosPermisos;
                     }
                     setForm(updates);
@@ -293,7 +312,7 @@ export default function UsuarioModal({
                 Permisos del Sistema
               </Typography>
               <Chip 
-                label={`${permisosSeleccionados}/${PERMISOS.length}`}
+                label={`${permisosSeleccionados}/${totalPermisos}`}
                 color="primary"
                 size="small"
                 sx={{ ml: 2 }}
@@ -304,48 +323,58 @@ export default function UsuarioModal({
               onClick={seleccionarTodosPermisos}
               variant="outlined"
             >
-              {permisosSeleccionados === PERMISOS.length ? 'Deseleccionar Todo' : 'Seleccionar Todo'}
+              {permisosSeleccionados === totalPermisos ? 'Deseleccionar Todo' : 'Seleccionar Todo'}
             </Button>
           </Box>
 
-          <Box sx={{ 
-            display: 'grid', 
-            gridTemplateColumns: { xs: '1fr', sm: '1fr 1fr' },
-            gap: 1
-          }}>
-            {PERMISOS.map((p) => (
-              <Box key={p.key}>
-                <FormControlLabel
-                  control={
-                    <Checkbox
-                      checked={!!form.permisos?.[p.key]}
-                      onChange={() => togglePermiso(p.key)}
-                      color="primary"
-                    />
-                  }
-                  label={
-                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
-                      <span>{p.icon}</span>
-                      <Typography variant="body2">{p.label}</Typography>
-                    </Box>
-                  }
+          <Stack spacing={1.25}>
+            {MODULOS_PERMISOS.map((m) => {
+              const canView = !!form.permisos?.[m.verKey];
+              const canEdit = !!form.permisos?.[m.editarKey];
+              return (
+                <Paper
+                  key={m.id}
+                  variant="outlined"
                   sx={{
-                    border: '1px solid',
-                    borderColor: form.permisos?.[p.key] ? 'primary.main' : 'grey.300',
-                    borderRadius: 1,
-                    p: 1,
-                    m: 0,
-                    width: '100%',
-                    bgcolor: form.permisos?.[p.key] ? 'primary.light' : 'white',
-                    transition: 'all 0.2s',
-                    '&:hover': {
-                      bgcolor: form.permisos?.[p.key] ? 'primary.light' : 'grey.50',
-                    }
+                    px: 1.5,
+                    py: 1,
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    flexWrap: 'wrap',
+                    gap: 1,
                   }}
-                />
-              </Box>
-            ))}
-          </Box>
+                >
+                  <Typography variant="body2" sx={{ fontWeight: 600 }}>
+                    {m.icon} {m.label}
+                  </Typography>
+                  <Stack direction="row" spacing={2} alignItems="center">
+                    <FormControlLabel
+                      control={
+                        <Switch
+                          checked={canView}
+                          onChange={(e) => cambiarPermisoModulo(m.verKey, m.editarKey, 'ver', e.target.checked)}
+                          color="primary"
+                        />
+                      }
+                      label="Ver"
+                    />
+                    <FormControlLabel
+                      control={
+                        <Switch
+                          checked={canEdit}
+                          onChange={(e) => cambiarPermisoModulo(m.verKey, m.editarKey, 'editar', e.target.checked)}
+                          color="secondary"
+                        />
+                      }
+                      label="Editar"
+                    />
+                  </Stack>
+                </Paper>
+              );
+            })}
+
+          </Stack>
         </Paper>
       </DialogContent>
 

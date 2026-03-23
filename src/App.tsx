@@ -240,7 +240,7 @@ function App() {
 
               {hasPermission('ver_obras') && (
                 <TabPanel value={tabValue} index={1}>
-                  <ObrasTable refreshTrigger={refreshTrigger} />
+                  <ObrasTable refreshTrigger={refreshTrigger} soloLectura={!hasPermission('editar_obras')} />
                 </TabPanel>
               )}
 
@@ -254,9 +254,9 @@ function App() {
                 </TabPanel>
               )}
 
-              {hasPermission('ver_configuracion') && (
+              {hasPermission('ver_atencion_contratista') && (
                 <TabPanel value={tabValue} index={4}>
-                  <AtencionContratista />
+                  <AtencionContratista soloLectura={!hasPermission('editar_atencion_contratista')} />
                 </TabPanel>
               )}
 

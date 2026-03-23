@@ -23,6 +23,7 @@ import SeguimientoSolicitudContratistaDialog, {
   type SeguimientoSolicitudForm,
 } from './contratista/SeguimientoSolicitudContratistaDialog';
 import {
+  colorEstadoSolicitudContratista,
   labelEstadoSolicitudContratista,
   normalizarEstadoSolicitud,
   esEstadoTerminal,
@@ -112,7 +113,11 @@ function detalleContratistaState() {
   return { returnTab: APP_TAB_INDEX.ATENCION_CONTRATISTA };
 }
 
-export default function AtencionContratista() {
+type AtencionContratistaProps = {
+  soloLectura?: boolean;
+};
+
+export default function AtencionContratista({ soloLectura = false }: AtencionContratistaProps) {
   const navigate = useNavigate();
   const { user } = useAuth();
   const { areas, loadingAreas } = useAreas();
@@ -153,8 +158,6 @@ export default function AtencionContratista() {
     );
   }, [form]);
 
-  const verTodosSolicitudes = user?.rol === 'admin' || user?.rol === 'supervision';
-  const areaUsuarioFiltro = user?.area?.trim() ?? '';
 
   const cargarRegistros = async () => {
     setLoadingRegistros(true);
@@ -306,27 +309,13 @@ export default function AtencionContratista() {
       <Typography variant="body1" sx={{ color: 'text.secondary', mb: 2 }}>
         Cree la solicitud, asígnela a un área y registre el seguimiento entre áreas (detenido / completado y notas).
       </Typography>
-      {verTodosSolicitudes ? (
-        <Alert severity="info" sx={{ mb: 2 }}>
-          Estás viendo <strong>todas</strong> las solicitudes (administración / supervisión).
-        </Alert>
-      ) : areaUsuarioFiltro ? (
-        <Alert severity="info" sx={{ mb: 2 }}>
-          Solo se muestran solicitudes asignadas a tu área: <strong>{areaUsuarioFiltro}</strong>.
-        </Alert>
-      ) : (
-        <Alert severity="warning" sx={{ mb: 2 }}>
-          Tu usuario no tiene <strong>área</strong> definida; no se listan solicitudes por área. Contacta al administrador
-          o usa un perfil con rol administración/supervisión para ver el total.
-        </Alert>
-      )}
-
       <Stack direction="row" justifyContent="space-between" alignItems="center" sx={{ mb: 2 }}>
         <Typography variant="h6" sx={{ fontWeight: 600 }}>
           Solicitudes de contratista
         </Typography>
         <Button
           variant={showForm ? 'outlined' : 'contained'}
+          disabled={soloLectura}
           onClick={() => {
             setError(null);
             setSuccess(null);
@@ -433,7 +422,7 @@ export default function AtencionContratista() {
           </Grid>
 
             <Stack direction="row" justifyContent="flex-end" sx={{ mt: 2 }}>
-              <Button type="submit" variant="contained" disabled={!canSubmit || loading}>
+              <Button type="submit" variant="contained" disabled={soloLectura || !canSubmit || loading}>
                 {loading ? 'Guardando...' : 'Guardar formulario'}
               </Button>
             </Stack>
@@ -521,7 +510,12 @@ export default function AtencionContratista() {
                       </Typography>
                     </Box>
                     <Stack direction="row" spacing={0.5} flexWrap="wrap" alignItems="center" useFlexGap>
-                      <Chip size="small" label={labelEstadoSolicitudContratista(estado)} color={terminal ? 'default' : 'primary'} variant={terminal ? 'filled' : 'outlined'} />
+                      <Chip
+                        size="small"
+                        label={labelEstadoSolicitudContratista(estado)}
+                        color={colorEstadoSolicitudContratista(estado)}
+                        variant={terminal ? 'filled' : 'outlined'}
+                      />
                       <Chip
                         size="small"
                         label={r.area_actual || 'Sin área'}
@@ -533,7 +527,7 @@ export default function AtencionContratista() {
                           <IconButton
                             size="small"
                             color="primary"
-                            disabled={estado !== 'pendiente_asignacion'}
+                            disabled={soloLectura || estado !== 'pendiente_asignacion'}
                             onClick={(e) => {
                               e.stopPropagation();
                               abrirAsignar(r);
@@ -543,12 +537,12 @@ export default function AtencionContratista() {
                           </IconButton>
                         </span>
                       </Tooltip>
-                      <Tooltip title="Registrar seguimiento">
+                      <Tooltip title="Registrar seguimiento / reactivar detenido">
                         <span>
                           <IconButton
                             size="small"
                             color="secondary"
-                            disabled={estado !== 'en_seguimiento' || !r.area_actual}
+                            disabled={soloLectura || (estado !== 'en_seguimiento' && estado !== 'detenido') || !r.area_actual}
                             onClick={(e) => {
                               e.stopPropagation();
                               abrirSeguimiento(r);

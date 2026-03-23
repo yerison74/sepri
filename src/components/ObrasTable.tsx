@@ -11,9 +11,10 @@ import ObraMap from './ObraMap';
 
 interface ObrasTableProps {
   refreshTrigger?: number;
+  soloLectura?: boolean;
 }
 
-const ObrasTable: React.FC<ObrasTableProps> = ({ refreshTrigger }) => {
+const ObrasTable: React.FC<ObrasTableProps> = ({ refreshTrigger, soloLectura = false }) => {
   const [obras, setObras] = useState<Obra[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -131,6 +132,7 @@ const ObrasTable: React.FC<ObrasTableProps> = ({ refreshTrigger }) => {
   };
 
   const handleDelete = async (id: string) => {
+    if (soloLectura) return;
     if (window.confirm('¿Estás seguro de que quieres eliminar esta obra?')) {
       try {
         await mantenimientosAPI.eliminarObra(id);
@@ -577,23 +579,25 @@ const ObrasTable: React.FC<ObrasTableProps> = ({ refreshTrigger }) => {
               </div>
             </div>
             <div className="p-6 border-t border-gray-200 flex justify-end gap-3">
-              <button
-                onClick={async () => {
-                  if (window.confirm('¿Estás seguro de que quieres eliminar esta obra?')) {
-                    try {
-                      await mantenimientosAPI.eliminarObra(selectedObra.id);
-                      setShowDetails(false);
-                      loadObras();
-                    } catch (err: any) {
-                      setError(err.response?.data?.error || 'Error al eliminar obra');
+              {!soloLectura && (
+                <button
+                  onClick={async () => {
+                    if (window.confirm('¿Estás seguro de que quieres eliminar esta obra?')) {
+                      try {
+                        await mantenimientosAPI.eliminarObra(selectedObra.id);
+                        setShowDetails(false);
+                        loadObras();
+                      } catch (err: any) {
+                        setError(err.response?.data?.error || 'Error al eliminar obra');
+                      }
                     }
-                  }
-                }}
-                className="px-6 py-2.5 bg-red-500 text-white rounded-lg hover:bg-red-600 transition-all font-medium flex items-center gap-2 shadow-md hover:shadow-lg hover:scale-105 active:scale-95"
-              >
-                <Delete fontSize="small" />
-                Eliminar
-              </button>
+                  }}
+                  className="px-6 py-2.5 bg-red-500 text-white rounded-lg hover:bg-red-600 transition-all font-medium flex items-center gap-2 shadow-md hover:shadow-lg hover:scale-105 active:scale-95"
+                >
+                  <Delete fontSize="small" />
+                  Eliminar
+                </button>
+              )}
               <button
                 onClick={() => setShowDetails(false)}
                 className="px-6 py-2.5 bg-[#42A5F5] text-white rounded-lg hover:bg-blue-600 transition-all font-medium shadow-md hover:shadow-lg hover:scale-105 active:scale-95"

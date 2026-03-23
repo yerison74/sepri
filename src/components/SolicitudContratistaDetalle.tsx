@@ -19,6 +19,7 @@ import Login from './Login';
 import { formularioContratistaAPI } from '../services/api';
 import type { FormularioContratista, MovimientoSolicitudContratista } from '../types/database';
 import {
+  colorEstadoSolicitudContratista,
   labelEstadoSolicitudContratista,
   normalizarEstadoSolicitud,
   esEstadoTerminal,
@@ -70,13 +71,14 @@ export default function SolicitudContratistaDetalle() {
     () => (user ? [user.nombre, user.apellido].filter(Boolean).join(' ').trim() : ''),
     [user]
   );
+  const canEditAtencionContratista = hasPermission('editar_atencion_contratista');
 
   const qrDetailUrl = useMemo(() => (id ? urlAbsolutaDetalleContratista(id) : ''), [id]);
   const qrImageUrl = useMemo(() => (id ? urlImagenQrDetalleContratista(id) : ''), [id]);
 
   const cargarDatos = useCallback(async (opts?: { silent?: boolean }) => {
     if (!user || !id) return;
-    if (!hasPermission('ver_configuracion')) return;
+    if (!hasPermission('ver_atencion_contratista')) return;
 
     const silent = opts?.silent;
     if (!silent) {
@@ -127,7 +129,7 @@ export default function SolicitudContratistaDetalle() {
 
   useEffect(() => {
     if (authLoading || !user || !id) return;
-    if (!hasPermission('ver_configuracion')) return;
+    if (!hasPermission('ver_atencion_contratista')) return;
     void cargarDatos();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [authLoading, user?.id, user?.area, user?.rol, id, cargarDatos]);
@@ -215,12 +217,12 @@ export default function SolicitudContratistaDetalle() {
     return <Login />;
   }
 
-  if (!hasPermission('ver_configuracion')) {
+  if (!hasPermission('ver_atencion_contratista')) {
     return (
       <div className="min-h-screen bg-warm-50 flex items-center justify-center p-4">
         <Paper sx={{ p: 4, maxWidth: 480 }}>
           <Alert severity="warning" sx={{ mb: 2 }}>
-            No tienes permiso para ver solicitudes de contratista.
+            No tienes permiso para ver el módulo de atención al contratista.
           </Alert>
           <Button
             variant="contained"
@@ -305,7 +307,7 @@ export default function SolicitudContratistaDetalle() {
             <Chip
               size="small"
               label={labelEstadoSolicitudContratista(estado)}
-              color={terminal ? 'default' : 'primary'}
+              color={colorEstadoSolicitudContratista(estado)}
               variant={terminal ? 'filled' : 'outlined'}
             />
             <Chip size="small" label={r.area_actual ? `Área: ${r.area_actual}` : 'Sin área asignada'} variant="outlined" />
@@ -436,7 +438,7 @@ export default function SolicitudContratistaDetalle() {
           </Stack>
         </Paper>
 
-        {modoAccionesSistema && (
+        {modoAccionesSistema && canEditAtencionContratista && (
           <Stack
             direction={{ xs: 'column', sm: 'row' }}
             spacing={1}
@@ -461,7 +463,7 @@ export default function SolicitudContratistaDetalle() {
               size="small"
               color="secondary"
               startIcon={<Send />}
-              disabled={estado !== 'en_seguimiento' || !r.area_actual}
+              disabled={(estado !== 'en_seguimiento' && estado !== 'detenido') || !r.area_actual}
               onClick={abrirSeguimiento}
             >
               Registrar seguimiento / enviar a otra área

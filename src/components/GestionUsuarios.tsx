@@ -31,8 +31,21 @@ import {
   Cancel as CancelIcon
 } from '@mui/icons-material';
 import UsuarioModal from './usuarios/UsuarioModal';
+import { PERMISOS } from '../constants/permisos';
+import { useAuth } from '../context/AuthContext';
+
+const TODOS_LOS_PERMISOS = Object.values(PERMISOS);
+
+function aplicarPermisosAdmin(permisosActuales: Record<string, boolean> | null | undefined) {
+  const permisos = { ...(permisosActuales || {}) };
+  TODOS_LOS_PERMISOS.forEach((codigo) => {
+    permisos[codigo] = true;
+  });
+  return permisos;
+}
 
 export default function GestionUsuarios() {
+  const { hasPermission } = useAuth();
   const [users, setUsers] = useState<any[]>([]);
   const [open, setOpen] = useState(false);
   const [editId, setEditId] = useState<string | null>(null);
@@ -51,6 +64,7 @@ export default function GestionUsuarios() {
     permisos: {}, 
     activo: true,
   });
+  const canEditarUsuarios = hasPermission('editar_configuracion') || hasPermission('editar_usuarios');
 
   const cargar = async () => {
     try {
@@ -92,18 +106,29 @@ export default function GestionUsuarios() {
 
   const editar = (u: any) => {
     setEditId(u.id);
-    setForm(u);
+    setForm({
+      ...u,
+      permisos: u?.rol === 'admin' ? aplicarPermisosAdmin(u?.permisos) : (u?.permisos || {}),
+    });
     setOpen(true);
   };
 
   const guardar = async () => {
+    if (!canEditarUsuarios) {
+      showSnackbar('No tienes permisos para editar usuarios', 'error');
+      return;
+    }
     try {
       setLoading(true);
+      const payload = {
+        ...form,
+        permisos: form?.rol === 'admin' ? aplicarPermisosAdmin(form?.permisos) : (form?.permisos || {}),
+      };
       if (editId) {
-        await actualizarUsuario(editId, form);
+        await actualizarUsuario(editId, payload);
         showSnackbar('Usuario actualizado exitosamente', 'success');
       } else {
-        await crearUsuario(form);
+        await crearUsuario(payload);
         showSnackbar('Usuario creado exitosamente', 'success');
       }
       setOpen(false);
@@ -123,6 +148,10 @@ export default function GestionUsuarios() {
 
   const handleDeleteConfirm = async () => {
     if (!userToDelete) return;
+    if (!canEditarUsuarios) {
+      showSnackbar('No tienes permisos para eliminar usuarios', 'error');
+      return;
+    }
     
     try {
       setLoading(true);
@@ -179,6 +208,7 @@ export default function GestionUsuarios() {
               color="primary"
               startIcon={<PersonAddIcon />}
               onClick={nuevo}
+              disabled={!canEditarUsuarios}
               sx={{ 
                 borderRadius: 2,
                 textTransform: 'none',
@@ -220,15 +250,17 @@ export default function GestionUsuarios() {
                   <TableCell sx={{ color: 'white', fontWeight: 'bold' }}>Área</TableCell>
                   <TableCell sx={{ color: 'white', fontWeight: 'bold' }}>Rol</TableCell>
                   <TableCell sx={{ color: 'white', fontWeight: 'bold' }}>Estado</TableCell>
-                  <TableCell sx={{ color: 'white', fontWeight: 'bold' }} align="center">
-                    Acciones
-                  </TableCell>
+                  {canEditarUsuarios && (
+                    <TableCell sx={{ color: 'white', fontWeight: 'bold' }} align="center">
+                      Acciones
+                    </TableCell>
+                  )}
                 </TableRow>
               </TableHead>
               <TableBody>
                 {users.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={7} align="center" sx={{ py: 4 }}>
+                    <TableCell colSpan={canEditarUsuarios ? 7 : 6} align="center" sx={{ py: 4 }}>
                       <Typography variant="body1" color="text.secondary">
                         No hay usuarios registrados
                       </Typography>
@@ -279,36 +311,38 @@ export default function GestionUsuarios() {
                           variant={u.activo ? 'filled' : 'outlined'}
                         />
                       </TableCell>
-                      <TableCell align="center">
-                        <Box sx={{ display: 'flex', gap: 1, justifyContent: 'center' }}>
-                          <IconButton 
-                            size="small" 
-                            color="primary"
-                            onClick={() => editar(u)}
-                            sx={{ 
-                              '&:hover': { 
-                                bgcolor: 'primary.light',
-                                color: 'white'
-                              }
-                            }}
-                          >
-                            <EditIcon fontSize="small" />
-                          </IconButton>
-                          <IconButton 
-                            size="small" 
-                            color="error"
-                            onClick={() => handleDeleteClick(u)}
-                            sx={{ 
-                              '&:hover': { 
-                                bgcolor: 'error.light',
-                                color: 'white'
-                              }
-                            }}
-                          >
-                            <DeleteIcon fontSize="small" />
-                          </IconButton>
-                        </Box>
-                      </TableCell>
+                      {canEditarUsuarios && (
+                        <TableCell align="center">
+                          <Box sx={{ display: 'flex', gap: 1, justifyContent: 'center' }}>
+                            <IconButton 
+                              size="small" 
+                              color="primary"
+                              onClick={() => editar(u)}
+                              sx={{ 
+                                '&:hover': { 
+                                  bgcolor: 'primary.light',
+                                  color: 'white'
+                                }
+                              }}
+                            >
+                              <EditIcon fontSize="small" />
+                            </IconButton>
+                            <IconButton 
+                              size="small" 
+                              color="error"
+                              onClick={() => handleDeleteClick(u)}
+                              sx={{ 
+                                '&:hover': { 
+                                  bgcolor: 'error.light',
+                                  color: 'white'
+                                }
+                              }}
+                            >
+                              <DeleteIcon fontSize="small" />
+                            </IconButton>
+                          </Box>
+                        </TableCell>
+                      )}
                     </TableRow>
                   ))
                 )}
