@@ -1,0 +1,193 @@
+/**
+ * Tipos TypeScript para la base de datos Supabase
+ * Estos tipos deben coincidir con el esquema de la base de datos
+ */
+
+export interface Obra {
+  /** Identificador de la obra en Supabase (formato: OB-0000 o MT-0000, generado por el sistema). */
+  id: string;
+  /** ID legado de la obra (ej. OB-0000 o MT-0000) usado en algunos flujos antiguos. */
+  id_obra?: string | null;
+  /** Código interno o identificador externo usado para actualizar la obra (ej. 0000-0000). */
+  codigo?: string | null;
+  /** Código de contrato (máx. 9 caracteres, guía: xxxx-xxxx). */
+  contrato?: string | null;
+  nombre: string;
+  /** Tipo de obra: por ejemplo "Construccion" o "Mantenimiento". */
+  tipo_obra?: string | null;
+  estado: string;
+  fecha_inicio?: string | null;
+  fecha_fin_estimada?: string | null;
+  responsable?: string | null;
+  descripcion?: string | null;
+  provincia?: string | null;
+  municipio?: string | null;
+  nivel?: string | null;
+  no_aula?: number | null;
+  observacion_legal?: string | null;
+  observacion_financiero?: string | null;
+  latitud?: string | null;
+  longitud?: string | null;
+  distrito_minerd_sigede?: string | null;
+  fecha_inauguracion?: string | null;
+  created_at?: string | null;
+  updated_at?: string | null;
+}
+
+export interface HistorialEstado {
+  id: number;
+  /** Código de la obra (se usa en lugar de obra_id para trazabilidad). */
+  codigo?: string | null;
+  /** Identificador interno legado (si existe en la BD). */
+  obra_id?: number | null;
+  estado_anterior?: string | null;
+  estado_nuevo: string;
+  fecha_cambio?: string | null;
+  usuario?: string | null;
+  observaciones?: string | null;
+}
+
+export interface Tramite {
+  id: string;
+  titulo: string;
+  oficio?: string | null;
+  nombre_destinatario: string;
+  area_destinatario: string;
+  area_destino_final: string;
+  /** Proceso asignado (ej. proceso_1, proceso_2). Si existe, se activa control de tiempo por área. */
+  proceso?: string | null;
+  estado: 'en_transito' | 'detenido' | 'firmado' | 'procesado' | 'completado';
+  codigo_barras?: string | null;
+  archivo_pdf?: string | null;
+  nombre_archivo?: string | null;
+  fecha_creacion?: string | null;
+  created_at?: string | null;
+  updated_at?: string | null;
+}
+
+export interface MovimientoTramite {
+  id: number;
+  tramite_id: string;
+  area_origen: string;
+  area_destino: string;
+  oficio?: string | null;
+  fecha_movimiento?: string | null;
+  observaciones?: string | null;
+  usuario?: string | null;
+  /** Estado que quedó el trámite tras este movimiento (ej. 'detenido', 'completado'). Para indicadores en historial. */
+  estado_resultante?: string | null;
+}
+
+/** Registro de tiempo que un trámite permanece en un área (para procesos con medición). */
+export interface TiempoEnArea {
+  id?: number;
+  tramite_id: string;
+  area_nombre: string;
+  fecha_entrada: string;
+  fecha_salida?: string | null;
+  proceso_id: string;
+}
+
+/** Catálogo de áreas institucionales. */
+export interface Area {
+  /** Código del área (ej: DIGE, OAIP, JURI). */
+  id: string;
+  /** Nombre descriptivo del área. */
+  area: string;
+  /** ID del usuario encargado del área (tabla usuarios_app), si existe. */
+  encargado_id?: string | null;
+}
+
+/** Estado del flujo: asignación a área y seguimiento entre áreas. */
+export type EstadoSolicitudContratista =
+  | 'pendiente_asignacion'
+  | 'en_seguimiento'
+  | 'detenido'
+  | 'completado';
+
+export interface FormularioContratista {
+  id: string;
+  fecha_visita: string;
+  nombres: string;
+  apellidos: string;
+  nombre_empresa: string;
+  motivo_visita: string;
+  nombre_obra?: string | null;
+  nombre_obra_inaugurada?: string | null;
+  provincia: string;
+  numero_contrato: string;
+  correo: string;
+  nota?: string | null;
+  /** Nombre descriptivo del área (misma convención que trámites: `area.area`). */
+  area_actual?: string | null;
+  estado?: EstadoSolicitudContratista | string | null;
+}
+
+/** Movimiento de una solicitud entre áreas (seguimiento). */
+export interface MovimientoSolicitudContratista {
+  id: number;
+  solicitud_id: string;
+  area_origen: string;
+  area_destino: string;
+  nota?: string | null;
+  estado_resultante?: 'detenido' | 'completado' | string | null;
+  usuario?: string | null;
+  fecha_movimiento?: string | null;
+}
+
+/** Notificación cuando un trámite alcanza 50%, 70% o 100% del tiempo estimado en un área. */
+export interface NotificacionTiempo {
+  id: number;
+  tiempo_en_area_id: number;
+  tramite_id: string;
+  tramite_titulo: string;
+  area_nombre: string;
+  porcentaje: 50 | 70 | 100;
+  mensaje: string;
+  created_at: string;
+}
+
+export interface HistorialUpload {
+  id: number;
+  nombre_archivo: string;
+  tipo_archivo: string;
+  fecha_subida?: string | null;
+  registros_procesados?: number | null;
+  registros_exitosos?: number | null;
+  registros_fallidos?: number | null;
+  usuario?: string | null;
+  observaciones?: string | null;
+}
+
+// Tipos para filtros y consultas
+export interface ObrasFilters {
+  limit?: number;
+  offset?: number;
+  search?: string;
+  estado?: string;
+  responsable?: string;
+  provincia?: string;
+  municipio?: string;
+  nivel?: string;
+  fechaInauguracionDesde?: string;
+  fechaInauguracionHasta?: string;
+}
+
+export interface TramitesFilters {
+  search?: string;
+  estado?: string;
+  area?: string;
+  /** Si se indica, solo se devuelven trámites enviados por o enviados a esta área (ignorado si esAdmin) */
+  areaUsuario?: string;
+  /** Si true, se ignoran filtros por área y se devuelven todos los trámites */
+  esAdmin?: boolean;
+  limit?: number;
+  offset?: number;
+}
+
+// Tipos para respuestas de API
+export interface ApiResponse<T> {
+  data: T;
+  count?: number;
+  error?: string;
+}
