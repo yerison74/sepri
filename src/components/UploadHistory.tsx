@@ -465,7 +465,7 @@ const TramiteHistory: React.FC<TramiteHistoryProps> = ({ soloLectura = false }) 
 
   const handleCreateTramite = async () => {
     if (!nuevoTramite.titulo || !nuevoTramite.nombre_destinatario || 
-        !nuevoTramite.area_destinatario || !nuevoTramite.area_destino_final) {
+        !nuevoTramite.area_destinatario) {
       setError('Por favor complete todos los campos requeridos');
       return;
     }
@@ -473,6 +473,7 @@ const TramiteHistory: React.FC<TramiteHistoryProps> = ({ soloLectura = false }) 
     try {
       setError(null);
       setUploadingPdf(true);
+      const areaDestinoFinal = nuevoTramite.area_destino_final || nuevoTramite.area_destinatario;
 
       let nuevoTramiteData: Tramite;
 
@@ -488,7 +489,7 @@ const TramiteHistory: React.FC<TramiteHistoryProps> = ({ soloLectura = false }) 
         formData.append('oficio', nuevoTramite.oficio);
         formData.append('nombre_destinatario', nuevoTramite.nombre_destinatario);
         formData.append('area_destinatario', nuevoTramite.area_destinatario);
-        formData.append('area_destino_final', nuevoTramite.area_destino_final);
+        formData.append('area_destino_final', areaDestinoFinal);
         if (nuevoTramite.proceso) formData.append('proceso', nuevoTramite.proceso);
         formData.append('codigo_area', getCodigoArea(user?.area || ''));
         formData.append('archivo_pdf', nuevoTramite.archivo_pdf);
@@ -506,7 +507,7 @@ const TramiteHistory: React.FC<TramiteHistoryProps> = ({ soloLectura = false }) 
           oficio: nuevoTramite.oficio || undefined,
           nombre_destinatario: nuevoTramite.nombre_destinatario,
           area_destinatario: nuevoTramite.area_destinatario,
-          area_destino_final: nuevoTramite.area_destino_final,
+          area_destino_final: areaDestinoFinal,
           proceso: nuevoTramite.proceso || undefined,
           codigo_area: getCodigoArea(user?.area || ''),
         });

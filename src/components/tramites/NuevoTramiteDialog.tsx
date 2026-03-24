@@ -16,7 +16,8 @@ import {
   IconButton,
 } from '@mui/material';
 import { AttachFile, PictureAsPdf } from '@mui/icons-material';
-import type { Area, Tramite } from '../../services/api';
+import type { Area } from '../../services/api';
+import { PROCESOS } from '../../constants/procesos';
 
 export interface NuevoTramiteForm {
   titulo: string;
@@ -133,8 +134,11 @@ const NuevoTramiteDialog: React.FC<NuevoTramiteDialogProps> = ({
               <MenuItem value="">
                 <em>Ninguno</em>
               </MenuItem>
-              {/* La lista de PROCESOS sigue viniendo desde el contenedor actual,
-                  por lo que este componente no la conoce para no duplicar lógica */}
+              {PROCESOS.map((proceso) => (
+                <MenuItem key={proceso.id} value={proceso.id}>
+                  {proceso.nombre}
+                </MenuItem>
+              ))}
             </Select>
           </FormControl>
           <Box>
