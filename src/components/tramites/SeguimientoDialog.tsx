@@ -127,7 +127,8 @@ const SeguimientoDialog: React.FC<SeguimientoDialogProps> = ({
                   onChange={(e) =>
                     setSeguimientoData((prev) => ({
                       ...prev,
-                      actualizar_estado: e.target.checked ? 'detenido' : '',
+                      // Al quitar "Detenido", reactivamos el trámite para poder enviarlo.
+                      actualizar_estado: e.target.checked ? 'detenido' : 'en_transito',
                     }))
                   }
                   color="error"
