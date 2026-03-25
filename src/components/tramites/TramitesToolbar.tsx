@@ -9,6 +9,10 @@ import {
   Typography,
   Switch,
   FormControlLabel,
+  FormControl,
+  InputLabel,
+  Select,
+  MenuItem,
 } from '@mui/material';
 import {
   Search,
@@ -26,6 +30,9 @@ interface TramitesToolbarProps {
   searchQuery: string;
   onSearchChange: (value: string) => void;
   onSearchSubmit: () => void;
+  estadoFilter: string;
+  onEstadoFilterChange: (value: string) => void;
+  estadoOptions: { value: string; label: string }[];
   viewMode: 'list' | 'cards';
   onViewModeChange: (mode: 'list' | 'cards') => void;
   hideCompleted: boolean;
@@ -40,6 +47,9 @@ const TramitesToolbar: React.FC<TramitesToolbarProps> = ({
   searchQuery,
   onSearchChange,
   onSearchSubmit,
+  estadoFilter,
+  onEstadoFilterChange,
+  estadoOptions,
   viewMode,
   onViewModeChange,
   hideCompleted,
@@ -138,6 +148,28 @@ const TramitesToolbar: React.FC<TramitesToolbarProps> = ({
               }}
             />
           </Box>
+
+          <FormControl
+            size="medium"
+            sx={{
+              minWidth: { xs: '100%', sm: 220 },
+              '& .MuiOutlinedInput-root': { borderRadius: 2, backgroundColor: 'background.paper' },
+            }}
+          >
+            <InputLabel>Estado</InputLabel>
+            <Select
+              value={estadoFilter}
+              label="Estado"
+              onChange={(e) => onEstadoFilterChange(e.target.value)}
+            >
+              <MenuItem value="">Todos</MenuItem>
+              {estadoOptions.map((opt) => (
+                <MenuItem key={opt.value} value={opt.value}>
+                  {opt.label}
+                </MenuItem>
+              ))}
+            </Select>
+          </FormControl>
 
           <Box display="flex" gap={1} alignItems="stretch">
             <Tooltip
