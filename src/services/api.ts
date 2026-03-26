@@ -698,7 +698,11 @@ export const tramitesAPI = {
       }
       if (tramite.proceso) {
         await tramitesService.cerrarTiempoEnAreaActual(id);
-        if (movimiento.actualizar_estado !== 'completado') {
+        // En "detenido" el reloj queda en hold: no abrir un nuevo tiempo hasta reanudar.
+        if (
+          movimiento.actualizar_estado !== 'completado' &&
+          movimiento.actualizar_estado !== 'detenido'
+        ) {
           await tramitesService.abrirTiempoEnArea(id, movimiento.area_destino, tramite.proceso);
         }
       }

@@ -71,6 +71,14 @@ import BarcodeDialog from './tramites/BarcodeDialog';
 import DetalleTramiteDialog from './tramites/DetalleTramiteDialog';
 const LazyPdfViewerDialog = React.lazy(() => import('./tramites/PdfViewerDialog'));
 
+const ESTADO_OPTIONS: { value: string; label: string }[] = [
+  { value: 'en_transito', label: 'En tránsito' },
+  { value: 'detenido', label: 'Detenido' },
+  { value: 'firmado', label: 'Firmado' },
+  { value: 'procesado', label: 'Procesado' },
+  { value: 'completado', label: 'Completado' },
+];
+
 // Componente para generar código de barras usando jsbarcode - Estilo DIE
 const BarcodeDisplay: React.FC<{ codigo: string; id: string; año?: string }> = ({ codigo, id, año }) => {
   const barcodeRef = useRef<SVGSVGElement>(null);
@@ -215,6 +223,7 @@ const TramiteHistory: React.FC<TramiteHistoryProps> = ({ soloLectura = false }) 
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
+  const [estadoFilter, setEstadoFilter] = useState('');
   const [page, setPage] = useState(1);
   const [rowsPerPage] = useState(15);
   const searchInputRef = useRef<HTMLInputElement>(null);
@@ -265,7 +274,7 @@ const TramiteHistory: React.FC<TramiteHistoryProps> = ({ soloLectura = false }) 
   useEffect(() => {
     loadTramites();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [page, searchQuery]);
+  }, [page, searchQuery, estadoFilter]);
 
   // Al abrir el diálogo de nuevo trámite, rellenar solo el remitente con el usuario logueado.
   // Primera área de envío queda vacía para que el usuario la elija.
@@ -283,7 +292,7 @@ const TramiteHistory: React.FC<TramiteHistoryProps> = ({ soloLectura = false }) 
   // Resetear a página 1 cuando cambian filtros
   useEffect(() => {
     setPage(1);
-  }, [hideCompleted, searchQuery]);
+  }, [hideCompleted, searchQuery, estadoFilter]);
 
   // Limpiar stream de cámara al desmontar
   useEffect(() => {
@@ -356,6 +365,43 @@ const TramiteHistory: React.FC<TramiteHistoryProps> = ({ soloLectura = false }) 
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user?.area]);
 
+  // Notificar cuando un trámite llega a mi área vía movimiento y refrescar listado.
+  useEffect(() => {
+    if (!user?.area) return;
+    const channel = supabase
+      .channel(`tramites-movimientos-llegada-${user.area}`)
+      .on(
+        'postgres_changes',
+        {
+          schema: 'public',
+          table: 'movimientos_tramites',
+          event: 'INSERT',
+          filter: `area_destino=eq.${user.area}`,
+        },
+        async (payload) => {
+          const nuevo = payload.new as any;
+          const tramiteId = nuevo?.tramite_id;
+          let titulo = tramiteId || 'trámite';
+          if (tramiteId) {
+            try {
+              const res = await tramitesAPI.obtenerTramitePorId(tramiteId);
+              titulo = res?.data?.data?.titulo || tramiteId;
+            } catch {
+              titulo = tramiteId;
+            }
+          }
+          setNuevoTramiteMensaje(`Llegó un trámite a tu área (${user.area}): ${titulo}`);
+          setOpenNuevoTramiteSnackbar(true);
+          loadTramites();
+        },
+      )
+      .subscribe();
+    return () => {
+      supabase.removeChannel(channel);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user?.area]);
+
   const loadTramites = async () => {
     try {
       setLoading(true);
@@ -364,6 +410,7 @@ const TramiteHistory: React.FC<TramiteHistoryProps> = ({ soloLectura = false }) 
       const verTodosTramites = user?.rol === 'admin' || user?.rol === 'supervision';
       const response = await tramitesAPI.obtenerTramites({ 
         search: searchQuery,
+        estado: estadoFilter || undefined,
         limit: rowsPerPage,
         offset: (page - 1) * rowsPerPage,
         areaUsuario: areaUsuario || undefined,
@@ -384,7 +431,36 @@ const TramiteHistory: React.FC<TramiteHistoryProps> = ({ soloLectura = false }) 
         return tramite;
       });
 
-      setTramites(tramitesConUrl);
+      // Ordenar por movimiento más reciente (fallback: fecha de creación)
+      let tramitesOrdenados = tramitesConUrl;
+      if (tramitesConUrl.length > 0) {
+        const ids = tramitesConUrl.map((t: Tramite) => t.id);
+        try {
+          const historiales = await Promise.all(
+            ids.map(async (tramiteId) => {
+              try {
+                const res = await tramitesAPI.obtenerHistorialTramite(tramiteId);
+                const ultimo = (res.data.data || [])[0];
+                return { tramiteId, fechaUltimoMovimiento: ultimo?.fecha_movimiento || null };
+              } catch {
+                return { tramiteId, fechaUltimoMovimiento: null };
+              }
+            })
+          );
+          const mapaFechas = new Map(historiales.map((h) => [h.tramiteId, h.fechaUltimoMovimiento]));
+          tramitesOrdenados = [...tramitesConUrl].sort((a, b) => {
+            const fa = mapaFechas.get(a.id) || a.fecha_creacion || a.created_at || '';
+            const fb = mapaFechas.get(b.id) || b.fecha_creacion || b.created_at || '';
+            return new Date(fb).getTime() - new Date(fa).getTime();
+          });
+        } catch {
+          tramitesOrdenados = [...tramitesConUrl].sort(
+            (a, b) => new Date(b.fecha_creacion || b.created_at || '').getTime() - new Date(a.fecha_creacion || a.created_at || '').getTime()
+          );
+        }
+      }
+
+      setTramites(tramitesOrdenados);
 
       const conProceso = tramitesConUrl.filter((t: Tramite) => t.proceso && t.estado !== 'completado');
       if (conProceso.length > 0) {
@@ -879,6 +955,9 @@ const TramiteHistory: React.FC<TramiteHistoryProps> = ({ soloLectura = false }) 
         searchQuery={searchQuery}
         onSearchChange={setSearchQuery}
         onSearchSubmit={handleSearch}
+        estadoFilter={estadoFilter}
+        onEstadoFilterChange={setEstadoFilter}
+        estadoOptions={ESTADO_OPTIONS}
         viewMode={viewMode}
         onViewModeChange={setViewMode}
         hideCompleted={hideCompleted}
