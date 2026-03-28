@@ -14,6 +14,16 @@ import type {
   MovimientoSolicitudContratista,
 } from '../types/database';
 
+// ── Generador de token seguro (Web Crypto API) ──────────────────────────────
+function generarToken(longitud = 32): string {
+  const bytes = new Uint8Array(longitud);
+  crypto.getRandomValues(bytes);
+  return Array.from(bytes)
+    .map((b) => b.toString(16).padStart(2, '0'))
+    .join('')
+    .slice(0, longitud);
+}
+
 /**
  * Servicio de Supabase para reemplazar las llamadas API del backend
  */
@@ -227,6 +237,58 @@ export const formularioContratistaService = {
       console.error('Error al obtener movimientos de solicitud:', error);
       throw new Error(error.message || 'Error al obtener el historial');
     }
+  },
+
+  /**
+   * Obtiene el token QR de una solicitud. Si no existe lo crea.
+   * Así el token siempre es el mismo independientemente de desde
+   * dónde se genere la URL (formulario público o panel sepri-main).
+   */
+  obtenerOCrearToken: async (solicitudId: string): Promise<string> => {
+    // 1. Buscar token activo existente
+    const { data: existing } = await supabase
+      .from('contratista_access_tokens')
+      .select('token')
+      .eq('solicitud_id', solicitudId)
+      .eq('is_active', true)
+      .maybeSingle();
+
+    if (existing?.token) return existing.token;
+
+    // 2. Crear uno nuevo
+    const token = generarToken(32);
+    const { data: inserted, error } = await supabase
+      .from('contratista_access_tokens')
+      .insert({ solicitud_id: solicitudId, token })
+      .select('token')
+      .single();
+
+    if (error) throw new Error(error.message || 'Error al crear token QR');
+    return inserted.token;
+  },
+
+  /** Resuelve el solicitud_id a partir de un token (para la ruta /contratista/:token). */
+  obtenerSolicitudIdPorToken: async (token: string): Promise<string | null> => {
+    const { data, error } = await supabase
+      .from('contratista_access_tokens')
+      .select('solicitud_id')
+      .eq('token', token)
+      .eq('is_active', true)
+      .maybeSingle();
+
+    if (error || !data) return null;
+
+    // Actualizar last_accessed_at y access_count de forma no bloqueante
+    supabase
+      .from('contratista_access_tokens')
+      .update({
+        last_accessed_at: new Date().toISOString(),
+        access_count: (data as any).access_count + 1,
+      })
+      .eq('token', token)
+      .then(() => {});
+
+    return data.solicitud_id;
   },
 };
 

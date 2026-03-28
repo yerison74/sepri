@@ -127,6 +127,8 @@ export default function AtencionContratista({ soloLectura = false }: AtencionCon
   const [loadingRegistros, setLoadingRegistros] = useState(false);
   const [showForm, setShowForm] = useState(false);
   const [qrData, setQrData] = useState<FormularioContratista | null>(null);
+  const [qrToken, setQrToken] = useState<string>('');
+  const [qrTokenLoading, setQrTokenLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
   const [openAsignar, setOpenAsignar] = useState(false);
@@ -213,15 +215,18 @@ export default function AtencionContratista({ soloLectura = false }: AtencionCon
   };
 
   /** URL interna de la app: al escanear se abre la vista de detalle de la solicitud. */
-  const qrDetailUrl = useMemo(() => {
-    if (!qrData) return '';
-    return urlAbsolutaDetalleContratista(qrData.id);
-  }, [qrData]);
+  // Obtener/crear el token QR desde la BD al abrir el dialog
+  useEffect(() => {
+    if (!qrData) { setQrToken(''); return; }
+    setQrTokenLoading(true);
+    formularioContratistaAPI.obtenerOCrearToken(qrData.id)
+      .then((token) => setQrToken(token))
+      .catch(() => setQrToken(''))
+      .finally(() => setQrTokenLoading(false));
+  }, [qrData?.id]);
 
-  const qrImageUrl = useMemo(() => {
-    if (!qrData) return '';
-    return urlImagenQrDetalleContratista(qrData.id);
-  }, [qrData]);
+  const qrDetailUrl = qrToken ? urlAbsolutaDetalleContratista(qrToken) : '';
+  const qrImageUrl  = qrToken ? urlImagenQrDetalleContratista(qrToken) : '';
 
   const abrirAsignar = (s: FormularioContratista) => {
     setError(null);

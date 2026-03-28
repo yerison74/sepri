@@ -908,6 +908,34 @@ export const formularioContratistaAPI = {
       };
     }
   },
+
+  obtenerOCrearToken: async (id: string) => {
+    try {
+      const token = await formularioContratistaService.obtenerOCrearToken(id);
+      return token;
+    } catch (error: any) {
+      throw {
+        response: {
+          data: { error: error.message || 'Error al obtener token QR' },
+          status: 500,
+        },
+      };
+    }
+  },
+
+  obtenerSolicitudIdPorToken: async (token: string) => {
+    try {
+      const solicitudId = await formularioContratistaService.obtenerSolicitudIdPorToken(token);
+      return solicitudId;
+    } catch (error: any) {
+      throw {
+        response: {
+          data: { error: error.message || 'Error al resolver token' },
+          status: 500,
+        },
+      };
+    }
+  },
 };
 
 export default apiClient;
