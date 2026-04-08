@@ -689,6 +689,7 @@ export const tramitesAPI = {
         observaciones: movimiento.observaciones,
         usuario: movimiento.usuario,
         estado_resultante: movimiento.actualizar_estado ?? null,
+        tipo_tramite: 'tipo_interno',
       });
       if (movimiento.actualizar_estado) {
         await tramitesService.actualizarTramite(id, {
@@ -835,6 +836,22 @@ export const formularioContratistaAPI = {
     }
   },
 
+  obtenerSugerenciasNombreEmpresa: async (search: string, limit = 8) => {
+    try {
+      const data = await formularioContratistaService.obtenerSugerenciasNombreEmpresa(search, limit);
+      return {
+        data: { data },
+      } as AxiosResponse<{ data: string[] }>;
+    } catch (error: any) {
+      throw {
+        response: {
+          data: { error: error.message || 'Error al obtener sugerencias de empresa' },
+          status: 500,
+        },
+      };
+    }
+  },
+
   obtenerPorId: async (id: string, filtros?: { areaUsuario?: string; esAdmin?: boolean }) => {
     try {
       const data = await formularioContratistaService.obtenerPorId(id, filtros);
@@ -903,6 +920,34 @@ export const formularioContratistaAPI = {
       throw {
         response: {
           data: { error: error.message || 'Error al obtener historial' },
+          status: 500,
+        },
+      };
+    }
+  },
+
+  obtenerOCrearToken: async (id: string) => {
+    try {
+      const token = await formularioContratistaService.obtenerOCrearToken(id);
+      return token;
+    } catch (error: any) {
+      throw {
+        response: {
+          data: { error: error.message || 'Error al obtener token QR' },
+          status: 500,
+        },
+      };
+    }
+  },
+
+  obtenerSolicitudIdPorToken: async (token: string) => {
+    try {
+      const solicitudId = await formularioContratistaService.obtenerSolicitudIdPorToken(token);
+      return solicitudId;
+    } catch (error: any) {
+      throw {
+        response: {
+          data: { error: error.message || 'Error al resolver token' },
           status: 500,
         },
       };

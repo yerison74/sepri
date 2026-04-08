@@ -1039,9 +1039,18 @@ const TramiteHistory: React.FC<TramiteHistoryProps> = ({ soloLectura = false }) 
                         </Typography>
                       </TableCell>
                       <TableCell>
-                        <Typography variant="body2" sx={{ fontWeight: 500 }}>
-                          {tramite.titulo}
-                        </Typography>
+                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, flexWrap: 'wrap' }}>
+                          <Typography variant="body2" sx={{ fontWeight: 500 }}>
+                            {tramite.titulo}
+                          </Typography>
+                          <Chip
+                            size="small"
+                            variant="outlined"
+                            color="default"
+                            label={tramite.tipo_tramite === 'tipo_contratista' ? 'Contratista' : 'Interno'}
+                            sx={{ height: 20, '& .MuiChip-label': { px: 0.75, fontSize: '0.68rem' } }}
+                          />
+                        </Box>
                       </TableCell>
                       <TableCell>
                         <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
@@ -1232,6 +1241,13 @@ const TramiteHistory: React.FC<TramiteHistoryProps> = ({ soloLectura = false }) 
                         <Typography variant="subtitle1" sx={{ fontWeight: 600, mb: 1 }}>
                           {tramite.titulo}
                         </Typography>
+                        <Chip
+                          size="small"
+                          variant="outlined"
+                          color="default"
+                          label={tramite.tipo_tramite === 'tipo_contratista' ? 'Contratista' : 'Interno'}
+                          sx={{ mb: 1 }}
+                        />
                         <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1 }}>
                           <Person fontSize="small" color="action" />
                           <Typography variant="body2" color="text.secondary">

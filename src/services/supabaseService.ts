@@ -14,6 +14,16 @@ import type {
   MovimientoSolicitudContratista,
 } from '../types/database';
 
+// ── Generador de token seguro (Web Crypto API) ──────────────────────────────
+function generarToken(longitud = 32): string {
+  const bytes = new Uint8Array(longitud);
+  crypto.getRandomValues(bytes);
+  return Array.from(bytes)
+    .map((b) => b.toString(16).padStart(2, '0'))
+    .join('')
+    .slice(0, longitud);
+}
+
 /**
  * Servicio de Supabase para reemplazar las llamadas API del backend
  */
@@ -44,6 +54,48 @@ export const areasService = {
 // ============================================
 
 export const formularioContratistaService = {
+  /** Garantiza registro espejo en `tramites` para cumplir FK de `movimientos_tramites.tramite_id`. */
+  asegurarTramiteContratista: async (solicitudId: string): Promise<void> => {
+    const { data: existing, error: selErr } = await supabase
+      .from('tramites')
+      .select('id')
+      .eq('id', solicitudId)
+      .maybeSingle();
+    if (selErr) throw selErr;
+    if (existing?.id) return;
+
+    const { data: solicitud, error: formErr } = await supabase
+      .from('formulario_contratista')
+      .select('*')
+      .eq('id', solicitudId)
+      .single();
+    if (formErr) throw formErr;
+    if (!solicitud) throw new Error('Solicitud de contratista no encontrada');
+
+    const areaActual = solicitud.area_actual || 'Pendiente de asignación';
+    const estadoActual = solicitud.estado === 'detenido' || solicitud.estado === 'completado'
+      ? solicitud.estado
+      : 'en_transito';
+    const titulo = `${solicitud.motivo_visita || 'Solicitud contratista'} - ${solicitud.nombres || ''} ${solicitud.apellidos || ''}`.trim();
+    const destinatario = `${solicitud.nombres || ''} ${solicitud.apellidos || ''}`.trim() || 'Solicitante contratista';
+
+    const { error: insErr } = await supabase.from('tramites').insert({
+      id: solicitudId,
+      titulo,
+      oficio: solicitud.numero_contrato || null,
+      nombre_destinatario: destinatario,
+      area_destinatario: areaActual,
+      area_destino_final: areaActual,
+      proceso: null,
+      estado: estadoActual,
+      codigo_barras: solicitudId,
+      archivo_pdf: null,
+      nombre_archivo: null,
+      tipo_tramite: 'tipo_contratista',
+    });
+    if (insErr) throw insErr;
+  },
+
   crear: async (
     payload: Omit<FormularioContratista, 'id'>
   ): Promise<FormularioContratista> => {
@@ -95,6 +147,45 @@ export const formularioContratistaService = {
     }
   },
 
+  /** Sugerencias para nombre_empresa desde `obras.responsable` y `formulario_contratista.nombre_empresa`. */
+  obtenerSugerenciasNombreEmpresa: async (search: string, limit = 8): Promise<string[]> => {
+    const term = (search || '').trim();
+    if (!term) return [];
+    try {
+      const [obrasRes, contratistaRes] = await Promise.all([
+        supabase
+          .from('obras')
+          .select('responsable')
+          .ilike('responsable', `%${term}%`)
+          .not('responsable', 'is', null)
+          .limit(limit * 2),
+        supabase
+          .from('formulario_contratista')
+          .select('nombre_empresa')
+          .ilike('nombre_empresa', `%${term}%`)
+          .not('nombre_empresa', 'is', null)
+          .limit(limit * 2),
+      ]);
+
+      if (obrasRes.error) throw obrasRes.error;
+      if (contratistaRes.error) throw contratistaRes.error;
+
+      const unique = new Set<string>();
+      for (const row of obrasRes.data || []) {
+        const value = (row as any)?.responsable?.trim();
+        if (value) unique.add(value);
+      }
+      for (const row of contratistaRes.data || []) {
+        const value = (row as any)?.nombre_empresa?.trim();
+        if (value) unique.add(value);
+      }
+      return Array.from(unique).slice(0, limit);
+    } catch (error: any) {
+      console.error('Error al obtener sugerencias de nombre de empresa:', error);
+      return [];
+    }
+  },
+
   obtenerPorId: async (
     id: string,
     filtros?: { areaUsuario?: string; esAdmin?: boolean }
@@ -131,6 +222,7 @@ export const formularioContratistaService = {
     payload: { area_nombre: string; usuario: string; nota?: string | null }
   ): Promise<FormularioContratista> => {
     try {
+      await formularioContratistaService.asegurarTramiteContratista(solicitudId);
       const { data, error } = await supabase
         .from('formulario_contratista')
         .update({
@@ -143,21 +235,33 @@ export const formularioContratistaService = {
       if (error) throw error;
       if (!data) throw new Error('No se pudo actualizar la solicitud');
 
-      const { error: movError } = await supabase.from('movimientos_solicitud_contratista').insert({
-        solicitud_id: solicitudId,
+      const { error: movError } = await supabase.from('movimientos_tramites').insert({
+        tramite_id: solicitudId,
         area_origen: 'Pendiente de asignación',
         area_destino: payload.area_nombre,
-        nota: payload.nota ?? null,
+        observaciones: payload.nota ?? null,
         estado_resultante: null,
         usuario: payload.usuario,
+        tipo_tramite: 'tipo_contratista',
       });
       if (movError) throw movError;
+
+      // Mantener sincronizado el espejo en `tramites` para reportes/listado unificado.
+      await supabase
+        .from('tramites')
+        .update({
+          area_destinatario: payload.area_nombre,
+          area_destino_final: payload.area_nombre,
+          estado: 'en_transito',
+          tipo_tramite: 'tipo_contratista',
+        })
+        .eq('id', solicitudId);
 
       return data as FormularioContratista;
     } catch (error: any) {
       if (error?.code === '42P01') {
         throw new Error(
-          'Falta la tabla movimientos_solicitud_contratista o columnas area_actual/estado. Ejecuta supabase-solicitud-contratista-seguimiento.sql en Supabase.'
+          'Falta la tabla movimientos_tramites o columnas area_actual/estado.'
         );
       }
       console.error('Error al asignar área a solicitud:', error);
@@ -179,13 +283,15 @@ export const formularioContratistaService = {
     }
   ): Promise<FormularioContratista> => {
     try {
-      const { error: movError } = await supabase.from('movimientos_solicitud_contratista').insert({
-        solicitud_id: solicitudId,
+      await formularioContratistaService.asegurarTramiteContratista(solicitudId);
+      const { error: movError } = await supabase.from('movimientos_tramites').insert({
+        tramite_id: solicitudId,
         area_origen: payload.area_origen,
         area_destino: payload.area_destino,
-        nota: payload.nota ?? null,
+        observaciones: payload.nota ?? null,
         estado_resultante: payload.estado_resultante || null,
         usuario: payload.usuario,
+        tipo_tramite: 'tipo_contratista',
       });
       if (movError) throw movError;
 
@@ -201,12 +307,25 @@ export const formularioContratistaService = {
 
       if (error) throw error;
       if (!data) throw new Error('No se pudo actualizar la solicitud');
+
+      const estadoTramite = payload.nuevo_estado === 'completado'
+        ? 'completado'
+        : payload.nuevo_estado === 'detenido'
+          ? 'detenido'
+          : 'en_transito';
+      await supabase
+        .from('tramites')
+        .update({
+          area_destinatario: payload.nueva_area_actual,
+          area_destino_final: payload.nueva_area_actual,
+          estado: estadoTramite,
+          tipo_tramite: 'tipo_contratista',
+        })
+        .eq('id', solicitudId);
       return data as FormularioContratista;
     } catch (error: any) {
       if (error?.code === '42P01') {
-        throw new Error(
-          'Falta la tabla movimientos_solicitud_contratista. Ejecuta supabase-solicitud-contratista-seguimiento.sql en Supabase.'
-        );
+        throw new Error('Falta la tabla movimientos_tramites.');
       }
       console.error('Error al registrar movimiento de solicitud:', error);
       throw new Error(error.message || 'Error al registrar seguimiento');
@@ -216,17 +335,79 @@ export const formularioContratistaService = {
   obtenerMovimientos: async (solicitudId: string): Promise<MovimientoSolicitudContratista[]> => {
     try {
       const { data, error } = await supabase
-        .from('movimientos_solicitud_contratista')
+        .from('movimientos_tramites')
         .select('*')
-        .eq('solicitud_id', solicitudId)
+        .eq('tramite_id', solicitudId)
+        .eq('tipo_tramite', 'tipo_contratista')
         .order('fecha_movimiento', { ascending: false });
       if (error) throw error;
-      return (data || []) as MovimientoSolicitudContratista[];
+      return (data || []).map((m: any) => ({
+        id: m.id,
+        solicitud_id: m.tramite_id,
+        area_origen: m.area_origen,
+        area_destino: m.area_destino,
+        nota: m.observaciones ?? null,
+        estado_resultante: m.estado_resultante ?? null,
+        usuario: m.usuario ?? null,
+        fecha_movimiento: m.fecha_movimiento ?? null,
+      })) as MovimientoSolicitudContratista[];
     } catch (error: any) {
       if (error?.code === '42P01') return [];
       console.error('Error al obtener movimientos de solicitud:', error);
       throw new Error(error.message || 'Error al obtener el historial');
     }
+  },
+
+  /**
+   * Obtiene el token QR de una solicitud. Si no existe lo crea.
+   * Así el token siempre es el mismo independientemente de desde
+   * dónde se genere la URL (formulario público o panel sepri-main).
+   */
+  obtenerOCrearToken: async (solicitudId: string): Promise<string> => {
+    // 1. Buscar token activo existente
+    const { data: existing } = await supabase
+      .from('contratista_access_tokens')
+      .select('token')
+      .eq('solicitud_id', solicitudId)
+      .eq('is_active', true)
+      .maybeSingle();
+
+    if (existing?.token) return existing.token;
+
+    // 2. Crear uno nuevo
+    const token = generarToken(32);
+    const { data: inserted, error } = await supabase
+      .from('contratista_access_tokens')
+      .insert({ solicitud_id: solicitudId, token })
+      .select('token')
+      .single();
+
+    if (error) throw new Error(error.message || 'Error al crear token QR');
+    return inserted.token;
+  },
+
+  /** Resuelve el solicitud_id a partir de un token (para la ruta /contratista/:token). */
+  obtenerSolicitudIdPorToken: async (token: string): Promise<string | null> => {
+    const { data, error } = await supabase
+      .from('contratista_access_tokens')
+      .select('solicitud_id')
+      .eq('token', token)
+      .eq('is_active', true)
+      .maybeSingle();
+
+    if (error || !data) return null;
+
+    // Actualizar last_accessed_at y access_count de forma no bloqueante
+    supabase
+      .from('contratista_access_tokens')
+      .update({
+        last_accessed_at: new Date().toISOString(),
+        access_count: (data as any).access_count + 1,
+      })
+      .eq('token', token)
+      .then(() => {});
+
+    return data.solicitud_id;
   },
 };
 
@@ -819,6 +1000,7 @@ export const tramitesService = {
         observaciones: movimiento.observaciones ?? null,
         usuario: movimiento.usuario ?? null,
         estado_resultante: movimiento.estado_resultante ?? null,
+        tipo_tramite: movimiento.tipo_tramite ?? 'tipo_interno',
       };
       const { data, error } = await supabase
         .from('movimientos_tramites')

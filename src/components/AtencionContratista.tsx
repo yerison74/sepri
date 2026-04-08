@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   Alert,
+  Autocomplete,
   Box,
   Button,
   Chip,
@@ -127,11 +128,15 @@ export default function AtencionContratista({ soloLectura = false }: AtencionCon
   const [loadingRegistros, setLoadingRegistros] = useState(false);
   const [showForm, setShowForm] = useState(false);
   const [qrData, setQrData] = useState<FormularioContratista | null>(null);
+  const [qrToken, setQrToken] = useState<string>('');
+  const [qrTokenLoading, setQrTokenLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
   const [openAsignar, setOpenAsignar] = useState(false);
   const [openSeguimiento, setOpenSeguimiento] = useState(false);
   const [solicitudSeleccionada, setSolicitudSeleccionada] = useState<FormularioContratista | null>(null);
+  const [empresaOptions, setEmpresaOptions] = useState<string[]>([]);
+  const [loadingEmpresaOptions, setLoadingEmpresaOptions] = useState(false);
   const [seguimientoForm, setSeguimientoForm] = useState<SeguimientoSolicitudForm>({
     area_origen: '',
     area_destino: '',
@@ -181,6 +186,27 @@ export default function AtencionContratista({ soloLectura = false }: AtencionCon
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user?.id, user?.area, user?.rol]);
 
+  useEffect(() => {
+    const term = form.nombre_empresa.trim();
+    if (!showForm || term.length < 2) {
+      setEmpresaOptions([]);
+      setLoadingEmpresaOptions(false);
+      return;
+    }
+    const timer = setTimeout(async () => {
+      setLoadingEmpresaOptions(true);
+      try {
+        const resp = await formularioContratistaAPI.obtenerSugerenciasNombreEmpresa(term, 8);
+        setEmpresaOptions(resp.data.data || []);
+      } catch {
+        setEmpresaOptions([]);
+      } finally {
+        setLoadingEmpresaOptions(false);
+      }
+    }, 250);
+    return () => clearTimeout(timer);
+  }, [form.nombre_empresa, showForm]);
+
   const handleChange =
     (field: keyof FormState) =>
     (event: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
@@ -213,15 +239,18 @@ export default function AtencionContratista({ soloLectura = false }: AtencionCon
   };
 
   /** URL interna de la app: al escanear se abre la vista de detalle de la solicitud. */
-  const qrDetailUrl = useMemo(() => {
-    if (!qrData) return '';
-    return urlAbsolutaDetalleContratista(qrData.id);
-  }, [qrData]);
+  // Obtener/crear el token QR desde la BD al abrir el dialog
+  useEffect(() => {
+    if (!qrData) { setQrToken(''); return; }
+    setQrTokenLoading(true);
+    formularioContratistaAPI.obtenerOCrearToken(qrData.id)
+      .then((token) => setQrToken(token))
+      .catch(() => setQrToken(''))
+      .finally(() => setQrTokenLoading(false));
+  }, [qrData?.id]);
 
-  const qrImageUrl = useMemo(() => {
-    if (!qrData) return '';
-    return urlImagenQrDetalleContratista(qrData.id);
-  }, [qrData]);
+  const qrDetailUrl = qrToken ? urlAbsolutaDetalleContratista(qrToken) : '';
+  const qrImageUrl  = qrToken ? urlImagenQrDetalleContratista(qrToken) : '';
 
   const abrirAsignar = (s: FormularioContratista) => {
     setError(null);
@@ -352,7 +381,28 @@ export default function AtencionContratista({ soloLectura = false }: AtencionCon
               <TextField label="Apellidos" fullWidth required value={form.apellidos} onChange={handleChange('apellidos')} />
             </Grid>
             <Grid size={{ xs: 12, md: 6 }}>
-              <TextField label="Nombre empresa" fullWidth required value={form.nombre_empresa} onChange={handleChange('nombre_empresa')} />
+              <Autocomplete
+                freeSolo
+                options={empresaOptions}
+                loading={loadingEmpresaOptions}
+                inputValue={form.nombre_empresa}
+                onInputChange={(_, value) => {
+                  setForm((prev) => ({ ...prev, nombre_empresa: value }));
+                }}
+                onChange={(_, value) => {
+                  const selected = typeof value === 'string' ? value : '';
+                  setForm((prev) => ({ ...prev, nombre_empresa: selected }));
+                }}
+                renderInput={(params) => (
+                  <TextField
+                    {...params}
+                    label="Nombre empresa"
+                    fullWidth
+                    required
+                    placeholder="Escribe para ver sugerencias..."
+                  />
+                )}
+              />
             </Grid>
             <Grid size={{ xs: 12, md: 6 }}>
               <TextField

@@ -60,6 +60,8 @@ export interface Tramite {
   codigo_barras?: string | null;
   archivo_pdf?: string | null;
   nombre_archivo?: string | null;
+  /** Tipo de trámite para distinguir origen del flujo. */
+  tipo_tramite?: 'tipo_interno' | 'tipo_contratista' | string | null;
   fecha_creacion?: string | null;
   created_at?: string | null;
   updated_at?: string | null;
@@ -76,6 +78,8 @@ export interface MovimientoTramite {
   usuario?: string | null;
   /** Estado que quedó el trámite tras este movimiento (ej. 'detenido', 'completado'). Para indicadores en historial. */
   estado_resultante?: string | null;
+  /** Tipo de trámite ligado al movimiento (interno / contratista). */
+  tipo_tramite?: 'tipo_interno' | 'tipo_contratista' | string | null;
 }
 
 /** Registro de tiempo que un trámite permanece en un área (para procesos con medición). */

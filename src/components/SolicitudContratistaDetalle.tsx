@@ -40,7 +40,31 @@ const REDIRECT_KEY = 'redirectAfterLogin';
 
 /** Ruta dedicada: /contratista/:id — detalle de una solicitud (mismo permiso que el módulo). */
 export default function SolicitudContratistaDetalle() {
-  const { id } = useParams<{ id: string }>();
+  const { id: tokenOrId } = useParams<{ id: string }>();
+  const [id, setId] = useState<string | undefined>(undefined);
+  const [tokenResolved, setTokenResolved] = useState(false);
+
+  /**
+   * Resuelve el parámetro de la URL:
+   * - Si es un token de la BD (32 hex chars), lo busca en contratista_access_tokens.
+   * - Si no lo encuentra, lo usa tal cual (compatibilidad con links internos ?from=app).
+   */
+  useEffect(() => {
+    if (!tokenOrId) { setTokenResolved(true); return; }
+    const looksLikeToken = /^[0-9a-f]{32}$/.test(tokenOrId);
+    if (!looksLikeToken) {
+      // Link interno: ya viene el ID real (ej: desde ?from=app)
+      setId(tokenOrId);
+      setTokenResolved(true);
+      return;
+    }
+    formularioContratistaAPI.obtenerSolicitudIdPorToken(tokenOrId)
+      .then((solicitudId) => {
+        setId(solicitudId ?? tokenOrId);
+      })
+      .catch(() => setId(tokenOrId))
+      .finally(() => setTokenResolved(true));
+  }, [tokenOrId]);
   const navigate = useNavigate();
   const location = useLocation();
   const { user, loading: authLoading, hasPermission } = useAuth();
@@ -73,8 +97,15 @@ export default function SolicitudContratistaDetalle() {
   );
   const canEditAtencionContratista = hasPermission('editar_atencion_contratista');
 
-  const qrDetailUrl = useMemo(() => (id ? urlAbsolutaDetalleContratista(id) : ''), [id]);
-  const qrImageUrl = useMemo(() => (id ? urlImagenQrDetalleContratista(id) : ''), [id]);
+  const [qrToken, setQrToken] = useState<string>('');
+  useEffect(() => {
+    if (!id) { setQrToken(''); return; }
+    formularioContratistaAPI.obtenerOCrearToken(id)
+      .then((token) => setQrToken(token))
+      .catch(() => setQrToken(''));
+  }, [id]);
+  const qrDetailUrl = qrToken ? urlAbsolutaDetalleContratista(qrToken) : '';
+  const qrImageUrl  = qrToken ? urlImagenQrDetalleContratista(qrToken) : '';
 
   const cargarDatos = useCallback(async (opts?: { silent?: boolean }) => {
     if (!user || !id) return;
@@ -125,14 +156,14 @@ export default function SolicitudContratistaDetalle() {
         /* ignore */
       }
     }
-  }, [authLoading, user, id]);
+  }, [authLoading, user, id, tokenResolved]);
 
   useEffect(() => {
     if (authLoading || !user || !id) return;
     if (!hasPermission('ver_atencion_contratista')) return;
     void cargarDatos();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [authLoading, user?.id, user?.area, user?.rol, id, cargarDatos]);
+  }, [authLoading, user?.id, user?.area, user?.rol, id, tokenResolved, cargarDatos]);
 
   const handleAsignarArea = async (areaNombre: string, nota: string | null) => {
     if (!id || !nombreUsuarioLogueado) {
@@ -232,6 +263,14 @@ export default function SolicitudContratistaDetalle() {
           </Button>
         </Paper>
       </div>
+    );
+  }
+
+  if (!tokenResolved) {
+    return (
+      <Box sx={{ display: 'flex', justifyContent: 'center', mt: 8 }}>
+        <CircularProgress />
+      </Box>
     );
   }
 
