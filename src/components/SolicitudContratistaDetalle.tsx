@@ -177,7 +177,7 @@ export default function SolicitudContratistaDetalle() {
         nota,
       });
 
-      // Crear trámite en Seguimiento de Trámites vinculado a esta solicitud de contratista
+      // Crear trámite en Seguimiento de Trámites con el mismo ID (FC-XXXXXX)
       if (registro) {
         try {
           const titulo = `[Contratista] ${registro.nombres} ${registro.apellidos} — ${registro.motivo_visita}`;
@@ -192,7 +192,7 @@ export default function SolicitudContratistaDetalle() {
             id_fijo: registro.id,
           });
         } catch {
-          // Si falla la creación del trámite, no interrumpir el flujo principal
+          // Silencioso: no interrumpir el flujo principal
         }
       }
 

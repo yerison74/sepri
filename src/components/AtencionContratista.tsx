@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   Alert,
+  Autocomplete,
   Box,
   Button,
   Chip,
@@ -134,6 +135,8 @@ export default function AtencionContratista({ soloLectura = false }: AtencionCon
   const [openAsignar, setOpenAsignar] = useState(false);
   const [openSeguimiento, setOpenSeguimiento] = useState(false);
   const [solicitudSeleccionada, setSolicitudSeleccionada] = useState<FormularioContratista | null>(null);
+  const [empresaOptions, setEmpresaOptions] = useState<string[]>([]);
+  const [loadingEmpresaOptions, setLoadingEmpresaOptions] = useState(false);
   const [seguimientoForm, setSeguimientoForm] = useState<SeguimientoSolicitudForm>({
     area_origen: '',
     area_destino: '',
@@ -182,6 +185,27 @@ export default function AtencionContratista({ soloLectura = false }: AtencionCon
     cargarRegistros();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user?.id, user?.area, user?.rol]);
+
+  useEffect(() => {
+    const term = form.nombre_empresa.trim();
+    if (!showForm || term.length < 2) {
+      setEmpresaOptions([]);
+      setLoadingEmpresaOptions(false);
+      return;
+    }
+    const timer = setTimeout(async () => {
+      setLoadingEmpresaOptions(true);
+      try {
+        const resp = await formularioContratistaAPI.obtenerSugerenciasNombreEmpresa(term, 8);
+        setEmpresaOptions(resp.data.data || []);
+      } catch {
+        setEmpresaOptions([]);
+      } finally {
+        setLoadingEmpresaOptions(false);
+      }
+    }, 250);
+    return () => clearTimeout(timer);
+  }, [form.nombre_empresa, showForm]);
 
   const handleChange =
     (field: keyof FormState) =>
@@ -357,7 +381,28 @@ export default function AtencionContratista({ soloLectura = false }: AtencionCon
               <TextField label="Apellidos" fullWidth required value={form.apellidos} onChange={handleChange('apellidos')} />
             </Grid>
             <Grid size={{ xs: 12, md: 6 }}>
-              <TextField label="Nombre empresa" fullWidth required value={form.nombre_empresa} onChange={handleChange('nombre_empresa')} />
+              <Autocomplete
+                freeSolo
+                options={empresaOptions}
+                loading={loadingEmpresaOptions}
+                inputValue={form.nombre_empresa}
+                onInputChange={(_, value) => {
+                  setForm((prev) => ({ ...prev, nombre_empresa: value }));
+                }}
+                onChange={(_, value) => {
+                  const selected = typeof value === 'string' ? value : '';
+                  setForm((prev) => ({ ...prev, nombre_empresa: selected }));
+                }}
+                renderInput={(params) => (
+                  <TextField
+                    {...params}
+                    label="Nombre empresa"
+                    fullWidth
+                    required
+                    placeholder="Escribe para ver sugerencias..."
+                  />
+                )}
+              />
             </Grid>
             <Grid size={{ xs: 12, md: 6 }}>
               <TextField
