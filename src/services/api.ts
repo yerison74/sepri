@@ -527,13 +527,14 @@ export const tramitesAPI = {
     area_destino_final: string;
     proceso?: string | null;
     codigo_area?: string;
+    id_fijo?: string;
   }) => {
     try {
       const prefijo = tramite.codigo_area || 'TR';
-      // Sufijo numérico de 6 dígitos para el ID (ej: TR-123456)
+      // Si se pasa un id_fijo (ej: desde contratista), usarlo directamente
       const sufijo = (Date.now() % 1000000).toString().padStart(6, '0');
-      const id = `${prefijo}-${sufijo}`;
-      const { codigo_area: _, ...resto } = tramite;
+      const id = tramite.id_fijo || `${prefijo}-${sufijo}`;
+      const { codigo_area: _, id_fijo: __, ...resto } = tramite;
       const data = await tramitesService.crearTramite({
         ...resto,
         id,
@@ -706,6 +707,31 @@ export const tramitesAPI = {
           await tramitesService.abrirTiempoEnArea(id, movimiento.area_destino, tramite.proceso);
         }
       }
+      // Si el trámite proviene de Atención al Contratista (ID empieza con FC-),
+      // sincronizar el movimiento en el historial de esa solicitud.
+      if (id.startsWith('FC-')) {
+        try {
+          const esDetenido = movimiento.actualizar_estado === 'detenido';
+          const esCompletado = movimiento.actualizar_estado === 'completado';
+          const nuevoEstado: 'en_seguimiento' | 'detenido' | 'completado' =
+            esDetenido ? 'detenido' : esCompletado ? 'completado' : 'en_seguimiento';
+          const areaDestino = esDetenido || esCompletado
+            ? movimiento.area_origen
+            : movimiento.area_destino;
+          await formularioContratistaService.registrarMovimiento(id, {
+            area_origen: movimiento.area_origen,
+            area_destino: areaDestino,
+            nota: movimiento.observaciones ?? null,
+            estado_resultante: esDetenido ? 'detenido' : esCompletado ? 'completado' : '',
+            usuario: movimiento.usuario ?? '',
+            nuevo_estado: nuevoEstado,
+            nueva_area_actual: areaDestino,
+          });
+        } catch {
+          // Sincronización silenciosa: no interrumpir el flujo de trámites
+        }
+      }
+
       return { data: { data } } as AxiosResponse<{ data: MovimientoTramite }>;
     } catch (error: any) {
       throw {
@@ -882,6 +908,29 @@ export const formularioContratistaAPI = {
   ) => {
     try {
       const data = await formularioContratistaService.registrarMovimiento(id, payload);
+
+      // Sincronizar movimiento en movimientos_tramites (si existe el trámite FC-)
+      try {
+        const estadoTramite =
+          payload.estado_resultante === 'completado' ? 'completado' :
+          payload.estado_resultante === 'detenido'   ? 'detenido'   : 'en_transito';
+        await tramitesService.registrarMovimiento(id, {
+          area_origen:      payload.area_origen,
+          area_destino:     payload.area_destino,
+          observaciones:    payload.nota ?? undefined,
+          usuario:          payload.usuario,
+          estado_resultante: estadoTramite,
+        });
+        if (payload.estado_resultante) {
+          await tramitesService.actualizarTramite(id, {
+            estado: estadoTramite as any,
+            area_destinatario: payload.area_destino,
+          });
+        }
+      } catch {
+        // Sincronización silenciosa
+      }
+
       return { data: { data } } as AxiosResponse<{ data: FormularioContratista }>;
     } catch (error: any) {
       throw {
