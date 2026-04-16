@@ -150,6 +150,11 @@ export default function AtencionContratista({ soloLectura = false }: AtencionCon
     [user]
   );
 
+  const esAreaGestionContratista =
+    (user?.area || '').trim() === 'Oficina de gestión del contratista';
+  const puedeAsignarContratista =
+    !soloLectura && (esAreaGestionContratista || user?.rol === 'admin' || user?.rol === 'supervision');
+
   const canSubmit = useMemo(() => {
     return (
       form.fecha_visita &&
@@ -577,7 +582,7 @@ export default function AtencionContratista({ soloLectura = false }: AtencionCon
                           <IconButton
                             size="small"
                             color="primary"
-                            disabled={soloLectura || estado !== 'pendiente_asignacion'}
+                            disabled={!puedeAsignarContratista || estado !== 'pendiente_asignacion'}
                             onClick={(e) => {
                               e.stopPropagation();
                               abrirAsignar(r);

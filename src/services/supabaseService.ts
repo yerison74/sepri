@@ -53,6 +53,8 @@ export const areasService = {
 // SERVICIO DE FORMULARIO CONTRATISTA
 // ============================================
 
+const AREA_GESTION_CONTRATISTA = 'Oficina de gestión del contratista';
+
 export const formularioContratistaService = {
   /** Garantiza registro espejo en `tramites` para cumplir FK de `movimientos_tramites.tramite_id`. */
   asegurarTramiteContratista: async (solicitudId: string): Promise<void> => {
@@ -99,9 +101,14 @@ export const formularioContratistaService = {
     payload: Omit<FormularioContratista, 'id'>
   ): Promise<FormularioContratista> => {
     try {
+      const withDefaults: Omit<FormularioContratista, 'id'> = {
+        ...(payload as any),
+        area_actual: (payload as any).area_actual ?? AREA_GESTION_CONTRATISTA,
+        estado: (payload as any).estado ?? 'pendiente_asignacion',
+      };
       const { data, error } = await supabase
         .from('formulario_contratista')
-        .insert([payload])
+        .insert([withDefaults])
         .select('*')
         .single();
       if (error) throw error;
