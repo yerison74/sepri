@@ -697,6 +697,20 @@ export const tramitesAPI = {
           area_destinatario: movimiento.area_destino,
         });
       }
+      // Mantener sincronizado formulario_contratista cuando el movimiento
+      // se registra desde la vista general de seguimiento.
+      if ((tramite.id || '').toUpperCase().startsWith('FC-')) {
+        const estadoSolicitud =
+          movimiento.actualizar_estado === 'completado'
+            ? 'completado'
+            : movimiento.actualizar_estado === 'detenido'
+              ? 'detenido'
+              : 'en_seguimiento';
+        await formularioContratistaService.sincronizarDesdeTramite(id, {
+          nuevo_estado: estadoSolicitud,
+          nueva_area_actual: movimiento.area_destino,
+        });
+      }
       if (tramite.proceso) {
         await tramitesService.cerrarTiempoEnAreaActual(id);
         // En "detenido" el reloj queda en hold: no abrir un nuevo tiempo hasta reanudar.

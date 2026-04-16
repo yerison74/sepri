@@ -16,7 +16,7 @@ import {
 import { ArrowBack, AssignmentTurnedIn, Send } from '@mui/icons-material';
 import { useAuth } from '../context/AuthContext';
 import Login from './Login';
-import { formularioContratistaAPI, tramitesAPI } from '../services/api';
+import { formularioContratistaAPI } from '../services/api';
 import type { FormularioContratista, MovimientoSolicitudContratista } from '../types/database';
 import {
   colorEstadoSolicitudContratista,
@@ -176,26 +176,6 @@ export default function SolicitudContratistaDetalle() {
         usuario: nombreUsuarioLogueado,
         nota,
       });
-
-      // Crear trámite en Seguimiento de Trámites con el mismo ID (FC-XXXXXX)
-      if (registro) {
-        try {
-          const titulo = `[Contratista] ${registro.nombres} ${registro.apellidos} — ${registro.motivo_visita}`;
-          await tramitesAPI.crearTramite({
-            titulo,
-            oficio: registro.id,
-            nombre_destinatario: `${registro.nombres} ${registro.apellidos}`,
-            area_destinatario: areaNombre,
-            area_destino_final: areaNombre,
-            proceso: nota ?? undefined,
-            codigo_area: 'FC',
-            id_fijo: registro.id,
-          });
-        } catch {
-          // Silencioso: no interrumpir el flujo principal
-        }
-      }
-
       setFeedback({ severity: 'success', message: 'Solicitud asignada al área correctamente.' });
       await cargarDatos({ silent: true });
     } catch (e: any) {

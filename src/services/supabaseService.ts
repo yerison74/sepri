@@ -128,18 +128,53 @@ export const formularioContratistaService = {
 
       let query = supabase
         .from('formulario_contratista')
-        .select('*')
-        .order('fecha_visita', { ascending: false });
+        .select('*');
 
       if (!filtros.esAdmin && filtros.areaUsuario) {
         query = query.eq('area_actual', filtros.areaUsuario);
       }
 
-      query = query.limit(limit);
+      // Traer un lote mayor que `limit` para poder ordenar por última modificación (espejo en `tramites`)
+      // y luego recortar; si no, el LIMIT en SQL podría excluir solicitudes antiguas por fecha_visita pero tocadas hace poco.
+      const fetchCap = Math.min(1000, Math.max(limit * 10, limit));
+      query = query.limit(fetchCap);
 
       const { data, error } = await query;
       if (error) throw error;
-      return (data || []) as FormularioContratista[];
+      const rows = (data || []) as FormularioContratista[];
+
+      const ids = rows.map((r) => r.id).filter(Boolean);
+      const tsById: Record<string, number> = {};
+      if (ids.length > 0) {
+        const { data: tramRows, error: tramErr } = await supabase
+          .from('tramites')
+          .select('id, updated_at, fecha_creacion')
+          .in('id', ids);
+        if (!tramErr && tramRows?.length) {
+          for (const t of tramRows as {
+            id: string;
+            updated_at?: string | null;
+            fecha_creacion?: string | null;
+          }[]) {
+            const raw = t.updated_at || t.fecha_creacion;
+            if (raw) tsById[t.id] = new Date(raw).getTime();
+          }
+        }
+      }
+
+      const fallbackTs = (r: FormularioContratista) => {
+        const d = r.fecha_visita ? new Date(`${r.fecha_visita}T12:00:00`) : new Date(0);
+        return d.getTime();
+      };
+
+      const sorted = [...rows].sort((a, b) => {
+        const ta = tsById[a.id] ?? fallbackTs(a);
+        const tb = tsById[b.id] ?? fallbackTs(b);
+        if (tb !== ta) return tb - ta;
+        return b.id.localeCompare(a.id);
+      });
+
+      return sorted.slice(0, limit);
     } catch (error: any) {
       console.error('Error al obtener formularios de contratista:', error);
       throw new Error(error.message || 'Error al obtener formularios de contratista');
@@ -324,6 +359,29 @@ export const formularioContratistaService = {
       }
       console.error('Error al registrar movimiento de solicitud:', error);
       throw new Error(error.message || 'Error al registrar seguimiento');
+    }
+  },
+
+  /** Sincroniza área/estado de formulario_contratista desde un movimiento ya registrado en tramites. */
+  sincronizarDesdeTramite: async (
+    solicitudId: string,
+    payload: {
+      nueva_area_actual: string;
+      nuevo_estado: 'en_seguimiento' | 'detenido' | 'completado';
+    }
+  ): Promise<void> => {
+    try {
+      const { error } = await supabase
+        .from('formulario_contratista')
+        .update({
+          area_actual: payload.nueva_area_actual,
+          estado: payload.nuevo_estado,
+        })
+        .eq('id', solicitudId);
+      if (error) throw error;
+    } catch (error: any) {
+      console.error('Error al sincronizar solicitud de contratista desde trámite:', error);
+      throw new Error(error.message || 'Error al sincronizar solicitud de contratista');
     }
   },
 
