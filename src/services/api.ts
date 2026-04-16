@@ -527,13 +527,14 @@ export const tramitesAPI = {
     area_destino_final: string;
     proceso?: string | null;
     codigo_area?: string;
+    id_fijo?: string;
   }) => {
     try {
       const prefijo = tramite.codigo_area || 'TR';
-      // Sufijo numérico de 6 dígitos para el ID (ej: TR-123456)
+      // Si se pasa id_fijo (desde contratista), usarlo directamente
       const sufijo = (Date.now() % 1000000).toString().padStart(6, '0');
-      const id = `${prefijo}-${sufijo}`;
-      const { codigo_area: _, ...resto } = tramite;
+      const id = tramite.id_fijo || `${prefijo}-${sufijo}`;
+      const { codigo_area: _, id_fijo: __, ...resto } = tramite;
       const data = await tramitesService.crearTramite({
         ...resto,
         id,
@@ -689,12 +690,25 @@ export const tramitesAPI = {
         observaciones: movimiento.observaciones,
         usuario: movimiento.usuario,
         estado_resultante: movimiento.actualizar_estado ?? null,
-        tipo_tramite: 'tipo_interno',
       });
       if (movimiento.actualizar_estado) {
         await tramitesService.actualizarTramite(id, {
           estado: movimiento.actualizar_estado as Tramite['estado'],
           area_destinatario: movimiento.area_destino,
+        });
+      }
+      // Mantener sincronizado formulario_contratista cuando el movimiento
+      // se registra desde la vista general de seguimiento.
+      if ((tramite.id || '').toUpperCase().startsWith('FC-')) {
+        const estadoSolicitud =
+          movimiento.actualizar_estado === 'completado'
+            ? 'completado'
+            : movimiento.actualizar_estado === 'detenido'
+              ? 'detenido'
+              : 'en_seguimiento';
+        await formularioContratistaService.sincronizarDesdeTramite(id, {
+          nuevo_estado: estadoSolicitud,
+          nueva_area_actual: movimiento.area_destino,
         });
       }
       if (tramite.proceso) {
