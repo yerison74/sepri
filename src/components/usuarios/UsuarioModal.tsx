@@ -20,6 +20,7 @@ import {
   Stack
 } from '@mui/material';
 import { CARGOS } from '../../constants/cargos';
+import { useAreas } from '../../hooks/useAreas';
 import { 
   Person as PersonIcon,
   Lock as LockIcon,
@@ -35,27 +36,6 @@ const MODULOS_PERMISOS = [
   { id: 'atencion_contratista', label: 'Atención al contratista', icon: '🧑‍💼', verKey: 'ver_atencion_contratista', editarKey: 'editar_atencion_contratista' },
   { id: 'configuracion', label: 'Configuración', icon: '⚙️', verKey: 'ver_configuracion', editarKey: 'editar_configuracion' },
 ] as const;
-
-const AREAS = [
-  'Ninguna',
-  'Dirección General',
-  'Oficina de Libre Acceso a la Información Pública',
-  'Departamento Jurídico',
-  'Departamento de Recursos Humanos',
-  'Departamento de Planificación y Desarrollo',
-  'División Control de Gestión Interna',
-  'División de Seguridad',
-  'División de Tecnologías de la Información y Comunicación',
-  'Departamento Administrativo y Financiero',
-  'Departamento de Diseño y Arquitectura',
-  'Departamento de Gestión de Infraestructura Escolar',
-  'Departamento Gestión de Riesgo',
-  'Departamento de Mantenimiento de Obras',
-  'Departamento Supervisión de Obras',
-  'Departamento Fiscalización de Obras',
-  'Departamento de Cubicaciones',
-  'Departamento de Coordinación Regional',
-];
 
 interface UsuarioModalProps {
   open: boolean;
@@ -76,6 +56,7 @@ export default function UsuarioModal({
   isEdit,
   loading = false 
 }: UsuarioModalProps) {
+  const { areas, loadingAreas } = useAreas();
 
   const actualizarPermiso = (key: string, enabled: boolean) => {
     setForm({
@@ -234,11 +215,17 @@ export default function UsuarioModal({
                 onChange={(e) => setForm({ ...form, area: e.target.value })}
                 label="Área"
               >
-                {AREAS.map((a) => (
-                  <MenuItem key={a} value={a}>
-                    {a}
+                <MenuItem value="Ninguna">Ninguna</MenuItem>
+                {areas.map((a) => (
+                  <MenuItem key={a.id} value={a.area}>
+                    {a.area}
                   </MenuItem>
                 ))}
+                {!loadingAreas && areas.length === 0 && (
+                  <MenuItem value="" disabled>
+                    No hay áreas disponibles
+                  </MenuItem>
+                )}
               </Select>
             </FormControl>
           </Stack>

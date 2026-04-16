@@ -16,7 +16,7 @@ import {
 import { ArrowBack, AssignmentTurnedIn, Send } from '@mui/icons-material';
 import { useAuth } from '../context/AuthContext';
 import Login from './Login';
-import { formularioContratistaAPI } from '../services/api';
+import { formularioContratistaAPI, tramitesAPI } from '../services/api';
 import type { FormularioContratista, MovimientoSolicitudContratista } from '../types/database';
 import {
   colorEstadoSolicitudContratista,
@@ -84,6 +84,9 @@ export default function SolicitudContratistaDetalle() {
     actualizar_estado: '',
   });
 
+  const esAreaGestionContratista =
+    (user?.area || '').trim() === 'Oficina de gestión del contratista';
+
   /** Vista con botones: enlaces internos (?from=app) o navegación con state (vuelta al módulo). El QR no incluye query → solo lectura. */
   const modoAccionesSistema = useMemo(() => {
     if (esContratistaDetalleDesdeApp(location.search)) return true;
@@ -96,6 +99,9 @@ export default function SolicitudContratistaDetalle() {
     [user]
   );
   const canEditAtencionContratista = hasPermission('editar_atencion_contratista');
+  const puedeAsignarContratista =
+    canEditAtencionContratista &&
+    (esAreaGestionContratista || user?.rol === 'admin' || user?.rol === 'supervision');
 
   const [qrToken, setQrToken] = useState<string>('');
   useEffect(() => {
@@ -176,6 +182,26 @@ export default function SolicitudContratistaDetalle() {
         usuario: nombreUsuarioLogueado,
         nota,
       });
+
+      // Crear trámite en Seguimiento de Trámites con el mismo ID (FC-XXXXXX)
+      if (registro) {
+        try {
+          const titulo = `[Contratista] ${registro.nombres} ${registro.apellidos} — ${registro.motivo_visita}`;
+          await tramitesAPI.crearTramite({
+            titulo,
+            oficio: registro.id,
+            nombre_destinatario: `${registro.nombres} ${registro.apellidos}`,
+            area_destinatario: areaNombre,
+            area_destino_final: areaNombre,
+            proceso: nota ?? undefined,
+            codigo_area: 'FC',
+            id_fijo: registro.id,
+          });
+        } catch {
+          // Silencioso: no interrumpir el flujo principal
+        }
+      }
+
       setFeedback({ severity: 'success', message: 'Solicitud asignada al área correctamente.' });
       await cargarDatos({ silent: true });
     } catch (e: any) {
@@ -477,7 +503,7 @@ export default function SolicitudContratistaDetalle() {
           </Stack>
         </Paper>
 
-        {modoAccionesSistema && canEditAtencionContratista && (
+        {modoAccionesSistema && puedeAsignarContratista && (
           <Stack
             direction={{ xs: 'column', sm: 'row' }}
             spacing={1}
@@ -489,7 +515,7 @@ export default function SolicitudContratistaDetalle() {
               variant="outlined"
               size="small"
               startIcon={<AssignmentTurnedIn />}
-              disabled={estado !== 'pendiente_asignacion'}
+              disabled={!puedeAsignarContratista || estado !== 'pendiente_asignacion'}
               onClick={() => {
                 setFeedback(null);
                 setOpenAsignar(true);

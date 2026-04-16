@@ -79,6 +79,15 @@ const ESTADO_OPTIONS: { value: string; label: string }[] = [
   { value: 'completado', label: 'Completado' },
 ];
 
+/** Etiqueta del chip en listado: BD + respaldo por id FC-* (atención al contratista). */
+function chipLabelTipoTramite(tramite: Tramite): string {
+  if (tramite.tipo_tramite === 'tipo_contratista') return 'Contratista';
+  if (tramite.tipo_tramite === 'tipo_interno') return 'Interno';
+  const id = (tramite.id || '').toUpperCase();
+  if (id.startsWith('FC-')) return 'Contratista';
+  return 'Interno';
+}
+
 // Componente para generar código de barras usando jsbarcode - Estilo DIE
 const BarcodeDisplay: React.FC<{ codigo: string; id: string; año?: string }> = ({ codigo, id, año }) => {
   const barcodeRef = useRef<SVGSVGElement>(null);
@@ -1047,7 +1056,7 @@ const TramiteHistory: React.FC<TramiteHistoryProps> = ({ soloLectura = false }) 
                             size="small"
                             variant="outlined"
                             color="default"
-                            label={tramite.tipo_tramite === 'tipo_contratista' ? 'Contratista' : 'Interno'}
+                            label={chipLabelTipoTramite(tramite)}
                             sx={{ height: 20, '& .MuiChip-label': { px: 0.75, fontSize: '0.68rem' } }}
                           />
                         </Box>
@@ -1245,7 +1254,7 @@ const TramiteHistory: React.FC<TramiteHistoryProps> = ({ soloLectura = false }) 
                           size="small"
                           variant="outlined"
                           color="default"
-                          label={tramite.tipo_tramite === 'tipo_contratista' ? 'Contratista' : 'Interno'}
+                          label={chipLabelTipoTramite(tramite)}
                           sx={{ mb: 1 }}
                         />
                         <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1 }}>
