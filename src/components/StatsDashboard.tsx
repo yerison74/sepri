@@ -1,9 +1,12 @@
 import React, { useState, useEffect } from 'react';
 import {
   Assignment,
-  CheckCircle,
-  Pause,
   TrendingUp,
+  CheckCircle,
+  PauseCircle,
+  Insights,
+  BuildCircle,
+  PendingActions,
   LocationOn,
   Public,
   Place,
@@ -60,12 +63,42 @@ const StatsDashboard: React.FC<StatsDashboardProps> = ({ refreshTrigger, onEstad
     return COLORS[estado.toUpperCase() as keyof typeof COLORS] || '#757575';
   };
 
+  const normalizeEstado = (estado?: string | null) =>
+    (estado || '').trim().replace(/\s+/g, ' ').toUpperCase();
+
+  const getEstadoIcon = (estado: string) => {
+    const normalized = normalizeEstado(estado);
+    if (normalized.includes('TERMINADA') || normalized.includes('INAUGURADA')) {
+      return <CheckCircle className="text-5xl opacity-80" />;
+    }
+    if (normalized.includes('DETENIDA')) {
+      return <PauseCircle className="text-5xl opacity-80" />;
+    }
+    if (normalized.includes('PRELIMINAR') || normalized.includes('NO INICIADA')) {
+      return <PendingActions className="text-5xl opacity-80" />;
+    }
+    if (normalized.includes('INTERVENIDA') || normalized.includes('MANTEN')) {
+      return <BuildCircle className="text-5xl opacity-80" />;
+    }
+    if (normalized.includes('ACTIVA')) {
+      return <TrendingUp className="text-5xl opacity-80" />;
+    }
+    return <Insights className="text-5xl opacity-80" />;
+  };
+
   // Preparar datos para visualización de estados
-  const estadoData = stats?.estadisticas?.porEstado?.map((item: any) => ({
-    estado: item.estado,
-    cantidad: item.cantidad,
-    color: getEstadoColor(item.estado)
-  })) || [];
+  const estadoData = stats?.estadisticas?.porEstado?.map((item: any) => {
+    const estado = normalizeEstado(item.estado) || 'NO ESPECIFICADO';
+    return {
+      estado,
+      cantidad: item.cantidad,
+      color: getEstadoColor(estado)
+    };
+  }) || [];
+
+  const topEstados = [...estadoData]
+    .sort((a: any, b: any) => (Number(b.cantidad) || 0) - (Number(a.cantidad) || 0))
+    .slice(0, 4);
 
   // Calcular total para porcentajes
   const totalEstados = estadoData.reduce((sum: number, item: any) => sum + item.cantidad, 0);
@@ -105,116 +138,66 @@ const StatsDashboard: React.FC<StatsDashboardProps> = ({ refreshTrigger, onEstad
     );
   }
 
-  const activa = stats?.estadisticas?.porEstado?.find((e: any) => e.estado === 'ACTIVA');
-  const inaugurada = stats?.estadisticas?.porEstado?.find((e: any) => e.estado === 'INAUGURADA');
-  const terminada = stats?.estadisticas?.porEstado?.find((e: any) => e.estado === 'TERMINADA');
-  const detenida = stats?.estadisticas?.porEstado?.find((e: any) => e.estado === 'DETENIDA');
-
   return (
-    <div className="p-0">
-      <h2 className="text-2xl sm:text-3xl font-semibold mb-4 sm:mb-6 text-[#42A5F5]">
-        Dashboard de Obras
-      </h2>
+    <div className="p-0 space-y-6">
+      <div className="rounded-2xl border border-sky-100 bg-gradient-to-r from-sky-50 via-blue-50 to-indigo-50 p-5 sm:p-6 shadow-sm">
+        <h2 className="text-2xl sm:text-3xl font-bold text-slate-800">
+          Dashboard de Obras
+        </h2>
+        <p className="text-sm sm:text-base text-slate-600 mt-1">
+          Vista general de avance, distribucion por estado y ubicacion territorial.
+        </p>
+      </div>
 
       {/* Estadísticas generales - Tarjetas */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-5 gap-4 mb-6">
+      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4">
         {/* Obras Totales */}
-        <div className="bg-gradient-to-br from-purple-500 to-purple-700 text-white rounded-lg shadow-lg p-6 transition-transform hover:scale-105 hover:shadow-xl">
+        <div className="bg-gradient-to-br from-violet-500 to-indigo-600 text-white rounded-2xl shadow-md p-5 transition-transform hover:-translate-y-0.5 hover:shadow-lg">
           <div className="flex items-center justify-between">
             <div>
-              <div className="text-4xl font-bold mb-1">
+              <div className="text-4xl font-bold mb-1 leading-none">
                 {stats?.estadisticas?.totalObras || 0}
               </div>
-              <div className="text-sm opacity-90">
+              <div className="text-sm opacity-90 font-medium">
                 Obras Totales
               </div>
             </div>
             <Assignment className="text-5xl opacity-80" />
           </div>
         </div>
-
-        {/* Activas */}
-        <div 
-          onClick={() => onEstadoClick && onEstadoClick('ACTIVA')}
-          className="bg-gradient-to-br from-cyan-400 to-cyan-600 text-white rounded-lg shadow-lg p-6 transition-transform hover:scale-105 hover:shadow-xl cursor-pointer"
-        >
-          <div className="flex items-center justify-between">
-            <div>
-              <div className="text-4xl font-bold mb-1">
-                {activa?.cantidad || 0}
+        {topEstados.map((item: any, index: number) => (
+          <div
+            key={`${item.estado}-${index}`}
+            onClick={() => onEstadoClick && onEstadoClick(item.estado)}
+            className="text-white rounded-2xl shadow-md p-5 transition-transform hover:-translate-y-0.5 hover:shadow-lg cursor-pointer"
+            style={{
+              background: `linear-gradient(135deg, ${item.color}, ${item.color}CC)`,
+            }}
+          >
+            <div className="flex items-center justify-between">
+              <div>
+                <div className="text-4xl font-bold mb-1 leading-none">
+                  {item.cantidad}
+                </div>
+                <div className="text-sm opacity-90 font-medium">
+                  {item.estado}
+                </div>
               </div>
-              <div className="text-sm opacity-90">
-                Activas
-              </div>
+              {getEstadoIcon(item.estado)}
             </div>
-            <TrendingUp className="text-5xl opacity-80" />
           </div>
-        </div>
-
-        {/* Inauguradas */}
-        <div 
-          onClick={() => onEstadoClick && onEstadoClick('INAUGURADA')}
-          className="bg-gradient-to-br from-blue-500 to-blue-700 text-white rounded-lg shadow-lg p-6 transition-transform hover:scale-105 hover:shadow-xl cursor-pointer"
-        >
-          <div className="flex items-center justify-between">
-            <div>
-              <div className="text-4xl font-bold mb-1">
-                {inaugurada?.cantidad || 0}
-              </div>
-              <div className="text-sm opacity-90">
-                Inauguradas
-              </div>
-            </div>
-            <CheckCircle className="text-5xl opacity-80" />
-          </div>
-        </div>
-
-        {/* Terminadas */}
-        <div 
-          onClick={() => onEstadoClick && onEstadoClick('TERMINADA')}
-          className="bg-gradient-to-br from-green-500 to-green-700 text-white rounded-lg shadow-lg p-6 transition-transform hover:scale-105 hover:shadow-xl cursor-pointer"
-        >
-          <div className="flex items-center justify-between">
-            <div>
-              <div className="text-4xl font-bold mb-1">
-                {terminada?.cantidad || 0}
-              </div>
-              <div className="text-sm opacity-90">
-                Terminadas
-              </div>
-            </div>
-            <CheckCircle className="text-5xl opacity-80" />
-          </div>
-        </div>
-
-        {/* Detenidas */}
-        <div 
-          onClick={() => onEstadoClick && onEstadoClick('DETENIDA')}
-          className="bg-gradient-to-br from-yellow-400 to-orange-600 text-white rounded-lg shadow-lg p-6 transition-transform hover:scale-105 hover:shadow-xl cursor-pointer"
-        >
-          <div className="flex items-center justify-between">
-            <div>
-              <div className="text-4xl font-bold mb-1">
-                {detenida?.cantidad || 0}
-              </div>
-              <div className="text-sm opacity-90">
-                Detenidas
-              </div>
-            </div>
-            <Pause className="text-5xl opacity-80" />
-          </div>
-        </div>
+        ))}
       </div>
 
       {/* Mapa interactivo - Obras por provincia (República Dominicana) */}
-      <div className="mb-6">
-        <div className="flex items-center mb-3">
+      <div className="bg-white rounded-2xl border border-slate-100 shadow-sm p-5 sm:p-6">
+        <div className="flex items-center mb-2">
           <Public className="text-[#42A5F5] mr-2" />
-          <h3 className="text-xl font-semibold text-gray-800">
+          <h3 className="text-xl font-semibold text-slate-800">
             Obras por provincia – República Dominicana
           </h3>
         </div>
-        <p className="text-sm text-gray-600 mb-3">
+        <p className="text-sm text-slate-600 mb-4">
           Haz clic en un círculo para ver el detalle o ir a la lista de obras filtrada por provincia.
         </p>
         <DashboardMap
@@ -225,10 +208,10 @@ const StatsDashboard: React.FC<StatsDashboardProps> = ({ refreshTrigger, onEstad
       </div>
 
       {/* Gráficos */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
         {/* Gráfico de Barras - Distribución por Estado */}
-        <div className="bg-white rounded-lg shadow-lg p-6">
-          <h3 className="text-xl font-semibold mb-4">
+        <div className="bg-white rounded-2xl border border-slate-100 shadow-sm p-5 sm:p-6">
+          <h3 className="text-xl font-semibold mb-4 text-slate-800">
             Distribución por Estado (Barras)
           </h3>
           {estadoData.length > 0 ? (
@@ -256,7 +239,7 @@ const StatsDashboard: React.FC<StatsDashboardProps> = ({ refreshTrigger, onEstad
                           tabIndex={0}
                           onClick={() => onEstadoClick && onEstadoClick(item.estado)}
                           onKeyDown={(e) => e.key === 'Enter' && onEstadoClick && onEstadoClick(item.estado)}
-                          className="w-full min-w-[24px] max-w-[48px] rounded-t transition-all duration-300 hover:opacity-90 cursor-pointer"
+                        className="w-full min-w-[24px] max-w-[48px] rounded-t-md transition-all duration-300 hover:opacity-90 cursor-pointer"
                           style={{
                             height: `${barHeight}%`,
                             backgroundColor: item.color,
@@ -264,10 +247,10 @@ const StatsDashboard: React.FC<StatsDashboardProps> = ({ refreshTrigger, onEstad
                           }}
                         />
                       </div>
-                      <span className="mt-2 text-xs font-medium text-center break-words line-clamp-2">
+                      <span className="mt-2 text-xs font-medium text-center break-words line-clamp-2 text-slate-700">
                         {item.estado}
                       </span>
-                      <span className="text-[11px] text-gray-600 font-semibold mt-0.5">
+                      <span className="text-[11px] text-slate-500 font-semibold mt-0.5">
                         {cantidad} ({porcentaje.toFixed(1)}%)
                       </span>
                     </div>
@@ -277,14 +260,14 @@ const StatsDashboard: React.FC<StatsDashboardProps> = ({ refreshTrigger, onEstad
             </div>
           ) : (
             <div className="flex justify-center items-center h-48">
-              <span className="text-gray-500">No hay datos para mostrar</span>
+              <span className="text-slate-500">No hay datos para mostrar</span>
             </div>
           )}
         </div>
 
         {/* Gráfico de Pastel - Distribución por Estado */}
-        <div className="bg-white rounded-lg shadow-lg p-6">
-          <h3 className="text-xl font-semibold mb-4">
+        <div className="bg-white rounded-2xl border border-slate-100 shadow-sm p-5 sm:p-6">
+          <h3 className="text-xl font-semibold mb-4 text-slate-800">
             Distribución por Estado (Pastel)
           </h3>
           {estadoData.length > 0 && pieBackground ? (
@@ -301,7 +284,7 @@ const StatsDashboard: React.FC<StatsDashboardProps> = ({ refreshTrigger, onEstad
                       style={{ backgroundColor: item.color }}
                     />
                     <span className="flex-1 truncate">{item.estado}</span>
-                    <span className="text-gray-600 font-semibold text-xs">
+                    <span className="text-slate-500 font-semibold text-xs">
                       {item.cantidad}
                     </span>
                   </div>
@@ -310,16 +293,16 @@ const StatsDashboard: React.FC<StatsDashboardProps> = ({ refreshTrigger, onEstad
             </div>
           ) : (
             <div className="flex justify-center items-center h-48">
-              <span className="text-gray-500">No hay datos para mostrar</span>
+              <span className="text-slate-500">No hay datos para mostrar</span>
             </div>
           )}
         </div>
       </div>
 
       {/* Obras por provincia y por municipio */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
-        <div className="bg-white rounded-lg shadow-lg p-6">
-          <h3 className="text-xl font-semibold mb-4 flex items-center">
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <div className="bg-white rounded-2xl border border-slate-100 shadow-sm p-5 sm:p-6">
+          <h3 className="text-xl font-semibold mb-4 flex items-center text-slate-800">
             <Place className="text-[#42A5F5] mr-2" />
             Obras por provincia
           </h3>
@@ -329,21 +312,21 @@ const StatsDashboard: React.FC<StatsDashboardProps> = ({ refreshTrigger, onEstad
                 <div
                   key={index}
                   onClick={() => onProvinciaClick && onProvinciaClick(item.provincia)}
-                  className={`flex justify-between items-center py-2 px-3 rounded-lg border ${onProvinciaClick ? 'cursor-pointer hover:bg-blue-50 border-blue-100' : 'border-gray-100'}`}
+                  className={`flex justify-between items-center py-2.5 px-3 rounded-xl border ${onProvinciaClick ? 'cursor-pointer hover:bg-blue-50 border-blue-100' : 'border-slate-100'}`}
                 >
-                  <span className="font-medium text-gray-800">{item.provincia}</span>
+                  <span className="font-medium text-slate-800">{item.provincia}</span>
                   <span className="text-[#42A5F5] font-semibold">{item.cantidad} obras</span>
                 </div>
               ))}
             </div>
           ) : (
-            <div className="flex justify-center items-center h-32 text-gray-500">
+            <div className="flex justify-center items-center h-32 text-slate-500">
               No hay datos por provincia
             </div>
           )}
         </div>
-        <div className="bg-white rounded-lg shadow-lg p-6">
-          <h3 className="text-xl font-semibold mb-4 flex items-center">
+        <div className="bg-white rounded-2xl border border-slate-100 shadow-sm p-5 sm:p-6">
+          <h3 className="text-xl font-semibold mb-4 flex items-center text-slate-800">
             <LocationOn className="text-[#42A5F5] mr-2" />
             Obras por municipio (top 15)
           </h3>
@@ -351,7 +334,7 @@ const StatsDashboard: React.FC<StatsDashboardProps> = ({ refreshTrigger, onEstad
             <div className="max-h-80 overflow-y-auto">
               <table className="min-w-full text-sm">
                 <thead>
-                  <tr className="border-b border-gray-200 text-left text-gray-600">
+                  <tr className="border-b border-slate-200 text-left text-slate-600">
                     <th className="py-2 pr-2">Municipio</th>
                     <th className="py-2 pr-2">Provincia</th>
                     <th className="py-2 text-right">Obras</th>
@@ -359,9 +342,9 @@ const StatsDashboard: React.FC<StatsDashboardProps> = ({ refreshTrigger, onEstad
                 </thead>
                 <tbody>
                   {obrasPorMunicipio.slice(0, 15).map((item, index) => (
-                    <tr key={index} className="border-b border-gray-50 hover:bg-gray-50">
-                      <td className="py-2 pr-2 font-medium text-gray-800">{item.municipio}</td>
-                      <td className="py-2 pr-2 text-gray-600">{item.provincia}</td>
+                    <tr key={index} className="border-b border-slate-50 hover:bg-slate-50">
+                      <td className="py-2 pr-2 font-medium text-slate-800">{item.municipio}</td>
+                      <td className="py-2 pr-2 text-slate-600">{item.provincia}</td>
                       <td className="py-2 text-right font-semibold text-[#42A5F5]">{item.cantidad}</td>
                     </tr>
                   ))}
@@ -369,7 +352,7 @@ const StatsDashboard: React.FC<StatsDashboardProps> = ({ refreshTrigger, onEstad
               </table>
             </div>
           ) : (
-            <div className="flex justify-center items-center h-32 text-gray-500">
+            <div className="flex justify-center items-center h-32 text-slate-500">
               No hay datos por municipio
             </div>
           )}
@@ -377,38 +360,38 @@ const StatsDashboard: React.FC<StatsDashboardProps> = ({ refreshTrigger, onEstad
       </div>
 
       {/* Obras próximas a inaugurar */}
-      <div className="bg-white rounded-lg shadow-lg p-6">
+      <div className="bg-white rounded-2xl border border-slate-100 shadow-sm p-5 sm:p-6">
         <div className="flex items-center mb-4">
           <LocationOn className="text-[#42A5F5] mr-2" />
-          <h3 className="text-xl font-semibold">
+          <h3 className="text-xl font-semibold text-slate-800">
             Obras Próximas a Inaugurar (este mes)
           </h3>
         </div>
         
         {proximasInaugurar.length === 0 ? (
-          <div className="bg-blue-50 border border-blue-200 text-blue-800 px-4 py-3 rounded">
+          <div className="bg-blue-50 border border-blue-200 text-blue-800 px-4 py-3 rounded-xl">
             No hay obras próximas a inaugurar este mes
           </div>
         ) : (
           <div className="overflow-x-auto">
             <table className="min-w-full divide-y divide-gray-200">
-              <thead>
-                <tr className="bg-[#42A5F5]">
-                  <th className="px-6 py-3 text-left text-xs font-semibold text-white uppercase tracking-wider">Código</th>
-                  <th className="px-6 py-3 text-left text-xs font-semibold text-white uppercase tracking-wider">Nombre</th>
-                  <th className="px-6 py-3 text-left text-xs font-semibold text-white uppercase tracking-wider">Estado</th>
-                  <th className="px-6 py-3 text-left text-xs font-semibold text-white uppercase tracking-wider">Responsable</th>
-                  <th className="px-6 py-3 text-left text-xs font-semibold text-white uppercase tracking-wider">Fecha Inauguración</th>
+              <thead className="bg-slate-100">
+                <tr>
+                  <th className="px-6 py-3 text-left text-xs font-semibold text-slate-700 uppercase tracking-wider">Código</th>
+                  <th className="px-6 py-3 text-left text-xs font-semibold text-slate-700 uppercase tracking-wider">Nombre</th>
+                  <th className="px-6 py-3 text-left text-xs font-semibold text-slate-700 uppercase tracking-wider">Estado</th>
+                  <th className="px-6 py-3 text-left text-xs font-semibold text-slate-700 uppercase tracking-wider">Responsable</th>
+                  <th className="px-6 py-3 text-left text-xs font-semibold text-slate-700 uppercase tracking-wider">Fecha Inauguración</th>
                 </tr>
               </thead>
               <tbody className="bg-white divide-y divide-gray-200">
                 {proximasInaugurar.map((obra) => (
                   <tr 
                     key={obra.id}
-                    className="hover:bg-gray-50 transition-colors"
+                    className="hover:bg-slate-50 transition-colors"
                   >
                     <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">{obra.codigo}</td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{obra.nombre}</td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-900">{obra.nombre}</td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm">
                       <span
                         className="px-2 py-1 text-xs font-semibold rounded-full text-white"
@@ -417,8 +400,8 @@ const StatsDashboard: React.FC<StatsDashboardProps> = ({ refreshTrigger, onEstad
                         {obra.estado}
                       </span>
                     </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{obra.responsable || '-'}</td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-900">{obra.responsable || '-'}</td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-900">
                       {obra.fecha_inauguracion 
                         ? new Date(obra.fecha_inauguracion).toLocaleDateString('es-DO', {
                             year: 'numeric',

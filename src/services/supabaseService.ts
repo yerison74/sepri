@@ -476,6 +476,15 @@ export const formularioContratistaService = {
 
 export const obrasService = {
   /**
+   * Normaliza valores de estado para evitar conteos duplicados por variaciones
+   * de mayúsculas/minúsculas o espacios extra.
+   */
+  normalizarEstadoDashboard: (estado?: string | null): string => {
+    const limpio = (estado || '').trim().replace(/\s+/g, ' ').toUpperCase();
+    return limpio || 'NO ESPECIFICADO';
+  },
+
+  /**
    * Obtener obras con filtros y paginación
    */
   obtenerObras: async (filtros: ObrasFilters = {}): Promise<ApiResponse<Obra[]>> => {
@@ -778,21 +787,39 @@ export const obrasService = {
    */
   obtenerEstadisticas: async () => {
     try {
+      const PAGE_SIZE = 1000;
+
+      const obtenerTodasLasObras = async <T extends string>(columnas: T) => {
+        const filas: any[] = [];
+        let desde = 0;
+        while (true) {
+          const hasta = desde + PAGE_SIZE - 1;
+          const { data, error } = await supabase
+            .from('obras')
+            .select(columnas)
+            .range(desde, hasta);
+          if (error) throw error;
+          const lote = data || [];
+          filas.push(...lote);
+          if (lote.length < PAGE_SIZE) break;
+          desde += PAGE_SIZE;
+        }
+        return filas;
+      };
+
       // Obtener total de obras
       const { count: totalObras } = await supabase
         .from('obras')
         .select('*', { count: 'exact', head: true });
 
       // Obtener obras por estado: solo estados que existen en la base de datos
-      const { data: todasLasObras } = await supabase
-        .from('obras')
-        .select('estado');
+      const todasLasObras = await obtenerTodasLasObras('estado');
 
       const porEstado: Array<{ estado: string; cantidad: number }> = [];
       if (todasLasObras && todasLasObras.length > 0) {
         const conteoPorEstado = new Map<string, number>();
         todasLasObras.forEach((o: { estado?: string | null }) => {
-          const estado = (o.estado || '').trim() || 'NO ESPECIFICADO';
+          const estado = obrasService.normalizarEstadoDashboard(o.estado);
           conteoPorEstado.set(estado, (conteoPorEstado.get(estado) || 0) + 1);
         });
         Array.from(conteoPorEstado.entries())
@@ -816,15 +843,13 @@ export const obrasService = {
         .limit(10);
 
       // Obtener obras por responsable
-      const { data: todasObras } = await supabase
-        .from('obras')
-        .select('responsable, provincia, municipio');
+      const todasObras = await obtenerTodasLasObras('responsable, provincia, municipio');
 
       const obrasPorResponsableMap = new Map<string, number>();
       const obrasPorProvinciaMap = new Map<string, number>();
       const obrasPorMunicipioMap = new Map<string, { provincia: string; cantidad: number }>();
 
-      if (todasObras) {
+      if (todasObras && todasObras.length > 0) {
         todasObras.forEach(obra => {
           const responsable = obra.responsable || 'Sin responsable';
           obrasPorResponsableMap.set(

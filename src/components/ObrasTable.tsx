@@ -1,10 +1,11 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   Search,
   FilterList,
   Delete,
-  Visibility,
-  MoreVert
+  Tune,
+  NavigateBefore,
+  NavigateNext
 } from '@mui/icons-material';
 import { mantenimientosAPI, statsAPI, Obra } from '../services/api';
 import ObraMap from './ObraMap';
@@ -20,20 +21,52 @@ const ObrasTable: React.FC<ObrasTableProps> = ({ refreshTrigger, soloLectura = f
   const [error, setError] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [estadoFilter, setEstadoFilter] = useState<string>('');
-  const [responsableFilter, setResponsableFilter] = useState<string>('');
-  const [provinciaFilter, setProvinciaFilter] = useState<string>('');
   const [page, setPage] = useState(0);
   const [rowsPerPage, setRowsPerPage] = useState(10);
   const [totalCount, setTotalCount] = useState(0);
   const [selectedObra, setSelectedObra] = useState<Obra | null>(null);
   const [showDetails, setShowDetails] = useState(false);
-  const [anchorEl, setAnchorEl] = useState<null | HTMLElement>(null);
-  const [selectedId, setSelectedId] = useState<number | null>(null);
   const [estadosDisponibles, setEstadosDisponibles] = useState<string[]>([]);
+
+  const loadObrasWithFilters = useCallback(async (overrides?: { estado?: string }) => {
+    const estado = overrides?.estado !== undefined ? overrides.estado : estadoFilter;
+    try {
+      setLoading(true);
+      setError(null);
+      const response = await mantenimientosAPI.obtenerObras({
+        limit: rowsPerPage,
+        offset: page * rowsPerPage,
+        search: searchQuery || undefined,
+        estado: estado || undefined,
+      });
+      setObras(response.data.data);
+      setTotalCount(response.data.count);
+    } catch (err: any) {
+      setError(err.response?.data?.error || 'Error al cargar obras');
+    } finally {
+      setLoading(false);
+    }
+  }, [estadoFilter, rowsPerPage, page, searchQuery]);
+
+  const loadObras = useCallback(() => {
+    loadObrasWithFilters();
+  }, [loadObrasWithFilters]);
 
   useEffect(() => {
     loadObras();
-  }, [page, rowsPerPage, refreshTrigger]);
+  }, [loadObras, refreshTrigger]);
+
+  useEffect(() => {
+    const debounce = setTimeout(() => {
+      if (page !== 0) {
+        setPage(0);
+        return;
+      }
+      loadObrasWithFilters();
+    }, 350);
+
+    return () => clearTimeout(debounce);
+  }, [searchQuery, estadoFilter, page, loadObrasWithFilters]);
 
   // Cargar lista de estados desde la base de datos (para filtros)
   useEffect(() => {
@@ -56,54 +89,17 @@ const ObrasTable: React.FC<ObrasTableProps> = ({ refreshTrigger, soloLectura = f
     const handler = (e: any) => {
       const { estado, provincia } = e.detail || {};
       if (estado !== undefined) setEstadoFilter(estado || '');
-      if (provincia !== undefined) setProvinciaFilter(provincia || '');
+      if (provincia !== undefined) setSearchQuery(provincia || '');
       setPage(0);
-      loadObrasWithFilters({
-        estado: estado !== undefined ? estado : undefined,
-        provincia: provincia !== undefined ? provincia : undefined,
-      });
     };
     window.addEventListener('setObrasFilters', handler);
     return () => window.removeEventListener('setObrasFilters', handler);
-  }, []);
-
-  const loadObrasWithFilters = async (overrides?: { estado?: string; provincia?: string }) => {
-    const estado = overrides?.estado !== undefined ? overrides.estado : estadoFilter;
-    const provincia = overrides?.provincia !== undefined ? overrides.provincia : provinciaFilter;
-    try {
-      setLoading(true);
-      setError(null);
-      const response = await mantenimientosAPI.obtenerObras({
-        limit: rowsPerPage,
-        offset: page * rowsPerPage,
-        search: searchQuery || undefined,
-        estado: estado || undefined,
-        responsable: responsableFilter || undefined,
-        provincia: provincia || undefined,
-      });
-      setObras(response.data.data);
-      setTotalCount(response.data.count);
-    } catch (err: any) {
-      setError(err.response?.data?.error || 'Error al cargar obras');
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const loadObras = () => loadObrasWithFilters();
-
-  const handleSearch = () => {
-    setPage(0);
-    loadObras();
-  };
+  }, [loadObrasWithFilters]);
 
   const handleClearFilters = () => {
     setSearchQuery('');
     setEstadoFilter('');
-    setResponsableFilter('');
-    setProvinciaFilter('');
     setPage(0);
-    loadObras();
   };
 
   const handleChangePage = (newPage: number) => {
@@ -115,33 +111,9 @@ const ObrasTable: React.FC<ObrasTableProps> = ({ refreshTrigger, soloLectura = f
     setPage(0);
   };
 
-  const handleMenuClick = (event: React.MouseEvent<HTMLElement>, obraId: number) => {
-    setAnchorEl(event.currentTarget);
-    setSelectedId(obraId);
-  };
-
-  const handleMenuClose = () => {
-    setAnchorEl(null);
-    setSelectedId(null);
-  };
-
   const handleViewDetails = (obra: Obra) => {
     setSelectedObra(obra);
     setShowDetails(true);
-    handleMenuClose();
-  };
-
-  const handleDelete = async (id: string) => {
-    if (soloLectura) return;
-    if (window.confirm('¿Estás seguro de que quieres eliminar esta obra?')) {
-      try {
-        await mantenimientosAPI.eliminarObra(id);
-        loadObras();
-      } catch (err: any) {
-        setError(err.response?.data?.error || 'Error al eliminar obra');
-      }
-    }
-    handleMenuClose();
   };
 
   const getEstadoColor = (estado: string) => {
@@ -180,57 +152,39 @@ const ObrasTable: React.FC<ObrasTableProps> = ({ refreshTrigger, soloLectura = f
       </h2>
 
       {/* Barra de búsqueda */}
-      <div className="bg-gradient-to-br from-gray-50 to-gray-200 rounded-lg shadow-md p-3 sm:p-4 md:p-6 mb-4 sm:mb-6">
-        <div className="flex flex-wrap gap-3 items-center">
-          <input
-            type="text"
-            placeholder="Buscar por ID, contrato, código, responsable o nombre..."
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            onKeyPress={(e) => e.key === 'Enter' && handleSearch()}
-            className="flex-grow min-w-[260px] px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#42A5F5] focus:border-transparent"
-          />
+      <div className="bg-white border border-slate-200 rounded-2xl shadow-sm p-4 sm:p-5 mb-4 sm:mb-6">
+        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-8 gap-3">
+          <div className="relative md:col-span-2 xl:col-span-5">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" sx={{ fontSize: 20 }} />
+            <input
+              type="text"
+              placeholder="Buscar por ID, contrato, código, responsable, provincia o nombre..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="w-full pl-10 pr-3 py-2.5 border border-slate-300 rounded-xl bg-slate-50/50 focus:outline-none focus:ring-2 focus:ring-[#42A5F5] focus:border-transparent"
+            />
+          </div>
 
-          <select
-            value={estadoFilter}
-            onChange={(e) => setEstadoFilter(e.target.value)}
-            className="min-w-[180px] px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#42A5F5] focus:border-transparent"
-          >
-            <option value="">Todos los estados</option>
-            {estados.map((estado) => (
-              <option key={estado} value={estado}>{estado}</option>
-            ))}
-          </select>
+          <div className="relative xl:col-span-2">
+            <FilterList className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" sx={{ fontSize: 20 }} />
+            <select
+              value={estadoFilter}
+              onChange={(e) => setEstadoFilter(e.target.value)}
+              className="w-full pl-10 pr-3 py-2.5 border border-slate-300 rounded-xl bg-slate-50/50 focus:outline-none focus:ring-2 focus:ring-[#42A5F5] focus:border-transparent"
+            >
+              <option value="">Todos los estados</option>
+              {estados.map((estado) => (
+                <option key={estado} value={estado}>{estado}</option>
+              ))}
+            </select>
+          </div>
 
-          <input
-            type="text"
-            placeholder="Responsable contiene..."
-            value={responsableFilter}
-            onChange={(e) => setResponsableFilter(e.target.value)}
-            className="min-w-[220px] px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#42A5F5] focus:border-transparent"
-          />
-
-          <input
-            type="text"
-            placeholder="Provincia..."
-            value={provinciaFilter}
-            onChange={(e) => setProvinciaFilter(e.target.value)}
-            className="min-w-[180px] px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#42A5F5] focus:border-transparent"
-          />
-
-          <button
-            onClick={handleSearch}
-            className="inline-flex items-center gap-2 px-6 py-2 bg-[#42A5F5] text-white rounded-lg font-semibold hover:bg-blue-600 transition-colors shadow-md hover:shadow-lg"
-          >
-            <Search />
-            Buscar
-          </button>
           <button
             onClick={handleClearFilters}
-            className="inline-flex items-center gap-2 px-6 py-2 border-2 border-gray-300 text-gray-700 rounded-lg font-semibold hover:bg-gray-50 transition-colors"
+            className="xl:col-span-1 inline-flex items-center justify-center gap-2 px-5 py-2.5 border border-slate-300 text-slate-700 rounded-xl font-semibold hover:bg-slate-50 transition-colors"
           >
-            <FilterList />
-            Limpiar filtros
+            <Tune sx={{ fontSize: 20 }} />
+            Limpiar
           </button>
         </div>
       </div>
@@ -347,37 +301,42 @@ const ObrasTable: React.FC<ObrasTableProps> = ({ refreshTrigger, soloLectura = f
       )}
 
       {/* Paginación */}
-      <div className="bg-white rounded-lg shadow-md p-4 flex items-center justify-between">
-        <div className="flex items-center gap-4">
-          <span className="text-sm text-gray-700">Filas por página:</span>
+      <div className="bg-white border border-slate-200 rounded-2xl shadow-sm p-4 sm:p-5 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+        <div className="flex flex-wrap items-center gap-3 sm:gap-4">
+          <span className="text-sm text-slate-700 font-medium">Filas por página:</span>
           <select
             value={rowsPerPage}
             onChange={handleChangeRowsPerPage}
-            className="px-3 py-1 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-[#42A5F5]"
+            className="px-3 py-2 border border-slate-300 rounded-xl bg-slate-50/50 focus:outline-none focus:ring-2 focus:ring-[#42A5F5]"
           >
             <option value={5}>5</option>
             <option value={10}>10</option>
             <option value={25}>25</option>
             <option value={50}>50</option>
           </select>
-          <span className="text-sm text-gray-700">
+          <span className="text-sm text-slate-700">
             {startRow + 1}-{endRow} de {totalCount}
           </span>
+          <span className="hidden sm:inline-flex px-2.5 py-1 text-xs font-semibold rounded-full bg-slate-100 text-slate-600">
+            Página {Math.min(page + 1, Math.max(totalPages, 1))} de {Math.max(totalPages, 1)}
+          </span>
         </div>
-        <div className="flex gap-2">
+        <div className="flex gap-2 self-end sm:self-auto">
           <button
             onClick={() => handleChangePage(page - 1)}
             disabled={page === 0}
-            className="px-4 py-2 border border-gray-300 rounded hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
+            className="inline-flex items-center gap-1.5 px-3.5 py-2 border border-slate-300 text-slate-700 rounded-xl hover:bg-slate-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
           >
+            <NavigateBefore sx={{ fontSize: 20 }} />
             Anterior
           </button>
           <button
             onClick={() => handleChangePage(page + 1)}
             disabled={page >= totalPages - 1}
-            className="px-4 py-2 border border-gray-300 rounded hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
+            className="inline-flex items-center gap-1.5 px-3.5 py-2 border border-slate-300 text-slate-700 rounded-xl hover:bg-slate-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
           >
             Siguiente
+            <NavigateNext sx={{ fontSize: 20 }} />
           </button>
         </div>
       </div>
