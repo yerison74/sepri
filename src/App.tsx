@@ -227,12 +227,19 @@ function App() {
                   <StatsDashboard
                     refreshTrigger={refreshTrigger}
                     onEstadoClick={(estado: string) => {
-                      window.dispatchEvent(new CustomEvent('setObrasFilters', { detail: { estado } }));
                       setTabValue(1);
+                      // Disparar después del cambio de pestaña para asegurar que ObrasTable
+                      // ya esté montado y reciba el evento de filtros.
+                      setTimeout(() => {
+                        window.dispatchEvent(new CustomEvent('setObrasFilters', { detail: { estado } }));
+                      }, 0);
                     }}
                     onProvinciaClick={(provincia: string) => {
-                      window.dispatchEvent(new CustomEvent('setObrasFilters', { detail: { provincia } }));
                       setTabValue(1);
+                      // Disparar después del cambio de pestaña para asegurar recepción del filtro.
+                      setTimeout(() => {
+                        window.dispatchEvent(new CustomEvent('setObrasFilters', { detail: { provincia } }));
+                      }, 0);
                     }}
                   />
                 </TabPanel>
