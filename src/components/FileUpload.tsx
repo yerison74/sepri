@@ -11,6 +11,7 @@ import DescriptionIcon from '@mui/icons-material/Description';
 import PersonIcon from '@mui/icons-material/Person';
 import InfoIcon from '@mui/icons-material/Info';
 import { uploadAPI, statsAPI } from '../services/api';
+import type { ProgresoCargaObra } from '../services/api';
 import { obrasService } from '../services/supabaseService';
 import type { Obra } from '../types/database';
 
@@ -28,6 +29,8 @@ const FileUpload: React.FC<FileUploadProps> = ({ onUploadComplete, onError, solo
   const [error, setError] = useState<string | null>(null);
   const [validMessage, setValidMessage] = useState<string | null>(null);
   const [uploading, setUploading] = useState(false);
+  /** Avance al subir XML/Excel (mensaje + %); se limpia al terminar. */
+  const [uploadProgress, setUploadProgress] = useState<ProgresoCargaObra | null>(null);
   const [downloading, setDownloading] = useState(false);
   const [estadosParaDescarga, setEstadosParaDescarga] = useState<string[]>([]);
   const [downloadFilters, setDownloadFilters] = useState({
@@ -150,13 +153,15 @@ const FileUpload: React.FC<FileUploadProps> = ({ onUploadComplete, onError, solo
     if (localError) return setError(localError);
     try {
       resetMessages();
+      setUploadProgress({ mensaje: 'Preparando archivo…', porcentaje: 0 });
       setUploading(true);
       const isXml = file.name.toLowerCase().endsWith('.xml');
+      const onProg = (p: ProgresoCargaObra) => setUploadProgress(p);
       let resultado;
       if (isXml) {
-        resultado = await uploadAPI.subirXml(file);
+        resultado = await uploadAPI.subirXml(file, onProg);
       } else {
-        resultado = await uploadAPI.subirExcel(file);
+        resultado = await uploadAPI.subirExcel(file, onProg);
       }
       
       // Mostrar información detallada del procesamiento
@@ -191,6 +196,7 @@ const FileUpload: React.FC<FileUploadProps> = ({ onUploadComplete, onError, solo
       if (onError) onError(err);
     } finally {
       setUploading(false);
+      window.setTimeout(() => setUploadProgress(null), 1400);
     }
   };
 
@@ -536,8 +542,41 @@ const FileUpload: React.FC<FileUploadProps> = ({ onUploadComplete, onError, solo
         </div>
 
         {(uploading || downloading) && (
-          <div className="w-full bg-gray-200 rounded-full h-2">
-            <div className="bg-[#42A5F5] h-2 rounded-full animate-pulse" style={{ width: '100%' }}></div>
+          <div className="space-y-2">
+            {uploading && (
+              <div
+                className="rounded-lg border border-stone-200/80 bg-stone-50/90 px-3 py-2.5 shadow-sm"
+                role="status"
+                aria-live="polite"
+              >
+                <div className="flex items-start justify-between gap-3 text-xs text-stone-600 mb-1.5">
+                  <span className="truncate min-w-0 flex-1 leading-snug">
+                    {uploadProgress?.mensaje ?? 'Iniciando…'}
+                  </span>
+                  <span className="tabular-nums text-stone-500 font-medium shrink-0 pt-px">
+                    {uploadProgress?.porcentaje ?? 0}%
+                  </span>
+                </div>
+                <div
+                  className="h-1 w-full overflow-hidden rounded-full bg-stone-200/90"
+                  role="progressbar"
+                  aria-valuemin={0}
+                  aria-valuemax={100}
+                  aria-valuenow={uploadProgress?.porcentaje ?? 0}
+                  aria-label="Progreso de carga"
+                >
+                  <div
+                    className="h-full rounded-full bg-[#42A5F5]/88 transition-[width] duration-200 ease-out"
+                    style={{ width: `${Math.min(100, Math.max(0, uploadProgress?.porcentaje ?? 0))}%` }}
+                  />
+                </div>
+              </div>
+            )}
+            {downloading && !uploading && (
+              <div className="w-full bg-gray-200 rounded-full h-2">
+                <div className="bg-[#42A5F5] h-2 rounded-full animate-pulse" style={{ width: '100%' }} />
+              </div>
+            )}
           </div>
         )}
 

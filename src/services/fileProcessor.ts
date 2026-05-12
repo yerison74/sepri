@@ -8,42 +8,212 @@ import { obrasService } from './supabaseService';
 import { supabase } from '../lib/supabase';
 import type { Obra } from '../types/database';
 
-/**
- * Generar un ID de obra siguiendo las reglas:
- * - tipo_obra = "Construccion"  -> OB-XXXX
- * - tipo_obra = "Mantenimiento" -> MT-XXXX
- * Donde XXXX son 4 dígitos aleatorios. Se verifica que no exista en la tabla obras.
- */
-const generarIdObra = async (tipoObra: string): Promise<string> => {
-  const prefijo = (tipoObra || '').toLowerCase() === 'mantenimiento' ? 'MT' : 'OB';
+/** Estado de avance al cargar obras desde archivo (UI). */
+export type ProgresoCargaObra = { mensaje: string; porcentaje: number };
 
-  for (let i = 0; i < 5; i++) {
-    const random = Math.floor(Math.random() * 10000).toString().padStart(4, '0');
-    const id = `${prefijo}-${random}`;
+export type ProgresoCargaCallback = (p: ProgresoCargaObra) => void;
 
-    const { data, error } = await supabase
-      .from('obras')
-      .select('id')
-      .eq('id', id)
-      .limit(1);
+function notificarProgreso(
+  onProgreso: ProgresoCargaCallback | undefined,
+  mensaje: string,
+  porcentaje: number,
+) {
+  if (!onProgreso) return;
+  const pct = Math.min(100, Math.max(0, Math.round(porcentaje)));
+  try {
+    onProgreso({ mensaje, porcentaje: pct });
+  } catch {
+    /* no bloquear la carga */
+  }
+}
 
-    if (error) {
-      console.warn('Error comprobando unicidad de ID de obra:', error.message || error);
-      continue;
+/** Códigos por consulta `.in()` (evita URLs demasiado largas). */
+const CODIGO_CHUNK = 150;
+/** Filas acumuladas antes de enviar un insert múltiple. */
+const INSERT_BATCH = 50;
+
+function tipoObraNormalizado(tipo: string): 'Construccion' | 'Mantenimiento' {
+  return (tipo || '').trim().toLowerCase() === 'mantenimiento' ? 'Mantenimiento' : 'Construccion';
+}
+
+async function obtenerMapaCodigoAId(codigos: string[]): Promise<Map<string, string>> {
+  const map = new Map<string, string>();
+  const uniq = Array.from(new Set(codigos.map((c) => c.trim().toUpperCase()).filter(Boolean)));
+  for (let i = 0; i < uniq.length; i += CODIGO_CHUNK) {
+    const chunk = uniq.slice(i, i + CODIGO_CHUNK);
+    const { data, error } = await supabase.from('obras').select('id,codigo').in('codigo', chunk);
+    if (error) throw error;
+    for (const row of data || []) {
+      if (row.codigo != null) {
+        map.set(String(row.codigo).trim().toUpperCase(), row.id as string);
+      }
     }
+  }
+  return map;
+}
 
-    if (!data || data.length === 0) {
-      return id;
+/**
+ * Reserva N IDs OB-xxxx / MT-xxxx libres con pocas consultas (antes: hasta 5 por fila).
+ */
+async function reservarIdsObra(tipoObra: string, cantidad: number): Promise<string[]> {
+  if (cantidad <= 0) return [];
+  const prefijo = tipoObraNormalizado(tipoObra) === 'Mantenimiento' ? 'MT' : 'OB';
+  const resultado: string[] = [];
+  let intentos = 0;
+  while (resultado.length < cantidad && intentos < 40) {
+    intentos += 1;
+    const necesita = cantidad - resultado.length;
+    const objetivoCandidatos = Math.min(Math.max(necesita * 8, 80), 800);
+    const pool = new Set<string>();
+    while (pool.size < objetivoCandidatos) {
+      const random = Math.floor(Math.random() * 10000).toString().padStart(4, '0');
+      pool.add(`${prefijo}-${random}`);
+    }
+    const arr = Array.from(pool);
+    const { data, error } = await supabase.from('obras').select('id').in('id', arr);
+    if (error) throw error;
+    const ocupados = new Set((data || []).map((r: { id: string }) => r.id));
+    for (const id of arr) {
+      if (!ocupados.has(id) && !resultado.includes(id)) {
+        resultado.push(id);
+        if (resultado.length >= cantidad) return resultado;
+      }
+    }
+  }
+  throw new Error(`No se pudieron reservar ${cantidad} IDs únicos para obras ${prefijo}`);
+}
+
+type ItemCargaObra = {
+  obra: Omit<Obra, 'id' | 'created_at' | 'updated_at'>;
+  codigoNormalizado: string;
+  tipoObraRaw: string;
+  etiquetaError: string;
+};
+
+async function ejecutarCargaObrasLote(
+  items: ItemCargaObra[],
+  onProgreso?: ProgresoCargaCallback,
+  rangoPct: { desde: number; hasta: number } = { desde: 0, hasta: 100 },
+): Promise<{
+  total: number;
+  exitosas: number;
+  fallidas: number;
+  errores: string[];
+  creadas: number;
+  actualizadas: number;
+}> {
+  const resultados = {
+    total: items.length,
+    exitosas: 0,
+    fallidas: 0,
+    errores: [] as string[],
+    creadas: 0,
+    actualizadas: 0,
+  };
+
+  if (items.length === 0) {
+    return resultados;
+  }
+
+  const { desde, hasta } = rangoPct;
+  const span = hasta - desde;
+  const emit = (frac: number, mensaje: string) => {
+    notificarProgreso(onProgreso, mensaje, desde + span * Math.min(1, Math.max(0, frac)));
+  };
+
+  emit(0, 'Consultando obras ya registradas por código…');
+  const existing = await obtenerMapaCodigoAId(items.map((it) => it.codigoNormalizado));
+
+  const sim = new Map(existing);
+  const createByTipo = new Map<'Construccion' | 'Mantenimiento', number>();
+  for (const it of items) {
+    const c = it.codigoNormalizado;
+    if (sim.has(c)) continue;
+    const tipo = tipoObraNormalizado(it.tipoObraRaw);
+    createByTipo.set(tipo, (createByTipo.get(tipo) || 0) + 1);
+    sim.set(c, '__nuevo__');
+  }
+
+  emit(0.12, 'Reservando identificadores para obras nuevas…');
+  const reserved = new Map<'Construccion' | 'Mantenimiento', string[]>();
+  const reservedIdx = new Map<'Construccion' | 'Mantenimiento', number>();
+  for (const tipo of ['Construccion', 'Mantenimiento'] as const) {
+    const n = createByTipo.get(tipo) || 0;
+    if (n > 0) {
+      reserved.set(tipo, await reservarIdsObra(tipo, n));
+      reservedIdx.set(tipo, 0);
     }
   }
 
-  throw new Error('No se pudo generar un ID único para la obra después de varios intentos');
-};
+  const insertsBuffer: Array<Omit<Obra, 'created_at' | 'updated_at'>> = [];
+
+  const flushInserts = async () => {
+    if (insertsBuffer.length === 0) return;
+    await obrasService.crearObrasLote(insertsBuffer, { chunkSize: INSERT_BATCH });
+    insertsBuffer.length = 0;
+  };
+
+  const totalFilas = items.length;
+  let filaHecha = 0;
+  for (const it of items) {
+    try {
+      const tipo = tipoObraNormalizado(it.tipoObraRaw);
+      const { obra, codigoNormalizado } = it;
+
+      if (existing.has(codigoNormalizado)) {
+        const obraParaActualizar = Object.fromEntries(
+          Object.entries(obra).filter(([_, v]) => v !== undefined),
+        ) as Partial<Omit<Obra, 'id' | 'created_at' | 'updated_at'>>;
+        await obrasService.actualizarObraPorCodigo(codigoNormalizado, obraParaActualizar);
+        resultados.actualizadas += 1;
+      } else {
+        const idsList = reserved.get(tipo);
+        const idx = reservedIdx.get(tipo) ?? 0;
+        if (!idsList || idx >= idsList.length) {
+          throw new Error('No hay ID reservado para una fila nueva');
+        }
+        reservedIdx.set(tipo, idx + 1);
+        const nuevoId = idsList[idx];
+        const obraParaCrear = {
+          ...Object.fromEntries(Object.entries(obra).filter(([_, v]) => v !== undefined)),
+          id: nuevoId,
+          codigo: codigoNormalizado,
+          tipo_obra: tipo,
+        } as Omit<Obra, 'created_at' | 'updated_at'>;
+        insertsBuffer.push(obraParaCrear);
+        existing.set(codigoNormalizado, nuevoId);
+        resultados.creadas += 1;
+        if (insertsBuffer.length >= INSERT_BATCH) {
+          await flushInserts();
+        }
+      }
+      resultados.exitosas += 1;
+    } catch (error: any) {
+      resultados.fallidas += 1;
+      resultados.errores.push(`${it.etiquetaError}: ${error.message || error}`);
+    }
+    filaHecha += 1;
+    if (filaHecha % 3 === 0 || filaHecha === totalFilas) {
+      const fracFila = 0.22 + 0.78 * (filaHecha / totalFilas);
+      emit(
+        fracFila,
+        `Aplicando cambios en base de datos (${filaHecha}/${totalFilas})…`,
+      );
+    }
+  }
+
+  await flushInserts();
+  emit(1, 'Sincronizando últimos registros…');
+  return resultados;
+}
 
 /**
  * Procesar archivo XML y extraer obras
  */
-export const procesarArchivoXml = async (file: File): Promise<{
+export const procesarArchivoXml = async (
+  file: File,
+  onProgreso?: ProgresoCargaCallback,
+): Promise<{
   total: number;
   exitosas: number;
   fallidas: number;
@@ -56,6 +226,7 @@ export const procesarArchivoXml = async (file: File): Promise<{
 
     reader.onload = async (e) => {
       try {
+        notificarProgreso(onProgreso, 'Leyendo contenido del archivo…', 8);
         const xmlContent = e.target?.result as string;
 
         const parser = new XMLParser({
@@ -74,6 +245,8 @@ export const procesarArchivoXml = async (file: File): Promise<{
           return;
         }
 
+        notificarProgreso(onProgreso, 'Validando estructura del documento…', 18);
+
         if (!result.mantenimientos || !result.mantenimientos.obra) {
           reject(
             new Error(
@@ -87,6 +260,12 @@ export const procesarArchivoXml = async (file: File): Promise<{
           ? result.mantenimientos.obra
           : [result.mantenimientos.obra];
 
+        notificarProgreso(
+          onProgreso,
+          `Preparando ${obrasXml.length} registro(s) de obra…`,
+          26,
+        );
+
         const resultados = {
           total: obrasXml.length,
           exitosas: 0,
@@ -96,69 +275,30 @@ export const procesarArchivoXml = async (file: File): Promise<{
           actualizadas: 0,
         };
 
+        const items: ItemCargaObra[] = [];
         for (const obraXml of obrasXml) {
-          try {
-            const obra = mapearObraDesdeXml(obraXml);
+          const obra = mapearObraDesdeXml(obraXml);
 
-            if (!obra.codigo || obra.codigo.trim() === '') {
-              resultados.fallidas++;
-              resultados.errores.push(
-                'Obra sin código. El campo "codigo" es obligatorio para crear/actualizar.',
-              );
-              continue;
-            }
-
-            const codigoNormalizado = obra.codigo.trim().toUpperCase();
-            const tipoObra = (obra as any).tipo_obra || 'Construccion';
-
-            console.log(`🔍 Buscando obra por código: "${codigoNormalizado}"`);
-
-            const { data: obrasExistentes, error: searchError } = await supabase
-              .from('obras')
-              .select('*')
-              .eq('codigo', codigoNormalizado)
-              .limit(1);
-
-            if (searchError) {
-              console.error('Error al buscar obra existente:', searchError);
-              throw searchError;
-            }
-
-            const obraExistente =
-              obrasExistentes && obrasExistentes.length > 0 ? obrasExistentes[0] : null;
-
-            if (obraExistente) {
-              console.log(
-                `✅ ACTUALIZANDO obra con código "${codigoNormalizado}" (ID en BD: ${obraExistente.id})`,
-              );
-              const obraParaActualizar = Object.fromEntries(
-                Object.entries(obra).filter(([_, v]) => v !== undefined),
-              ) as Partial<Omit<Obra, 'id' | 'created_at' | 'updated_at'>>;
-              await obrasService.actualizarObraPorCodigo(codigoNormalizado, obraParaActualizar);
-              resultados.actualizadas++;
-            } else {
-              console.log(`➕ CREANDO nueva obra con código "${codigoNormalizado}"`);
-              const nuevoId = await generarIdObra(tipoObra);
-              const obraParaCrear = {
-                ...Object.fromEntries(Object.entries(obra).filter(([_, v]) => v !== undefined)),
-                id: nuevoId,
-                codigo: codigoNormalizado,
-                tipo_obra: tipoObra,
-              } as Omit<Obra, 'created_at' | 'updated_at'>;
-              await obrasService.crearObra(obraParaCrear);
-              resultados.creadas++;
-            }
-
-            resultados.exitosas++;
-          } catch (error: any) {
+          if (!obra.codigo || obra.codigo.trim() === '') {
             resultados.fallidas++;
             resultados.errores.push(
-              `Error en obra ${obraXml.id || obraXml['@_id'] || 'desconocida'}: ${
-                error.message
-              }`,
+              'Obra sin código. El campo "codigo" es obligatorio para crear/actualizar.',
             );
+            continue;
           }
+
+          const codigoNormalizado = obra.codigo.trim().toUpperCase();
+          const tipoObra = (obra as any).tipo_obra || 'Construccion';
+          const etiquetaError = `Obra ${obraXml.id || obraXml['@_id'] || 'desconocida'}`;
+          items.push({ obra, codigoNormalizado, tipoObraRaw: tipoObra, etiquetaError });
         }
+
+        const lote = await ejecutarCargaObrasLote(items, onProgreso, { desde: 32, hasta: 96 });
+        resultados.exitosas = lote.exitosas;
+        resultados.fallidas += lote.fallidas;
+        resultados.errores.push(...lote.errores);
+        resultados.creadas = lote.creadas;
+        resultados.actualizadas = lote.actualizadas;
 
         resolve(resultados);
       } catch (error: any) {
@@ -177,7 +317,10 @@ export const procesarArchivoXml = async (file: File): Promise<{
 /**
  * Procesar archivo Excel y extraer obras
  */
-export const procesarArchivoExcel = async (file: File): Promise<{
+export const procesarArchivoExcel = async (
+  file: File,
+  onProgreso?: ProgresoCargaCallback,
+): Promise<{
   total: number;
   exitosas: number;
   fallidas: number;
@@ -190,12 +333,15 @@ export const procesarArchivoExcel = async (file: File): Promise<{
 
     reader.onload = async (e) => {
       try {
+        notificarProgreso(onProgreso, 'Leyendo bytes del archivo Excel…', 10);
         const data = e.target?.result;
+        notificarProgreso(onProgreso, 'Analizando libro y hojas…', 16);
         const workbook = XLSX.read(data as string, { type: 'binary' });
 
         const firstSheetName = workbook.SheetNames[0];
         const worksheet = workbook.Sheets[firstSheetName];
 
+        notificarProgreso(onProgreso, 'Convirtiendo filas a registros de obra…', 22);
         const jsonData = XLSX.utils.sheet_to_json(worksheet);
 
         if (!jsonData || jsonData.length === 0) {
@@ -212,66 +358,38 @@ export const procesarArchivoExcel = async (file: File): Promise<{
           actualizadas: 0,
         };
 
-        for (const row of jsonData as any[]) {
-          try {
-            const obra = mapearObraDesdeExcel(row);
+        notificarProgreso(
+          onProgreso,
+          `Validando ${jsonData.length} fila(s) del archivo…`,
+          28,
+        );
 
-            if (!obra.codigo || obra.codigo.trim() === '') {
-              resultados.fallidas++;
-              resultados.errores.push(
-                'Fila sin código. El campo "codigo" es obligatorio para crear/actualizar. Columnas encontradas: ' +
-                  JSON.stringify(Object.keys(row)),
-              );
-              continue;
-            }
+        const items: ItemCargaObra[] = [];
+        for (let rowIdx = 0; rowIdx < jsonData.length; rowIdx++) {
+          const row = (jsonData as any[])[rowIdx];
+          const obra = mapearObraDesdeExcel(row);
 
-            const codigoNormalizado = obra.codigo.trim().toUpperCase();
-            const tipoObra = (obra as any).tipo_obra || 'Construccion';
-
-            console.log(`🔍 Buscando obra por código: "${codigoNormalizado}"`);
-
-            const { data: obrasExistentes, error: searchError } = await supabase
-              .from('obras')
-              .select('*')
-              .eq('codigo', codigoNormalizado)
-              .limit(1);
-
-            if (searchError) {
-              console.error('Error al buscar obra existente:', searchError);
-              throw searchError;
-            }
-
-            const obraExistente =
-              obrasExistentes && obrasExistentes.length > 0 ? obrasExistentes[0] : null;
-
-            if (obraExistente) {
-              console.log(
-                `✅ ACTUALIZANDO obra con código "${codigoNormalizado}" (ID en BD: ${obraExistente.id})`,
-              );
-              const obraParaActualizar = Object.fromEntries(
-                Object.entries(obra).filter(([_, v]) => v !== undefined),
-              ) as Partial<Omit<Obra, 'id' | 'created_at' | 'updated_at'>>;
-              await obrasService.actualizarObraPorCodigo(codigoNormalizado, obraParaActualizar);
-              resultados.actualizadas++;
-            } else {
-              console.log(`➕ CREANDO nueva obra con código "${codigoNormalizado}"`);
-              const nuevoId = await generarIdObra(tipoObra);
-              const obraParaCrear = {
-                ...Object.fromEntries(Object.entries(obra).filter(([_, v]) => v !== undefined)),
-                id: nuevoId,
-                codigo: codigoNormalizado,
-                tipo_obra: tipoObra,
-              } as Omit<Obra, 'created_at' | 'updated_at'>;
-              await obrasService.crearObra(obraParaCrear);
-              resultados.creadas++;
-            }
-
-            resultados.exitosas++;
-          } catch (error: any) {
+          if (!obra.codigo || obra.codigo.trim() === '') {
             resultados.fallidas++;
-            resultados.errores.push(`Error en fila: ${error.message}`);
+            resultados.errores.push(
+              'Fila sin código. El campo "codigo" es obligatorio para crear/actualizar. Columnas encontradas: ' +
+                JSON.stringify(Object.keys(row)),
+            );
+            continue;
           }
+
+          const codigoNormalizado = obra.codigo.trim().toUpperCase();
+          const tipoObra = (obra as any).tipo_obra || 'Construccion';
+          const etiquetaError = `Fila ${rowIdx + 2}`;
+          items.push({ obra, codigoNormalizado, tipoObraRaw: tipoObra, etiquetaError });
         }
+
+        const lote = await ejecutarCargaObrasLote(items, onProgreso, { desde: 30, hasta: 96 });
+        resultados.exitosas = lote.exitosas;
+        resultados.fallidas += lote.fallidas;
+        resultados.errores.push(...lote.errores);
+        resultados.creadas = lote.creadas;
+        resultados.actualizadas = lote.actualizadas;
 
         resolve(resultados);
       } catch (error: any) {

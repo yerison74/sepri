@@ -506,6 +506,16 @@ function truncarStringObraPorCampo(key: string, v: unknown): unknown {
   return v.length > maxLen ? v.slice(0, maxLen) : v;
 }
 
+function normalizarPayloadObra(
+  obra: Record<string, unknown> | Partial<Obra> | Omit<Obra, 'created_at' | 'updated_at'>,
+): Record<string, unknown> {
+  return Object.fromEntries(
+    Object.entries(obra)
+      .filter(([k]) => k !== 'id_obra')
+      .map(([k, v]) => [k, truncarStringObraPorCampo(k, v)]),
+  );
+}
+
 export const obrasService = {
   /**
    * Normaliza valores de estado para evitar conteos duplicados por variaciones
@@ -708,12 +718,7 @@ export const obrasService = {
       | Record<string, unknown>,
   ): Promise<Obra> => {
     try {
-      const payload = Object.fromEntries(
-        Object.entries(obra)
-          // id_obra es solo de compatibilidad en el frontend; NO existe en la tabla
-          .filter(([k]) => k !== 'id_obra')
-          .map(([k, v]) => [k, truncarStringObraPorCampo(k, v)]),
-      );
+      const payload = normalizarPayloadObra(obra as Record<string, unknown>);
 
       const { data, error } = await supabase
         .from('obras')
@@ -732,16 +737,37 @@ export const obrasService = {
   },
 
   /**
+   * Crear muchas obras con pocos viajes de red (insert por lotes).
+   */
+  crearObrasLote: async (
+    obras: Array<Omit<Obra, 'created_at' | 'updated_at'> | Record<string, unknown>>,
+    options?: { chunkSize?: number },
+  ): Promise<Obra[]> => {
+    const chunkSize = options?.chunkSize ?? 50;
+    if (obras.length === 0) return [];
+    try {
+      const todas: Obra[] = [];
+      for (let i = 0; i < obras.length; i += chunkSize) {
+        const slice = obras.slice(i, i + chunkSize);
+        const payloads = slice.map((o) => normalizarPayloadObra(o as Record<string, unknown>));
+        const { data, error } = await supabase.from('obras').insert(payloads).select();
+        if (error) throw error;
+        todas.push(...((data || []) as Obra[]));
+      }
+      return todas;
+    } catch (error: any) {
+      console.error('Error al crear obras en lote:', error);
+      throw new Error(error.message || 'Error al crear obras en lote');
+    }
+  },
+
+  /**
    * Actualizar una obra (id puede ser number o string según el esquema de obras).
    * Trunca strings según límites por columna (OBRA_CAMPO_STRING_MAX).
    */
   actualizarObra: async (id: number | string, updates: Partial<Obra>): Promise<Obra> => {
     try {
-      const payload = Object.fromEntries(
-        Object.entries(updates)
-          .filter(([k]) => k !== 'id_obra')
-          .map(([k, v]) => [k, truncarStringObraPorCampo(k, v)]),
-      );
+      const payload = normalizarPayloadObra(updates as Record<string, unknown>);
 
       const { data, error } = await supabase
         .from('obras')
@@ -765,11 +791,7 @@ export const obrasService = {
    */
   actualizarObraPorCodigo: async (codigo: string, updates: Partial<Obra>): Promise<Obra> => {
     try {
-      const payload = Object.fromEntries(
-        Object.entries(updates)
-          .filter(([k]) => k !== 'id_obra')
-          .map(([k, v]) => [k, truncarStringObraPorCampo(k, v)]),
-      );
+      const payload = normalizarPayloadObra(updates as Record<string, unknown>);
 
       const { data, error } = await supabase
         .from('obras')

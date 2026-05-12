@@ -14,9 +14,12 @@ import {
   procesarArchivoXml, 
   procesarArchivoExcel, 
   validarArchivoXml, 
-  validarArchivoExcel 
+  validarArchivoExcel,
 } from './fileProcessor';
+import type { ProgresoCargaCallback } from './fileProcessor';
 import * as XLSX from 'xlsx';
+
+export type { ProgresoCargaObra, ProgresoCargaCallback } from './fileProcessor';
 
 // Re-exportar tipos para compatibilidad
 export type {
@@ -163,11 +166,13 @@ export const uploadAPI = {
     }
   },
 
-  subirXml: async (file: File) => {
+  subirXml: async (file: File, onProgreso?: ProgresoCargaCallback) => {
     try {
+      onProgreso?.({ mensaje: 'Iniciando carga del archivo…', porcentaje: 2 });
       // Intentar subir archivo a Supabase Storage (opcional)
       let storageUrl: string | null = null;
       try {
+        onProgreso?.({ mensaje: 'Guardando copia en almacén (opcional)…', porcentaje: 5 });
         const timestamp = Date.now();
         const fileName = `uploads/xml/${timestamp}-${file.name}`;
         storageUrl = await storageService.subirArchivo(file, 'documentos', fileName);
@@ -179,11 +184,13 @@ export const uploadAPI = {
         }
       }
 
+      onProgreso?.({ mensaje: 'Procesando obras en el documento…', porcentaje: 7 });
       // Procesar archivo (esto es lo importante)
-      const resultado = await procesarArchivoXml(file);
+      const resultado = await procesarArchivoXml(file, onProgreso);
 
       // Registrar en historial (opcional - nunca hace fallar el upload)
       try {
+        onProgreso?.({ mensaje: 'Registrando historial de carga…', porcentaje: 98 });
         await historialUploadsService.registrarUpload({
           nombre_archivo: file.name,
           tipo_archivo: 'XML',
@@ -197,6 +204,8 @@ export const uploadAPI = {
       } catch (historialError: any) {
         console.warn('No se pudo registrar en historial (el procesamiento fue exitoso):', historialError?.message || historialError);
       }
+
+      onProgreso?.({ mensaje: 'Carga completada', porcentaje: 100 });
 
       return {
         data: {
@@ -388,11 +397,13 @@ export const uploadAPI = {
     } as AxiosResponse<Blob>);
   },
 
-  subirExcel: async (file: File) => {
+  subirExcel: async (file: File, onProgreso?: ProgresoCargaCallback) => {
     try {
+      onProgreso?.({ mensaje: 'Iniciando carga del archivo…', porcentaje: 2 });
       // Intentar subir archivo a Supabase Storage (opcional)
       let storageUrl: string | null = null;
       try {
+        onProgreso?.({ mensaje: 'Guardando copia en almacén (opcional)…', porcentaje: 5 });
         const timestamp = Date.now();
         const fileName = `uploads/excel/${timestamp}-${file.name}`;
         storageUrl = await storageService.subirArchivo(file, 'documentos', fileName);
@@ -404,11 +415,13 @@ export const uploadAPI = {
         }
       }
 
+      onProgreso?.({ mensaje: 'Procesando filas del Excel…', porcentaje: 7 });
       // Procesar archivo (esto es lo importante)
-      const resultado = await procesarArchivoExcel(file);
+      const resultado = await procesarArchivoExcel(file, onProgreso);
 
       // Registrar en historial (opcional - nunca hace fallar el upload)
       try {
+        onProgreso?.({ mensaje: 'Registrando historial de carga…', porcentaje: 98 });
         await historialUploadsService.registrarUpload({
           nombre_archivo: file.name,
           tipo_archivo: 'EXCEL',
@@ -422,6 +435,8 @@ export const uploadAPI = {
       } catch (historialError: any) {
         console.warn('No se pudo registrar en historial (el procesamiento fue exitoso):', historialError?.message || historialError);
       }
+
+      onProgreso?.({ mensaje: 'Carga completada', porcentaje: 100 });
 
       return {
         data: {
