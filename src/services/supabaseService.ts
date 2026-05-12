@@ -474,6 +474,38 @@ export const formularioContratistaService = {
 // SERVICIO DE OBRAS
 // ============================================
 
+/**
+ * Límites por columna al persistir obras (evita 22001).
+ * Descripción y observaciones: cupo amplio para texto corrido; si la BD usa `text`, no habrá corte en la práctica.
+ */
+const OBRA_CAMPO_STRING_MAX: Record<string, number> = {
+  id: 32,
+  codigo: 50,
+  contrato: 9,
+  tipo_obra: 60,
+  estado: 120,
+  nombre: 200,
+  responsable: 400,
+  descripcion: 25000,
+  provincia: 200,
+  municipio: 200,
+  nivel: 200,
+  observacion_legal: 25000,
+  observacion_financiero: 25000,
+  latitud: 32,
+  longitud: 32,
+  distrito_minerd_sigede: 200,
+  fecha_inicio: 32,
+  fecha_fin_estimada: 32,
+  fecha_inauguracion: 32,
+};
+
+function truncarStringObraPorCampo(key: string, v: unknown): unknown {
+  if (typeof v !== 'string') return v;
+  const maxLen = OBRA_CAMPO_STRING_MAX[key] ?? 4000;
+  return v.length > maxLen ? v.slice(0, maxLen) : v;
+}
+
 export const obrasService = {
   /**
    * Normaliza valores de estado para evitar conteos duplicados por variaciones
@@ -668,7 +700,7 @@ export const obrasService = {
   /**
    * Crear una nueva obra.
    * Si la tabla usa id varchar (ej. OB-0000), pasar obra con id incluido.
-   * Trunca strings que excedan límites típicos de la BD (varchar(20) etc.) para evitar error 22001.
+   * Trunca strings según límites por columna (ver OBRA_CAMPO_STRING_MAX) para evitar error 22001.
    */
   crearObra: async (
     obra:
@@ -676,14 +708,11 @@ export const obrasService = {
       | Record<string, unknown>,
   ): Promise<Obra> => {
     try {
-      const maxLen = 20;
-      const truncar = (v: unknown): unknown =>
-        typeof v === 'string' && v.length > maxLen ? v.slice(0, maxLen) : v;
       const payload = Object.fromEntries(
         Object.entries(obra)
           // id_obra es solo de compatibilidad en el frontend; NO existe en la tabla
           .filter(([k]) => k !== 'id_obra')
-          .map(([k, v]) => [k, truncar(v)]),
+          .map(([k, v]) => [k, truncarStringObraPorCampo(k, v)]),
       );
 
       const { data, error } = await supabase
@@ -704,17 +733,14 @@ export const obrasService = {
 
   /**
    * Actualizar una obra (id puede ser number o string según el esquema de obras).
-   * Trunca strings a 20 caracteres para no exceder varchar(20) si aplica.
+   * Trunca strings según límites por columna (OBRA_CAMPO_STRING_MAX).
    */
   actualizarObra: async (id: number | string, updates: Partial<Obra>): Promise<Obra> => {
     try {
-      const maxLen = 20;
-      const truncar = (v: unknown): unknown =>
-        typeof v === 'string' && v.length > maxLen ? v.slice(0, maxLen) : v;
       const payload = Object.fromEntries(
         Object.entries(updates)
           .filter(([k]) => k !== 'id_obra')
-          .map(([k, v]) => [k, truncar(v)]),
+          .map(([k, v]) => [k, truncarStringObraPorCampo(k, v)]),
       );
 
       const { data, error } = await supabase
@@ -739,13 +765,10 @@ export const obrasService = {
    */
   actualizarObraPorCodigo: async (codigo: string, updates: Partial<Obra>): Promise<Obra> => {
     try {
-      const maxLen = 20;
-      const truncar = (v: unknown): unknown =>
-        typeof v === 'string' && v.length > maxLen ? v.slice(0, maxLen) : v;
       const payload = Object.fromEntries(
         Object.entries(updates)
           .filter(([k]) => k !== 'id_obra')
-          .map(([k, v]) => [k, truncar(v)]),
+          .map(([k, v]) => [k, truncarStringObraPorCampo(k, v)]),
       );
 
       const { data, error } = await supabase
