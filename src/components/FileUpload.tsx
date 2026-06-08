@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useMemo, useEffect } from 'react';
 import CloudUploadIcon from '@mui/icons-material/CloudUpload';
 import CheckCircleIcon from '@mui/icons-material/CheckCircle';
 import DownloadIcon from '@mui/icons-material/Download';
@@ -14,6 +14,7 @@ import { uploadAPI, statsAPI } from '../services/api';
 import type { ProgresoCargaObra } from '../services/api';
 import { obrasService } from '../services/supabaseService';
 import type { Obra } from '../types/database';
+import AutocompleteInput from './AutocompleteInput';
 
 interface FileUploadProps {
   onUploadComplete?: () => void;
@@ -33,6 +34,15 @@ const FileUpload: React.FC<FileUploadProps> = ({ onUploadComplete, onError, solo
   const [uploadProgress, setUploadProgress] = useState<ProgresoCargaObra | null>(null);
   const [downloading, setDownloading] = useState(false);
   const [estadosParaDescarga, setEstadosParaDescarga] = useState<string[]>([]);
+  const [opcionesDescarga, setOpcionesDescarga] = useState<{
+    provincias: string[];
+    municipios: { provincia: string; municipio: string }[];
+    niveles: string[];
+  }>({ provincias: [], municipios: [], niveles: [] });
+  const [searchSugerencias, setSearchSugerencias] = useState<string[]>([]);
+  const [responsableSugerencias, setResponsableSugerencias] = useState<string[]>([]);
+  const [loadingSearchSugerencias, setLoadingSearchSugerencias] = useState(false);
+  const [loadingResponsableSugerencias, setLoadingResponsableSugerencias] = useState(false);
   const [downloadFilters, setDownloadFilters] = useState({
     search: '',
     estado: '',
@@ -45,21 +55,82 @@ const FileUpload: React.FC<FileUploadProps> = ({ onUploadComplete, onError, solo
   });
   const inputRef = useRef<HTMLInputElement | null>(null);
 
-  // Cargar estados desde la BD para el filtro de descarga (igual que en Obras/Dashboard)
-  React.useEffect(() => {
+  // Cargar estados y opciones de filtro desde la BD para la descarga
+  useEffect(() => {
     const load = async () => {
       try {
-        const res = await statsAPI.obtenerResumenDashboard();
-        const porEstado = res?.data?.data?.estadisticas?.porEstado;
+        const [resEstados, resOpciones] = await Promise.all([
+          statsAPI.obtenerResumenDashboard(),
+          uploadAPI.obtenerOpcionesFiltroDescarga(),
+        ]);
+        const porEstado = resEstados?.data?.data?.estadisticas?.porEstado;
         if (Array.isArray(porEstado)) {
           setEstadosParaDescarga(porEstado.map((e: { estado: string }) => e.estado));
         }
+        const opciones = resOpciones?.data?.data;
+        if (opciones) {
+          setOpcionesDescarga(opciones);
+        }
       } catch {
         setEstadosParaDescarga([]);
+        setOpcionesDescarga({ provincias: [], municipios: [], niveles: [] });
       }
     };
     load();
   }, []);
+
+  const municipiosDisponibles = useMemo(() => {
+    const { municipios } = opcionesDescarga;
+    if (downloadFilters.provincia) {
+      return municipios
+        .filter((m) => m.provincia === downloadFilters.provincia)
+        .map((m) => m.municipio);
+    }
+    const unicos = new Set(municipios.map((m) => m.municipio));
+    return Array.from(unicos).sort((a, b) => a.localeCompare(b, 'es'));
+  }, [opcionesDescarga, downloadFilters.provincia]);
+
+  useEffect(() => {
+    const term = downloadFilters.search.trim();
+    if (term.length < 2) {
+      setSearchSugerencias([]);
+      setLoadingSearchSugerencias(false);
+      return;
+    }
+    const timer = window.setTimeout(async () => {
+      setLoadingSearchSugerencias(true);
+      try {
+        const resp = await uploadAPI.obtenerSugerenciasBuscar(term, 8);
+        setSearchSugerencias(resp.data.data || []);
+      } catch {
+        setSearchSugerencias([]);
+      } finally {
+        setLoadingSearchSugerencias(false);
+      }
+    }, 300);
+    return () => window.clearTimeout(timer);
+  }, [downloadFilters.search]);
+
+  useEffect(() => {
+    const term = downloadFilters.responsable.trim();
+    if (term.length < 2) {
+      setResponsableSugerencias([]);
+      setLoadingResponsableSugerencias(false);
+      return;
+    }
+    const timer = window.setTimeout(async () => {
+      setLoadingResponsableSugerencias(true);
+      try {
+        const resp = await uploadAPI.obtenerSugerenciasResponsable(term, 8);
+        setResponsableSugerencias(resp.data.data || []);
+      } catch {
+        setResponsableSugerencias([]);
+      } finally {
+        setLoadingResponsableSugerencias(false);
+      }
+    }, 300);
+    return () => window.clearTimeout(timer);
+  }, [downloadFilters.responsable]);
 
   // Estado para el formulario de edición de obra
   const [obraForm, setObraForm] = useState<Partial<Obra>>({
@@ -269,11 +340,26 @@ const FileUpload: React.FC<FileUploadProps> = ({ onUploadComplete, onError, solo
 
   const handleFilterChange = (field: keyof typeof downloadFilters) => (event: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => {
     const value = event.target.value;
-    setDownloadFilters((prev) => ({
-      ...prev,
-      [field]: value
-    }));
+    setDownloadFilters((prev) => {
+      const next = { ...prev, [field]: value };
+      if (field === 'provincia') {
+        const municipiosValidos = opcionesDescarga.municipios
+          .filter((m) => m.provincia === value)
+          .map((m) => m.municipio);
+        if (prev.municipio && value && !municipiosValidos.includes(prev.municipio)) {
+          next.municipio = '';
+        }
+      }
+      return next;
+    });
   };
+
+  const handleFilterValueChange = (field: keyof typeof downloadFilters) => (value: string) => {
+    setDownloadFilters((prev) => ({ ...prev, [field]: value }));
+  };
+
+  const selectClassName =
+    'px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-[#42A5F5] focus:border-transparent w-full';
 
   // Buscar obra por ID
   const handleBuscarObra = async () => {
@@ -464,17 +550,17 @@ const FileUpload: React.FC<FileUploadProps> = ({ onUploadComplete, onError, solo
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          <input
-            type="text"
-            placeholder="Buscar (nombre, código, estado, responsable)"
+          <AutocompleteInput
             value={downloadFilters.search}
-            onChange={handleFilterChange('search')}
-            className="px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-[#42A5F5] focus:border-transparent"
+            onChange={handleFilterValueChange('search')}
+            options={searchSugerencias}
+            loading={loadingSearchSugerencias}
+            placeholder="Buscar (nombre, código, estado, responsable)"
           />
           <select
             value={downloadFilters.estado}
             onChange={handleFilterChange('estado')}
-            className="px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-[#42A5F5] focus:border-transparent"
+            className={selectClassName}
           >
             <option value="">Todos</option>
             {estadosParaDescarga.map((estado: string) => (
@@ -483,37 +569,52 @@ const FileUpload: React.FC<FileUploadProps> = ({ onUploadComplete, onError, solo
               </option>
             ))}
           </select>
-          <input
-            type="text"
-            placeholder="Responsable / Contratista"
+          <AutocompleteInput
             value={downloadFilters.responsable}
-            onChange={handleFilterChange('responsable')}
-            className="px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-[#42A5F5] focus:border-transparent"
+            onChange={handleFilterValueChange('responsable')}
+            options={responsableSugerencias}
+            loading={loadingResponsableSugerencias}
+            placeholder="Responsable / Contratista"
           />
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          <input
-            type="text"
-            placeholder="Provincia"
+          <select
             value={downloadFilters.provincia}
             onChange={handleFilterChange('provincia')}
-            className="px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-[#42A5F5] focus:border-transparent"
-          />
-          <input
-            type="text"
-            placeholder="Municipio"
+            className={selectClassName}
+          >
+            <option value="">Todas las provincias</option>
+            {opcionesDescarga.provincias.map((provincia) => (
+              <option key={provincia} value={provincia}>
+                {provincia}
+              </option>
+            ))}
+          </select>
+          <select
             value={downloadFilters.municipio}
             onChange={handleFilterChange('municipio')}
-            className="px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-[#42A5F5] focus:border-transparent"
-          />
-          <input
-            type="text"
-            placeholder="Nivel"
+            className={selectClassName}
+          >
+            <option value="">Todos los municipios</option>
+            {municipiosDisponibles.map((municipio) => (
+              <option key={municipio} value={municipio}>
+                {municipio}
+              </option>
+            ))}
+          </select>
+          <select
             value={downloadFilters.nivel}
             onChange={handleFilterChange('nivel')}
-            className="px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-[#42A5F5] focus:border-transparent"
-          />
+            className={selectClassName}
+          >
+            <option value="">Todos los niveles</option>
+            {opcionesDescarga.niveles.map((nivel) => (
+              <option key={nivel} value={nivel}>
+                {nivel}
+              </option>
+            ))}
+          </select>
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">

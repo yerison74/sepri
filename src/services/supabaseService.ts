@@ -516,6 +516,39 @@ function normalizarPayloadObra(
   );
 }
 
+const ORDENAR_SUGERENCIAS = (items: string[], term: string): string[] => {
+  const lower = term.toLowerCase();
+  return Array.from(new Set(items)).sort((a, b) => {
+    const aLower = a.toLowerCase();
+    const bLower = b.toLowerCase();
+    const aStarts = aLower.startsWith(lower) ? 0 : 1;
+    const bStarts = bLower.startsWith(lower) ? 0 : 1;
+    if (aStarts !== bStarts) return aStarts - bStarts;
+    const aIdx = aLower.indexOf(lower);
+    const bIdx = bLower.indexOf(lower);
+    if (aIdx !== bIdx) return aIdx - bIdx;
+    return a.localeCompare(b, 'es');
+  });
+};
+
+async function obtenerFilasObrasPaginadas<T extends string>(
+  columnas: T,
+): Promise<Record<string, unknown>[]> {
+  const PAGE_SIZE = 1000;
+  const filas: Record<string, unknown>[] = [];
+  let desde = 0;
+  while (true) {
+    const hasta = desde + PAGE_SIZE - 1;
+    const { data, error } = await supabase.from('obras').select(columnas).range(desde, hasta);
+    if (error) throw error;
+    const lote = (data || []) as Record<string, unknown>[];
+    filas.push(...lote);
+    if (lote.length < PAGE_SIZE) break;
+    desde += PAGE_SIZE;
+  }
+  return filas;
+}
+
 export const obrasService = {
   /**
    * Normaliza valores de estado para evitar conteos duplicados por variaciones
@@ -622,6 +655,122 @@ export const obrasService = {
     } catch (error: any) {
       console.error('Error al obtener obras:', error);
       throw new Error(error.message || 'Error al obtener obras');
+    }
+  },
+
+  /** Provincias, municipios y niveles distintos en la BD para filtros de descarga. */
+  obtenerOpcionesFiltroDescarga: async (): Promise<{
+    provincias: string[];
+    municipios: { provincia: string; municipio: string }[];
+    niveles: string[];
+  }> => {
+    try {
+      const filas = await obtenerFilasObrasPaginadas('provincia, municipio, nivel');
+      const provinciasSet = new Set<string>();
+      const municipiosMap = new Map<string, Set<string>>();
+      const nivelesSet = new Set<string>();
+
+      for (const fila of filas) {
+        const provincia = String(fila.provincia || '').trim();
+        const municipio = String(fila.municipio || '').trim();
+        const nivel = String(fila.nivel || '').trim();
+
+        if (provincia) provinciasSet.add(provincia);
+        if (municipio && provincia) {
+          if (!municipiosMap.has(provincia)) municipiosMap.set(provincia, new Set());
+          municipiosMap.get(provincia)!.add(municipio);
+        }
+        if (nivel) nivelesSet.add(nivel);
+      }
+
+      const municipios = Array.from(municipiosMap.entries()).flatMap(([prov, munSet]) =>
+        Array.from(munSet)
+          .sort((a, b) => a.localeCompare(b, 'es'))
+          .map((municipio) => ({ provincia: prov, municipio })),
+      );
+
+      return {
+        provincias: Array.from(provinciasSet).sort((a, b) => a.localeCompare(b, 'es')),
+        municipios,
+        niveles: Array.from(nivelesSet).sort((a, b) => a.localeCompare(b, 'es')),
+      };
+    } catch (error: any) {
+      console.error('Error al obtener opciones de filtro:', error);
+      return { provincias: [], municipios: [], niveles: [] };
+    }
+  },
+
+  /** Sugerencias de búsqueda general (nombre, código, contrato, id, responsable, estado). */
+  obtenerSugerenciasBuscarObras: async (search: string, limit = 8): Promise<string[]> => {
+    const term = (search || '').trim();
+    if (term.length < 2) return [];
+    try {
+      const pattern = `%${term.replace(/'/g, "''")}%`;
+      const { data, error } = await supabase
+        .from('obras')
+        .select('id, nombre, codigo, contrato, responsable, estado')
+        .or(
+          [
+            `nombre.ilike.${pattern}`,
+            `codigo.ilike.${pattern}`,
+            `contrato.ilike.${pattern}`,
+            `id.ilike.${pattern}`,
+            `responsable.ilike.${pattern}`,
+            `estado.ilike.${pattern}`,
+          ].join(','),
+        )
+        .limit(limit * 4);
+
+      if (error) throw error;
+
+      const lower = term.toLowerCase();
+      const candidatos: string[] = [];
+      for (const obra of data || []) {
+        for (const valor of [
+          obra.nombre,
+          obra.codigo,
+          obra.contrato,
+          obra.id,
+          obra.responsable,
+          obra.estado,
+        ]) {
+          const limpio = String(valor || '').trim();
+          if (limpio && limpio.toLowerCase().includes(lower)) {
+            candidatos.push(limpio);
+          }
+        }
+      }
+
+      return ORDENAR_SUGERENCIAS(candidatos, term).slice(0, limit);
+    } catch (error: any) {
+      console.error('Error al obtener sugerencias de búsqueda:', error);
+      return [];
+    }
+  },
+
+  /** Sugerencias de responsables/contratistas desde obras. */
+  obtenerSugerenciasResponsable: async (search: string, limit = 8): Promise<string[]> => {
+    const term = (search || '').trim();
+    if (term.length < 2) return [];
+    try {
+      const pattern = `%${term.replace(/'/g, "''")}%`;
+      const { data, error } = await supabase
+        .from('obras')
+        .select('responsable')
+        .ilike('responsable', pattern)
+        .not('responsable', 'is', null)
+        .limit(limit * 3);
+
+      if (error) throw error;
+
+      const candidatos = (data || [])
+        .map((row) => String(row.responsable || '').trim())
+        .filter(Boolean);
+
+      return ORDENAR_SUGERENCIAS(candidatos, term).slice(0, limit);
+    } catch (error: any) {
+      console.error('Error al obtener sugerencias de responsable:', error);
+      return [];
     }
   },
 

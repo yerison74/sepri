@@ -166,6 +166,48 @@ export const uploadAPI = {
     }
   },
 
+  obtenerOpcionesFiltroDescarga: async () => {
+    try {
+      const data = await obrasService.obtenerOpcionesFiltroDescarga();
+      return { data: { data } } as AxiosResponse<{ data: typeof data }>;
+    } catch (error: any) {
+      throw {
+        response: {
+          data: { error: error.message || 'Error al cargar opciones de filtro' },
+          status: 500,
+        },
+      };
+    }
+  },
+
+  obtenerSugerenciasBuscar: async (search: string, limit = 8) => {
+    try {
+      const data = await obrasService.obtenerSugerenciasBuscarObras(search, limit);
+      return { data: { data } } as AxiosResponse<{ data: string[] }>;
+    } catch (error: any) {
+      throw {
+        response: {
+          data: { error: error.message || 'Error al obtener sugerencias' },
+          status: 500,
+        },
+      };
+    }
+  },
+
+  obtenerSugerenciasResponsable: async (search: string, limit = 8) => {
+    try {
+      const data = await obrasService.obtenerSugerenciasResponsable(search, limit);
+      return { data: { data } } as AxiosResponse<{ data: string[] }>;
+    } catch (error: any) {
+      throw {
+        response: {
+          data: { error: error.message || 'Error al obtener sugerencias de responsable' },
+          status: 500,
+        },
+      };
+    }
+  },
+
   subirXml: async (file: File, onProgreso?: ProgresoCargaCallback) => {
     try {
       onProgreso?.({ mensaje: 'Iniciando carga del archivo…', porcentaje: 2 });
