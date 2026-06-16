@@ -114,6 +114,29 @@ export const statsAPI = {
       };
     }
   },
+
+  obtenerReporteObras: async (filtros: {
+    search?: string;
+    estado?: string;
+    responsable?: string;
+    provincia?: string;
+    municipio?: string;
+    nivel?: string;
+    fechaInauguracionDesde?: string;
+    fechaInauguracionHasta?: string;
+  } = {}) => {
+    try {
+      const data = await obrasService.obtenerEstadisticasReporte(filtros);
+      return { data: { data } } as AxiosResponse<{ data: typeof data }>;
+    } catch (error: any) {
+      throw {
+        response: {
+          data: { error: error.message || 'Error al generar reporte' },
+          status: 500,
+        },
+      };
+    }
+  },
 };
 
 // Upload API - Usando Supabase

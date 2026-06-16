@@ -3,6 +3,17 @@
  * Estos tipos deben coincidir con el esquema de la base de datos
  */
 
+export interface Contratista {
+  id: string;
+  responsable: string;
+  identificacion?: string | null;
+  telefono1?: string | null;
+  telefono2?: string | null;
+  correo?: string | null;
+  created_at?: string | null;
+  updated_at?: string | null;
+}
+
 export interface Obra {
   /** Identificador de la obra en Supabase (formato: OB-0000 o MT-0000, generado por el sistema). */
   id: string;
@@ -13,23 +24,47 @@ export interface Obra {
   /** Código de contrato (máx. 9 caracteres, guía: xxxx-xxxx). */
   contrato?: string | null;
   nombre: string;
+  nombre_inaugurado?: string | null;
   /** Tipo de obra: por ejemplo "Construccion" o "Mantenimiento". */
   tipo_obra?: string | null;
   estado: string;
   fecha_inicio?: string | null;
   fecha_fin_estimada?: string | null;
+  fecha_detenida?: string | null;
+  fecha_inauguracion?: string | null;
+  /** FK a contratistas; el nombre del responsable viene de esa tabla. */
+  contratista_id?: string | null;
+  contratista?: Contratista | null;
+  /** Alias de lectura desde contratista.responsable (no se persiste en obras). */
   responsable?: string | null;
   descripcion?: string | null;
   provincia?: string | null;
   municipio?: string | null;
   nivel?: string | null;
   no_aula?: number | null;
+  sorteo?: string | null;
+  area_construccion?: string | null;
+  coordinador?: string | null;
+  supervisor?: string | null;
+  porcentaje_ejecutado?: number | null;
+  presupuesto_total?: number | null;
+  avance_inicial?: number | null;
+  numero_ultima_cubicacion?: string | null;
+  tipo_ultima_cubicacion?: string | null;
+  estatus_ultima_cubicacion?: string | null;
+  grupo_ultimo_estatus_cubicacion?: string | null;
+  total_ultima_cubicacion?: number | null;
+  ultima_total_cubicado?: number | null;
+  total_cubicado_base?: number | null;
+  total_pagado?: number | null;
+  envio_snip?: string | null;
+  monto_snip?: number | null;
+  modificacion_snip?: string | null;
   observacion_legal?: string | null;
   observacion_financiero?: string | null;
   latitud?: string | null;
   longitud?: string | null;
   distrito_minerd_sigede?: string | null;
-  fecha_inauguracion?: string | null;
   created_at?: string | null;
   updated_at?: string | null;
 }
@@ -175,6 +210,36 @@ export interface ObrasFilters {
   nivel?: string;
   fechaInauguracionDesde?: string;
   fechaInauguracionHasta?: string;
+}
+
+/** Estadísticas agregadas del módulo Reporte (obras filtradas). */
+export interface ReporteObrasStats {
+  estadisticas: {
+    totalObras: number;
+    porEstado: Array<{ estado: string; cantidad: number }>;
+    totalAulas: number;
+    conUbicacion: number;
+  };
+  obrasPorProvincia: Array<{ provincia: string; cantidad: number }>;
+  obrasPorMunicipio: Array<{ municipio: string; provincia: string; cantidad: number }>;
+  obrasPorNivel: Array<{ nivel: string; cantidad: number }>;
+  obrasPorResponsable: Array<{ responsable: string; cantidad: number }>;
+  obrasProximasInaugurar: Obra[];
+  /** Obras del filtro con latitud/longitud GPS válidas (para el mapa). */
+  obrasConUbicacion: ObraUbicacionGps[];
+  /** Detalle completo por áreas del reporte (con contratista). */
+  obrasDetalle: Obra[];
+}
+
+/** Punto GPS de una obra para mapas de reporte. */
+export interface ObraUbicacionGps {
+  id: string;
+  codigo?: string | null;
+  nombre: string;
+  estado: string;
+  provincia?: string | null;
+  latitud: string;
+  longitud: string;
 }
 
 export interface TramitesFilters {

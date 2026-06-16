@@ -5,11 +5,29 @@ const STORAGE_KEY = 'sepri_user';
 const readStoredUser = (): any => {
   try {
     const s = localStorage.getItem(STORAGE_KEY);
-    return s ? JSON.parse(s) : null;
+    return s ? normalizeUser(JSON.parse(s)) : null;
   } catch {
     return null;
   }
 };
+
+/** Normaliza rol y permisos (jsonb a veces llega como string). */
+export function normalizeUser(usuario: any) {
+  if (!usuario) return null;
+  let permisos = usuario.permisos;
+  if (typeof permisos === 'string') {
+    try {
+      permisos = JSON.parse(permisos);
+    } catch {
+      permisos = {};
+    }
+  }
+  return {
+    ...usuario,
+    rol: String(usuario.rol || '').trim().toLowerCase(),
+    permisos: permisos && typeof permisos === 'object' ? permisos : {},
+  };
+}
 
 const saveUser = (usuario: any) => {
   try {
@@ -17,8 +35,9 @@ const saveUser = (usuario: any) => {
       localStorage.removeItem(STORAGE_KEY);
       return;
     }
-    const { password, ...rest } = usuario;
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(password !== undefined ? rest : usuario));
+    const normalized = normalizeUser(usuario);
+    const { password, ...rest } = normalized;
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(rest));
   } catch {
     localStorage.removeItem(STORAGE_KEY);
   }
@@ -30,8 +49,9 @@ export const AuthProvider = ({ children }: any) => {
   const [user, setUser] = useState<any>(() => readStoredUser());
 
   const login = useCallback((usuario: any) => {
-    saveUser(usuario);
-    setUser(usuario);
+    const normalized = normalizeUser(usuario);
+    saveUser(normalized);
+    setUser(normalized);
   }, []);
 
   const logout = useCallback(() => {
@@ -41,12 +61,13 @@ export const AuthProvider = ({ children }: any) => {
 
   const hasPermission = (permiso: string) => {
     if (!user) return false;
-    if (user.rol === 'admin') return true;
+    const rol = String(user.rol || '').toLowerCase();
+    if (rol === 'admin' || rol === 'supervision') return true;
     return !!user.permisos?.[permiso];
   };
 
   return (
-    <AuthContext.Provider value={{ user, login, logout, hasPermission }}>
+    <AuthContext.Provider value={{ user, loading: false, login, logout, hasPermission }}>
       {children}
     </AuthContext.Provider>
   );

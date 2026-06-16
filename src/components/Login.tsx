@@ -1,34 +1,26 @@
 import { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
 import { loginUsuario } from '../services/login.service';
 import { useAuth } from '../context/AuthContext';
 
-const REDIRECT_AFTER_LOGIN_KEY = 'redirectAfterLogin';
-
 export default function Login() {
   const { login } = useAuth();
-  const navigate = useNavigate();
   const [usuario, setUsuario] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
+  const [loading, setLoading] = useState(false);
 
-  const handleSubmit = async (e: any) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
+    setLoading(true);
     try {
       const user = await loginUsuario(usuario, password);
       login(user);
-      try {
-        const redirect = sessionStorage.getItem(REDIRECT_AFTER_LOGIN_KEY);
-        if (redirect) {
-          sessionStorage.removeItem(REDIRECT_AFTER_LOGIN_KEY);
-          navigate(redirect, { replace: true });
-        }
-      } catch {
-        /* sessionStorage no disponible */
-      }
-    } catch {
-      setError('Usuario o contraseña incorrectos');
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Usuario o contraseña incorrectos';
+      setError(msg);
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -102,19 +94,20 @@ export default function Login() {
 
           <button
             type="submit"
+            disabled={loading}
             style={{
               width: '100%',
               padding: 14,
-              background: '#4aa3ff',
+              background: loading ? '#93c5fd' : '#4aa3ff',
               color: '#fff',
               border: 'none',
               borderRadius: 10,
               fontSize: 16,
               fontWeight: 600,
-              cursor: 'pointer'
+              cursor: loading ? 'wait' : 'pointer'
             }}
           >
-            Iniciar sesión
+            {loading ? 'Verificando…' : 'Iniciar sesión'}
           </button>
         </form>
       </div>

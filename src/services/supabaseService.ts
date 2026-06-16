@@ -12,6 +12,9 @@ import type {
   Area,
   FormularioContratista,
   MovimientoSolicitudContratista,
+  ReporteObrasStats,
+  ObraUbicacionGps,
+  Contratista,
 } from '../types/database';
 
 // ── Generador de token seguro (Web Crypto API) ──────────────────────────────
@@ -188,14 +191,14 @@ export const formularioContratistaService = {
     }
   },
 
-  /** Sugerencias para nombre_empresa desde `obras.responsable` y `formulario_contratista.nombre_empresa`. */
+  /** Sugerencias para nombre_empresa desde contratistas y formulario_contratista. */
   obtenerSugerenciasNombreEmpresa: async (search: string, limit = 8): Promise<string[]> => {
     const term = (search || '').trim();
     if (!term) return [];
     try {
-      const [obrasRes, contratistaRes] = await Promise.all([
+      const [contratistasRes, contratistaRes] = await Promise.all([
         supabase
-          .from('obras')
+          .from('contratistas')
           .select('responsable')
           .ilike('responsable', `%${term}%`)
           .not('responsable', 'is', null)
@@ -208,12 +211,14 @@ export const formularioContratistaService = {
           .limit(limit * 2),
       ]);
 
-      if (obrasRes.error) throw obrasRes.error;
+      if (contratistasRes.error && contratistasRes.error.code !== '42P01') {
+        throw contratistasRes.error;
+      }
       if (contratistaRes.error) throw contratistaRes.error;
 
       const unique = new Set<string>();
-      for (const row of obrasRes.data || []) {
-        const value = (row as any)?.responsable?.trim();
+      for (const row of contratistasRes.data || []) {
+        const value = (row as { responsable?: string })?.responsable?.trim();
         if (value) unique.add(value);
       }
       for (const row of contratistaRes.data || []) {
@@ -480,25 +485,202 @@ export const formularioContratistaService = {
  */
 const OBRA_CAMPO_STRING_MAX: Record<string, number> = {
   id: 32,
-  codigo: 50,
+  codigo: 100,
   contrato: 9,
-  tipo_obra: 60,
+  tipo_obra: 100,
   estado: 120,
   nombre: 200,
-  responsable: 400,
+  nombre_inaugurado: 100,
   descripcion: 25000,
   provincia: 200,
   municipio: 200,
   nivel: 200,
+  sorteo: 100,
+  area_construccion: 100,
+  coordinador: 100,
+  supervisor: 100,
+  numero_ultima_cubicacion: 100,
+  tipo_ultima_cubicacion: 100,
+  estatus_ultima_cubicacion: 100,
+  grupo_ultimo_estatus_cubicacion: 100,
+  envio_snip: 100,
+  modificacion_snip: 100,
   observacion_legal: 25000,
   observacion_financiero: 25000,
-  latitud: 32,
-  longitud: 32,
+  latitud: 100,
+  longitud: 100,
   distrito_minerd_sigede: 200,
   fecha_inicio: 32,
   fecha_fin_estimada: 32,
   fecha_inauguracion: 32,
+  fecha_detenida: 32,
 };
+
+const OBRAS_SELECT_CON_CONTRATISTA = '*, contratistas(*)';
+const OBRAS_SELECT_INNER_CONTRATISTA = '*, contratistas!inner(*)';
+
+function mapObraRow(row: Record<string, unknown>): Obra {
+  const contratistaRaw = row.contratistas;
+  const contratista = (
+    Array.isArray(contratistaRaw) ? contratistaRaw[0] : contratistaRaw
+  ) as Contratista | null | undefined;
+  const responsableLegacy = row.responsable as string | null | undefined;
+  const { contratistas: _c, ...rest } = row;
+  return {
+    ...(rest as unknown as Obra),
+    contratista: contratista ?? null,
+    responsable: contratista?.responsable ?? responsableLegacy ?? null,
+  };
+}
+
+function mapObrasRows(rows: Record<string, unknown>[] | null): Obra[] {
+  return (rows || []).map((row) => mapObraRow(row));
+}
+
+function getResponsableFromJoinedRow(row: Record<string, unknown>): string {
+  const contratistaRaw = row.contratistas;
+  const contratista = (
+    Array.isArray(contratistaRaw) ? contratistaRaw[0] : contratistaRaw
+  ) as { responsable?: string } | null | undefined;
+  const legacy = row.responsable as string | undefined;
+  return (contratista?.responsable || legacy || '').trim() || 'Sin responsable';
+}
+
+async function obtenerFilasObrasUbicacionResponsablePaginadas(): Promise<Record<string, unknown>[]> {
+  const PAGE_SIZE = 1000;
+  const filas: Record<string, unknown>[] = [];
+  let desde = 0;
+  while (true) {
+    const hasta = desde + PAGE_SIZE - 1;
+    let { data, error } = await supabase
+      .from('obras')
+      .select('provincia, municipio, contratistas(responsable)')
+      .range(desde, hasta);
+
+    if (error) {
+      const fb = await supabase
+        .from('obras')
+        .select('provincia, municipio')
+        .range(desde, hasta);
+      if (fb.error) throw fb.error;
+      const lote = (fb.data || []) as Record<string, unknown>[];
+      filas.push(...lote);
+      if (lote.length < PAGE_SIZE) break;
+      desde += PAGE_SIZE;
+      continue;
+    }
+
+    const lote = (data || []) as Record<string, unknown>[];
+    filas.push(...lote);
+    if (lote.length < PAGE_SIZE) break;
+    desde += PAGE_SIZE;
+  }
+  return filas;
+}
+
+async function buscarContratistaIdsPorResponsable(term: string): Promise<string[]> {
+  const pattern = `%${term.replace(/'/g, "''")}%`;
+  const { data, error } = await supabase
+    .from('contratistas')
+    .select('id')
+    .ilike('responsable', pattern);
+  if (error) {
+    if (error.code === '42P01') return [];
+    throw error;
+  }
+  return (data || []).map((r) => r.id as string);
+}
+
+async function sugerenciasResponsableLegacy(_search: string, _limit: number): Promise<string[]> {
+  return [];
+}
+
+export const contratistasService = {
+  buscarOCrearPorResponsable: async (nombre: string): Promise<string | null> => {
+    const responsable = (nombre || '').trim();
+    if (!responsable) return null;
+
+    const { data: existente, error: findError } = await supabase
+      .from('contratistas')
+      .select('id')
+      .ilike('responsable', responsable)
+      .limit(1)
+      .maybeSingle();
+
+    if (findError && findError.code !== '42P01') throw findError;
+    if (existente?.id) return existente.id as string;
+
+    const { data: creado, error: insertError } = await supabase
+      .from('contratistas')
+      .insert([{ responsable: responsable.slice(0, 400) }])
+      .select('id')
+      .single();
+
+    if (insertError) {
+      if (insertError.code === '42P01') return null;
+      throw insertError;
+    }
+    return creado?.id as string;
+  },
+
+  obtenerSugerenciasResponsable: async (search: string, limit = 8): Promise<string[]> => {
+    const term = (search || '').trim();
+    if (term.length < 2) return [];
+    try {
+      const pattern = `%${term.replace(/'/g, "''")}%`;
+      const { data, error } = await supabase
+        .from('contratistas')
+        .select('responsable')
+        .ilike('responsable', pattern)
+        .limit(limit * 3);
+
+      if (error) {
+        if (error.code === '42P01') {
+          return sugerenciasResponsableLegacy(term, limit);
+        }
+        throw error;
+      }
+
+      const items = (data || [])
+        .map((r) => String(r.responsable || '').trim())
+        .filter(Boolean);
+      return ORDENAR_SUGERENCIAS(items, term).slice(0, limit);
+    } catch (error: any) {
+      console.error('Error al obtener sugerencias de contratista:', error);
+      return [];
+    }
+  },
+
+  actualizar: async (id: string, datos: Partial<Contratista>): Promise<Contratista> => {
+    const payload = Object.fromEntries(
+      Object.entries(datos).filter(([, v]) => v !== undefined),
+    );
+    const { data, error } = await supabase
+      .from('contratistas')
+      .update({ ...payload, updated_at: new Date().toISOString() })
+      .eq('id', id)
+      .select()
+      .single();
+    if (error) throw error;
+    if (!data) throw new Error('Contratista no encontrado');
+    return data as Contratista;
+  },
+};
+
+async function prepararPayloadObraPersistencia(
+  obra: Record<string, unknown> | Partial<Obra>,
+): Promise<Record<string, unknown>> {
+  const raw = { ...obra } as Record<string, unknown>;
+  const responsable = typeof raw.responsable === 'string' ? raw.responsable.trim() : '';
+  delete raw.responsable;
+  delete raw.contratista;
+
+  if (responsable && !raw.contratista_id) {
+    raw.contratista_id = await contratistasService.buscarOCrearPorResponsable(responsable);
+  }
+
+  return normalizarPayloadObra(raw);
+}
 
 function truncarStringObraPorCampo(key: string, v: unknown): unknown {
   if (typeof v !== 'string') return v;
@@ -564,18 +746,21 @@ export const obrasService = {
    */
   obtenerObras: async (filtros: ObrasFilters = {}): Promise<ApiResponse<Obra[]>> => {
     try {
+      const filtroResponsable = filtros.responsable?.trim() || '';
+      const selectCols = filtroResponsable
+        ? OBRAS_SELECT_INNER_CONTRATISTA
+        : OBRAS_SELECT_CON_CONTRATISTA;
+
       let query = supabase
         .from('obras')
-        .select('*', { count: 'exact' });
+        .select(selectCols, { count: 'exact' });
 
-      // Aplicar filtros
       if (filtros.estado) {
         query = query.eq('estado', filtros.estado);
       }
 
-      if (filtros.responsable && filtros.responsable.trim()) {
-        const term = filtros.responsable.trim().replace(/'/g, "''");
-        query = query.ilike('responsable', `%${term}%`);
+      if (filtroResponsable) {
+        query = query.ilike('contratistas.responsable', `%${filtroResponsable}%`);
       }
 
       if (filtros.provincia) {
@@ -598,58 +783,85 @@ export const obrasService = {
         query = query.lte('fecha_inauguracion', filtros.fechaInauguracionHasta);
       }
 
-      // Búsqueda por texto - busca en TODOS los campos posibles
       if (filtros.search) {
         const searchTerm = filtros.search.trim();
         const searchPattern = `%${searchTerm}%`;
-        
-        // Verificar si es numérico (ID interno de Supabase - campo id numérico auto-incrementado)
         const isNumeric = /^\d+$/.test(searchTerm);
-        
-        // Construir búsqueda en todos los campos que existen
-        let searchConditions: string[] = [];
-        
-        // Si es numérico, buscar por ID interno de Supabase (campo id numérico auto-incrementado)
+        const searchConditions: string[] = [];
+
         if (isNumeric) {
           searchConditions.push(`id.eq.${searchTerm}`);
         }
-        
-        // Buscar en todos los campos: id, contrato, codigo, responsable, nombre, etc.
+
         searchConditions.push(
-          `id.ilike.${searchPattern}`,       // ID sistema (OB-0000, MT-0000)
-          `contrato.ilike.${searchPattern}`, // Contrato (ej. xxxx-xxxx)
-          `codigo.ilike.${searchPattern}`,   // Código (0000-0000)
+          `id.ilike.${searchPattern}`,
+          `contrato.ilike.${searchPattern}`,
+          `codigo.ilike.${searchPattern}`,
           `nombre.ilike.${searchPattern}`,
-          `responsable.ilike.${searchPattern}`,
           `estado.ilike.${searchPattern}`,
           `descripcion.ilike.${searchPattern}`,
           `provincia.ilike.${searchPattern}`,
           `municipio.ilike.${searchPattern}`,
           `nivel.ilike.${searchPattern}`,
-          `distrito_minerd_sigede.ilike.${searchPattern}`
+          `distrito_minerd_sigede.ilike.${searchPattern}`,
+          `coordinador.ilike.${searchPattern}`,
+          `supervisor.ilike.${searchPattern}`,
+          `nombre_inaugurado.ilike.${searchPattern}`,
         );
-        
-        // Aplicar búsqueda OR en todos los campos
+
+        const contratistaIds = await buscarContratistaIdsPorResponsable(searchTerm);
+        if (contratistaIds.length > 0) {
+          searchConditions.push(`contratista_id.in.(${contratistaIds.join(',')})`);
+        }
+
         query = query.or(searchConditions.join(','));
       }
 
-      // Ordenar por fecha de creación descendente
       query = query.order('created_at', { ascending: false });
 
-      // Paginación
       if (filtros.limit) {
         query = query.limit(filtros.limit);
       }
-      if (filtros.offset) {
-        query = query.range(filtros.offset, filtros.offset + (filtros.limit || 10) - 1);
+      if (filtros.offset != null && filtros.limit) {
+        query = query.range(filtros.offset, filtros.offset + filtros.limit - 1);
       }
 
-      const { data, error, count } = await query;
+      let { data, error, count } = await query;
+
+      if (error?.message?.includes('contratistas') || error?.code === 'PGRST200') {
+        let fallback = supabase.from('obras').select('*', { count: 'exact' });
+        if (filtros.estado) fallback = fallback.eq('estado', filtros.estado);
+        if (filtroResponsable) {
+          const ids = await buscarContratistaIdsPorResponsable(filtroResponsable);
+          if (ids.length > 0) fallback = fallback.in('contratista_id', ids);
+          else {
+            return { data: [], count: 0 };
+          }
+        }
+        if (filtros.provincia) fallback = fallback.eq('provincia', filtros.provincia);
+        if (filtros.municipio) fallback = fallback.eq('municipio', filtros.municipio);
+        if (filtros.nivel) fallback = fallback.eq('nivel', filtros.nivel);
+        if (filtros.fechaInauguracionDesde) {
+          fallback = fallback.gte('fecha_inauguracion', filtros.fechaInauguracionDesde);
+        }
+        if (filtros.fechaInauguracionHasta) {
+          fallback = fallback.lte('fecha_inauguracion', filtros.fechaInauguracionHasta);
+        }
+        fallback = fallback.order('created_at', { ascending: false });
+        if (filtros.limit) fallback = fallback.limit(filtros.limit);
+        if (filtros.offset != null && filtros.limit) {
+          fallback = fallback.range(filtros.offset, filtros.offset + filtros.limit - 1);
+        }
+        const fb = await fallback;
+        data = fb.data;
+        error = fb.error;
+        count = fb.count;
+      }
 
       if (error) throw error;
 
       return {
-        data: data || [],
+        data: mapObrasRows((data || []) as Record<string, unknown>[]),
         count: count || 0,
       };
     } catch (error: any) {
@@ -708,14 +920,13 @@ export const obrasService = {
       const pattern = `%${term.replace(/'/g, "''")}%`;
       const { data, error } = await supabase
         .from('obras')
-        .select('id, nombre, codigo, contrato, responsable, estado')
+        .select('id, nombre, codigo, contrato, estado, contratista_id, contratistas(responsable)')
         .or(
           [
             `nombre.ilike.${pattern}`,
             `codigo.ilike.${pattern}`,
             `contrato.ilike.${pattern}`,
             `id.ilike.${pattern}`,
-            `responsable.ilike.${pattern}`,
             `estado.ilike.${pattern}`,
           ].join(','),
         )
@@ -726,12 +937,14 @@ export const obrasService = {
       const lower = term.toLowerCase();
       const candidatos: string[] = [];
       for (const obra of data || []) {
+        const row = obra as Record<string, unknown>;
+        const contratista = row.contratistas as { responsable?: string } | null;
         for (const valor of [
           obra.nombre,
           obra.codigo,
           obra.contrato,
           obra.id,
-          obra.responsable,
+          contratista?.responsable,
           obra.estado,
         ]) {
           const limpio = String(valor || '').trim();
@@ -748,30 +961,14 @@ export const obrasService = {
     }
   },
 
-  /** Sugerencias de responsables/contratistas desde obras. */
+  /** Sugerencias de responsables/contratistas. */
   obtenerSugerenciasResponsable: async (search: string, limit = 8): Promise<string[]> => {
-    const term = (search || '').trim();
-    if (term.length < 2) return [];
-    try {
-      const pattern = `%${term.replace(/'/g, "''")}%`;
-      const { data, error } = await supabase
-        .from('obras')
-        .select('responsable')
-        .ilike('responsable', pattern)
-        .not('responsable', 'is', null)
-        .limit(limit * 3);
+    return contratistasService.obtenerSugerenciasResponsable(search, limit);
+  },
 
-      if (error) throw error;
-
-      const candidatos = (data || [])
-        .map((row) => String(row.responsable || '').trim())
-        .filter(Boolean);
-
-      return ORDENAR_SUGERENCIAS(candidatos, term).slice(0, limit);
-    } catch (error: any) {
-      console.error('Error al obtener sugerencias de responsable:', error);
-      return [];
-    }
+  /** Fallback si no existe la tabla contratistas. */
+  obtenerSugerenciasResponsableLegacy: async (): Promise<string[]> => {
+    return [];
   },
 
   /**
@@ -782,50 +979,68 @@ export const obrasService = {
     const isNotFound = (err: any) =>
       err?.code === 'PGRST116' || err?.status === 406 || (err?.message && String(err.message).includes('406'));
 
+    const mapResult = (row: Record<string, unknown> | null) =>
+      row ? mapObraRow(row) : null;
+
     try {
       const idObraNormalizado = idObra.trim().toUpperCase();
       const searchPattern = `%${idObraNormalizado}%`;
 
-      // 1. Búsqueda exacta por id (varchar: OB-0000, MT-0000, 0000, etc.)
       let { data, error } = await supabase
         .from('obras')
-        .select('*')
+        .select(OBRAS_SELECT_CON_CONTRATISTA)
         .eq('id', idObraNormalizado)
         .maybeSingle();
 
-      if (!error && data) return data;
+      if (!error && data) return mapResult(data as Record<string, unknown>);
 
-      // 2. Si no hay resultado, buscar por codigo (siempre como string)
       if (isNotFound(error)) {
         const res = await supabase
           .from('obras')
-          .select('*')
+          .select(OBRAS_SELECT_CON_CONTRATISTA)
           .eq('codigo', idObraNormalizado)
           .maybeSingle();
-        if (!res.error && res.data) return res.data;
+        if (!res.error && res.data) return mapResult(res.data as Record<string, unknown>);
         error = res.error;
       }
 
-      // 3. Búsqueda parcial por id, contrato, codigo, responsable, nombre
       if (isNotFound(error)) {
+        const contratistaIds = await buscarContratistaIdsPorResponsable(idObraNormalizado);
+        const orParts = [
+          `id.ilike.${searchPattern}`,
+          `contrato.ilike.${searchPattern}`,
+          `codigo.ilike.${searchPattern}`,
+          `nombre.ilike.${searchPattern}`,
+          `estado.ilike.${searchPattern}`,
+          `provincia.ilike.${searchPattern}`,
+          `municipio.ilike.${searchPattern}`,
+        ];
+        if (contratistaIds.length > 0) {
+          orParts.push(`contratista_id.in.(${contratistaIds.join(',')})`);
+        }
+
         const { data: searchData, error: searchError } = await supabase
           .from('obras')
-          .select('*')
-          .or(
-            `id.ilike.${searchPattern},` +
-            `contrato.ilike.${searchPattern},` +
-            `codigo.ilike.${searchPattern},` +
-            `nombre.ilike.${searchPattern},` +
-            `responsable.ilike.${searchPattern},` +
-            `estado.ilike.${searchPattern},` +
-            `provincia.ilike.${searchPattern},` +
-            `municipio.ilike.${searchPattern}`
-          )
+          .select(OBRAS_SELECT_CON_CONTRATISTA)
+          .or(orParts.join(','))
           .limit(1);
-        if (!searchError && searchData && searchData.length > 0) return searchData[0];
+
+        if (!searchError && searchData?.[0]) {
+          return mapResult(searchData[0] as Record<string, unknown>);
+        }
       }
 
-      if (error && !isNotFound(error)) throw error;
+      if (error && !isNotFound(error)) {
+        const fallback = await supabase
+          .from('obras')
+          .select('*')
+          .eq('id', idObraNormalizado)
+          .maybeSingle();
+        if (!fallback.error && fallback.data) {
+          return mapObraRow(fallback.data as Record<string, unknown>);
+        }
+        throw error;
+      }
       return null;
     } catch (error: any) {
       console.error('Error al obtener obra por id_obra:', error);
@@ -841,14 +1056,14 @@ export const obrasService = {
     try {
       const { data, error } = await supabase
         .from('obras')
-        .select('*')
+        .select(OBRAS_SELECT_CON_CONTRATISTA)
         .eq('id', id)
         .single();
 
       if (error) throw error;
       if (!data) throw new Error('Obra no encontrada');
 
-      return data;
+      return mapObraRow(data as Record<string, unknown>);
     } catch (error: any) {
       console.error('Error al obtener obra:', error);
       throw new Error(error.message || 'Error al obtener obra');
@@ -867,18 +1082,18 @@ export const obrasService = {
       | Record<string, unknown>,
   ): Promise<Obra> => {
     try {
-      const payload = normalizarPayloadObra(obra as Record<string, unknown>);
+      const payload = await prepararPayloadObraPersistencia(obra as Record<string, unknown>);
 
       const { data, error } = await supabase
         .from('obras')
         .insert([payload])
-        .select()
+        .select(OBRAS_SELECT_CON_CONTRATISTA)
         .single();
 
       if (error) throw error;
       if (!data) throw new Error('Error al crear obra');
 
-      return data;
+      return mapObraRow(data as Record<string, unknown>);
     } catch (error: any) {
       console.error('Error al crear obra:', error);
       throw new Error(error.message || 'Error al crear obra');
@@ -898,10 +1113,15 @@ export const obrasService = {
       const todas: Obra[] = [];
       for (let i = 0; i < obras.length; i += chunkSize) {
         const slice = obras.slice(i, i + chunkSize);
-        const payloads = slice.map((o) => normalizarPayloadObra(o as Record<string, unknown>));
-        const { data, error } = await supabase.from('obras').insert(payloads).select();
+        const payloads = await Promise.all(
+          slice.map((o) => prepararPayloadObraPersistencia(o as Record<string, unknown>)),
+        );
+        const { data, error } = await supabase
+          .from('obras')
+          .insert(payloads)
+          .select(OBRAS_SELECT_CON_CONTRATISTA);
         if (error) throw error;
-        todas.push(...((data || []) as Obra[]));
+        todas.push(...mapObrasRows((data || []) as Record<string, unknown>[]));
       }
       return todas;
     } catch (error: any) {
@@ -916,19 +1136,19 @@ export const obrasService = {
    */
   actualizarObra: async (id: number | string, updates: Partial<Obra>): Promise<Obra> => {
     try {
-      const payload = normalizarPayloadObra(updates as Record<string, unknown>);
+      const payload = await prepararPayloadObraPersistencia(updates as Record<string, unknown>);
 
       const { data, error } = await supabase
         .from('obras')
         .update(payload)
         .eq('id', id)
-        .select()
+        .select(OBRAS_SELECT_CON_CONTRATISTA)
         .single();
 
       if (error) throw error;
       if (!data) throw new Error('Obra no encontrada');
 
-      return data;
+      return mapObraRow(data as Record<string, unknown>);
     } catch (error: any) {
       console.error('Error al actualizar obra:', error);
       throw new Error(error.message || 'Error al actualizar obra');
@@ -940,19 +1160,19 @@ export const obrasService = {
    */
   actualizarObraPorCodigo: async (codigo: string, updates: Partial<Obra>): Promise<Obra> => {
     try {
-      const payload = normalizarPayloadObra(updates as Record<string, unknown>);
+      const payload = await prepararPayloadObraPersistencia(updates as Record<string, unknown>);
 
       const { data, error } = await supabase
         .from('obras')
         .update(payload)
         .eq('codigo', codigo)
-        .select()
+        .select(OBRAS_SELECT_CON_CONTRATISTA)
         .maybeSingle();
 
       if (error) throw error;
       if (!data) throw new Error('Obra no encontrada para el código especificado');
 
-      return data;
+      return mapObraRow(data as Record<string, unknown>);
     } catch (error: any) {
       console.error('Error al actualizar obra por código:', error);
       throw new Error(error.message || 'Error al actualizar obra por código');
@@ -973,6 +1193,140 @@ export const obrasService = {
     } catch (error: any) {
       console.error('Error al eliminar obra:', error);
       throw new Error(error.message || 'Error al eliminar obra');
+    }
+  },
+
+  /**
+   * Estadísticas de obras aplicando los mismos filtros que listado/descarga.
+   */
+  obtenerEstadisticasReporte: async (filtros: ObrasFilters = {}): Promise<ReporteObrasStats> => {
+    try {
+      const PAGE_SIZE = 1000;
+      const obras: Obra[] = [];
+      let offset = 0;
+
+      while (true) {
+        const lote = await obrasService.obtenerObras({
+          ...filtros,
+          limit: PAGE_SIZE,
+          offset,
+        });
+        obras.push(...(lote.data || []));
+        if (!lote.data || lote.data.length < PAGE_SIZE) break;
+        offset += PAGE_SIZE;
+      }
+
+      const conteoPorEstado = new Map<string, number>();
+      const obrasPorResponsableMap = new Map<string, number>();
+      const obrasPorProvinciaMap = new Map<string, number>();
+      const obrasPorMunicipioMap = new Map<string, { provincia: string; cantidad: number }>();
+      const obrasPorNivelMap = new Map<string, number>();
+      let totalAulas = 0;
+      let conUbicacion = 0;
+
+      const hoy = new Date().toISOString().split('T')[0];
+      const limite = new Date();
+      limite.setDate(limite.getDate() + 30);
+      const limiteStr = limite.toISOString().split('T')[0];
+
+      const obrasProximasInaugurar: Obra[] = [];
+      const obrasConUbicacion: ObraUbicacionGps[] = [];
+
+      for (const obra of obras) {
+        const estado = obrasService.normalizarEstadoDashboard(obra.estado);
+        conteoPorEstado.set(estado, (conteoPorEstado.get(estado) || 0) + 1);
+
+        const responsable =
+          (obra.contratista?.responsable || obra.responsable || '').trim() || 'Sin responsable';
+        obrasPorResponsableMap.set(responsable, (obrasPorResponsableMap.get(responsable) || 0) + 1);
+
+        const provincia = (obra.provincia || '').trim() || 'Sin provincia';
+        obrasPorProvinciaMap.set(provincia, (obrasPorProvinciaMap.get(provincia) || 0) + 1);
+
+        const municipio = (obra.municipio || '').trim() || 'Sin municipio';
+        const keyMun = `${provincia}::${municipio}`;
+        const prevMun = obrasPorMunicipioMap.get(keyMun);
+        if (prevMun) prevMun.cantidad += 1;
+        else obrasPorMunicipioMap.set(keyMun, { provincia, cantidad: 1 });
+
+        const nivel = (obra.nivel || '').trim() || 'Sin nivel';
+        obrasPorNivelMap.set(nivel, (obrasPorNivelMap.get(nivel) || 0) + 1);
+
+        if (obra.no_aula != null && !Number.isNaN(Number(obra.no_aula))) {
+          totalAulas += Number(obra.no_aula);
+        }
+        if (obra.latitud && obra.longitud) {
+          conUbicacion += 1;
+          const lat = parseFloat(String(obra.latitud).trim());
+          const lng = parseFloat(String(obra.longitud).trim());
+          if (
+            Number.isFinite(lat) &&
+            Number.isFinite(lng) &&
+            lat >= -90 &&
+            lat <= 90 &&
+            lng >= -180 &&
+            lng <= 180
+          ) {
+            obrasConUbicacion.push({
+              id: obra.id,
+              codigo: obra.codigo,
+              nombre: obra.nombre,
+              estado: obrasService.normalizarEstadoDashboard(obra.estado),
+              provincia: obra.provincia,
+              latitud: String(obra.latitud).trim(),
+              longitud: String(obra.longitud).trim(),
+            });
+          }
+        }
+
+        const fi = obra.fecha_inauguracion;
+        if (fi && fi >= hoy && fi <= limiteStr) {
+          obrasProximasInaugurar.push(obra);
+        }
+      }
+
+      obrasProximasInaugurar.sort((a, b) =>
+        String(a.fecha_inauguracion || '').localeCompare(String(b.fecha_inauguracion || '')),
+      );
+
+      const porEstado = Array.from(conteoPorEstado.entries())
+        .map(([estado, cantidad]) => ({ estado, cantidad }))
+        .sort((a, b) => b.cantidad - a.cantidad);
+
+      return {
+        estadisticas: {
+          totalObras: obras.length,
+          porEstado,
+          totalAulas,
+          conUbicacion,
+        },
+        obrasPorProvincia: Array.from(obrasPorProvinciaMap.entries())
+          .map(([provincia, cantidad]) => ({ provincia, cantidad }))
+          .filter((p) => p.provincia !== 'Sin provincia')
+          .sort((a, b) => b.cantidad - a.cantidad),
+        obrasPorMunicipio: Array.from(obrasPorMunicipioMap.entries())
+          .map(([key, { provincia, cantidad }]) => ({
+            municipio: key.split('::')[1] || '',
+            provincia,
+            cantidad,
+          }))
+          .filter((m) => m.municipio !== 'Sin municipio')
+          .sort((a, b) => b.cantidad - a.cantidad),
+        obrasPorNivel: Array.from(obrasPorNivelMap.entries())
+          .map(([nivel, cantidad]) => ({ nivel, cantidad }))
+          .filter((n) => n.nivel !== 'Sin nivel')
+          .sort((a, b) => b.cantidad - a.cantidad),
+        obrasPorResponsable: Array.from(obrasPorResponsableMap.entries())
+          .map(([responsable, cantidad]) => ({ responsable, cantidad }))
+          .sort((a, b) => b.cantidad - a.cantidad)
+          .slice(0, 15),
+        obrasProximasInaugurar: obrasProximasInaugurar.slice(0, 20),
+        obrasConUbicacion,
+        obrasDetalle: obras,
+      };
+    } catch (error: any) {
+      console.error('Error al obtener estadísticas de reporte:', error);
+      throw new Error(error.message || 'Error al obtener estadísticas del reporte');
     }
   },
 
@@ -1027,32 +1381,48 @@ export const obrasService = {
       const fechaLimiteStr = fechaLimite.toISOString().split('T')[0];
       const fechaHoy = new Date().toISOString().split('T')[0];
 
-      const { data: obrasProximas } = await supabase
+      const { data: obrasProximasRaw, error: proximasError } = await supabase
         .from('obras')
-        .select('*')
+        .select(OBRAS_SELECT_CON_CONTRATISTA)
         .not('fecha_inauguracion', 'is', null)
         .gte('fecha_inauguracion', fechaHoy)
         .lte('fecha_inauguracion', fechaLimiteStr)
         .order('fecha_inauguracion', { ascending: true })
         .limit(10);
 
-      // Obtener obras por responsable
-      const todasObras = await obtenerTodasLasObras('responsable, provincia, municipio');
+      let obrasProximas: Obra[] = [];
+      if (!proximasError && obrasProximasRaw) {
+        obrasProximas = mapObrasRows(obrasProximasRaw as Record<string, unknown>[]);
+      } else {
+        const fb = await supabase
+          .from('obras')
+          .select('*')
+          .not('fecha_inauguracion', 'is', null)
+          .gte('fecha_inauguracion', fechaHoy)
+          .lte('fecha_inauguracion', fechaLimiteStr)
+          .order('fecha_inauguracion', { ascending: true })
+          .limit(10);
+        if (!fb.error && fb.data) {
+          obrasProximas = mapObrasRows(fb.data as Record<string, unknown>[]);
+        }
+      }
+
+      const todasObras = await obtenerFilasObrasUbicacionResponsablePaginadas();
 
       const obrasPorResponsableMap = new Map<string, number>();
       const obrasPorProvinciaMap = new Map<string, number>();
       const obrasPorMunicipioMap = new Map<string, { provincia: string; cantidad: number }>();
 
       if (todasObras && todasObras.length > 0) {
-        todasObras.forEach(obra => {
-          const responsable = obra.responsable || 'Sin responsable';
+        todasObras.forEach((obra) => {
+          const responsable = getResponsableFromJoinedRow(obra);
           obrasPorResponsableMap.set(
             responsable,
             (obrasPorResponsableMap.get(responsable) || 0) + 1
           );
-          const provincia = (obra.provincia || '').trim() || 'Sin provincia';
+          const provincia = String(obra.provincia || '').trim() || 'Sin provincia';
           obrasPorProvinciaMap.set(provincia, (obrasPorProvinciaMap.get(provincia) || 0) + 1);
-          const municipio = (obra.municipio || '').trim() || 'Sin municipio';
+          const municipio = String(obra.municipio || '').trim() || 'Sin municipio';
           const key = `${provincia}::${municipio}`;
           const prev = obrasPorMunicipioMap.get(key);
           if (prev) prev.cantidad += 1;

@@ -18,6 +18,8 @@ export const PERMISOS = {
   EDITAR_ATENCION_CONTRATISTA: 'editar_atencion_contratista',
   VER_CONFIGURACION: 'ver_configuracion',
   EDITAR_CONFIGURACION: 'editar_configuracion',
+  VER_REPORTE: 'ver_reporte',
+  EDITAR_REPORTE: 'editar_reporte',
 } as const;
 
 export type PermisoCode = (typeof PERMISOS)[keyof typeof PERMISOS];
@@ -36,6 +38,8 @@ export const PERMISOS_LISTA: { codigo: PermisoCode; label: string }[] = [
   { codigo: PERMISOS.EDITAR_TRAMITES, label: 'Creación y seguimiento de Trámites' },
   { codigo: PERMISOS.VER_ATENCION_CONTRATISTA, label: 'Visualización de Atención al contratista' },
   { codigo: PERMISOS.EDITAR_ATENCION_CONTRATISTA, label: 'Edición de Atención al contratista' },
+  { codigo: PERMISOS.VER_REPORTE, label: 'Visualización de Reporte' },
+  { codigo: PERMISOS.EDITAR_REPORTE, label: 'Exportación y reportes' },
   { codigo: PERMISOS.VER_CONFIGURACION, label: 'Visualización de Configuración' },
   { codigo: PERMISOS.EDITAR_CONFIGURACION, label: 'Edición de Configuración' },
 ];
@@ -46,8 +50,9 @@ export const TAB_PERMISOS: Record<number, PermisoCode> = {
   1: PERMISOS.VER_OBRAS,
   2: PERMISOS.VER_CARGA_OBRAS,
   3: PERMISOS.VER_TRAMITES,
-  4: PERMISOS.VER_ATENCION_CONTRATISTA, // Atencion al contratista
-  5: PERMISOS.VER_CONFIGURACION, // Configuración del sistema
+  4: PERMISOS.VER_ATENCION_CONTRATISTA,
+  5: PERMISOS.VER_REPORTE,
+  6: PERMISOS.VER_CONFIGURACION,
 };
 
 export function tienePermiso(permisosUsuario: string[] | null | undefined, codigo: PermisoCode): boolean {

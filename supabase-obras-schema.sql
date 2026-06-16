@@ -1,5 +1,6 @@
 -- Cambios de esquema para la tabla "obras" e "historial_estados".
 -- Ejecutar este script en el editor SQL de Supabase.
+-- Para Reporte de Obras + contratistas, ejecutar también: supabase-obras-reporte-schema.sql
 
 -- 1) Campo contrato en obras (máx. 9 caracteres, guía: xxxx-xxxx)
 ALTER TABLE obras

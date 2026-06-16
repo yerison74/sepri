@@ -5,16 +5,19 @@ import DownloadIcon from '@mui/icons-material/Download';
 import SearchIcon from '@mui/icons-material/Search';
 import SaveIcon from '@mui/icons-material/Save';
 import EditIcon from '@mui/icons-material/Edit';
-import LocationOnIcon from '@mui/icons-material/LocationOn';
-import CalendarTodayIcon from '@mui/icons-material/CalendarToday';
-import DescriptionIcon from '@mui/icons-material/Description';
-import PersonIcon from '@mui/icons-material/Person';
 import InfoIcon from '@mui/icons-material/Info';
 import { uploadAPI, statsAPI } from '../services/api';
 import type { ProgresoCargaObra } from '../services/api';
-import { obrasService } from '../services/supabaseService';
-import type { Obra } from '../types/database';
+import { obrasService, contratistasService } from '../services/supabaseService';
 import AutocompleteInput from './AutocompleteInput';
+import ObraFormulario from './ObraFormulario';
+import {
+  createEmptyObraFormState,
+  obraToFormState,
+  formStateToObraUpdates,
+  formStateToContratistaUpdates,
+  type ObraFormState,
+} from '../utils/obraFormulario';
 
 interface FileUploadProps {
   onUploadComplete?: () => void;
@@ -132,33 +135,35 @@ const FileUpload: React.FC<FileUploadProps> = ({ onUploadComplete, onError, solo
     return () => window.clearTimeout(timer);
   }, [downloadFilters.responsable]);
 
-  // Estado para el formulario de edición de obra
-  const [obraForm, setObraForm] = useState<Partial<Obra>>({
-    contrato: '',
-    codigo: '',
-    nombre: '',
-    estado: '',
-    fecha_inicio: '',
-    fecha_fin_estimada: '',
-    responsable: '',
-    descripcion: '',
-    provincia: '',
-    municipio: '',
-    nivel: '',
-    no_aula: undefined,
-    observacion_legal: '',
-    observacion_financiero: '',
-    latitud: '',
-    longitud: '',
-    distrito_minerd_sigede: '',
-    fecha_inauguracion: ''
-  });
+  const [obraFormState, setObraFormState] = useState<ObraFormState>(createEmptyObraFormState());
+  const [obraFormResponsableSugerencias, setObraFormResponsableSugerencias] = useState<string[]>([]);
+  const [loadingObraFormResponsable, setLoadingObraFormResponsable] = useState(false);
   const [obraId, setObraId] = useState<string>('');
   const [loadingObra, setLoadingObra] = useState(false);
   const [savingObra, setSavingObra] = useState(false);
   const [obraMessage, setObraMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
-  // ID actual de la obra seleccionada (en la BD es string: OB-0000, MT-0000, etc.)
   const [obraActualId, setObraActualId] = useState<string | null>(null);
+
+  useEffect(() => {
+    const term = obraFormState.contratista.responsable.trim();
+    if (term.length < 2) {
+      setObraFormResponsableSugerencias([]);
+      setLoadingObraFormResponsable(false);
+      return;
+    }
+    const timer = window.setTimeout(async () => {
+      setLoadingObraFormResponsable(true);
+      try {
+        const resp = await uploadAPI.obtenerSugerenciasResponsable(term, 8);
+        setObraFormResponsableSugerencias(resp.data.data || []);
+      } catch {
+        setObraFormResponsableSugerencias([]);
+      } finally {
+        setLoadingObraFormResponsable(false);
+      }
+    }, 300);
+    return () => window.clearTimeout(timer);
+  }, [obraFormState.contratista.responsable]);
 
   const resetMessages = () => {
     setError(null);
@@ -379,51 +384,12 @@ const FileUpload: React.FC<FileUploadProps> = ({ onUploadComplete, onError, solo
       
       if (!obra) {
         setObraMessage({ type: 'error', text: `No se encontró una obra con el ID: ${idObraNormalizado}` });
-        setObraForm({
-          contrato: '',
-          codigo: '',
-          nombre: '',
-          estado: '',
-          fecha_inicio: '',
-          fecha_fin_estimada: '',
-          responsable: '',
-          descripcion: '',
-          provincia: '',
-          municipio: '',
-          nivel: '',
-          no_aula: undefined,
-          observacion_legal: '',
-          observacion_financiero: '',
-          latitud: '',
-          longitud: '',
-          distrito_minerd_sigede: '',
-          fecha_inauguracion: ''
-        });
+        setObraFormState(createEmptyObraFormState());
         setObraActualId(null);
         return;
       }
 
-      // Llenar el formulario con los datos de la obra
-      setObraForm({
-        contrato: obra.contrato || '',
-        codigo: obra.codigo || '',
-        nombre: obra.nombre || '',
-        estado: obra.estado || '',
-        fecha_inicio: obra.fecha_inicio || '',
-        fecha_fin_estimada: obra.fecha_fin_estimada || '',
-        responsable: obra.responsable || '',
-        descripcion: obra.descripcion || '',
-        provincia: obra.provincia || '',
-        municipio: obra.municipio || '',
-        nivel: obra.nivel || '',
-        no_aula: obra.no_aula || undefined,
-        observacion_legal: obra.observacion_legal || '',
-        observacion_financiero: obra.observacion_financiero || '',
-        latitud: obra.latitud || '',
-        longitud: obra.longitud || '',
-        distrito_minerd_sigede: obra.distrito_minerd_sigede || '',
-        fecha_inauguracion: obra.fecha_inauguracion || ''
-      });
+      setObraFormState(obraToFormState(obra));
       setObraActualId(obra.id);
       setObraMessage({ type: 'success', text: `Obra encontrada: ${obra.nombre}` });
     } catch (err: any) {
@@ -441,7 +407,7 @@ const FileUpload: React.FC<FileUploadProps> = ({ onUploadComplete, onError, solo
       return;
     }
 
-    if (!obraForm.nombre || !obraForm.estado) {
+    if (!obraFormState.obra.nombre || !obraFormState.obra.estado) {
       setObraMessage({ type: 'error', text: 'Los campos Nombre y Estado son obligatorios' });
       return;
     }
@@ -450,28 +416,19 @@ const FileUpload: React.FC<FileUploadProps> = ({ onUploadComplete, onError, solo
       setSavingObra(true);
       setObraMessage(null);
 
-      const updates: Partial<Obra> = {
-        contrato: obraForm.contrato?.trim() || undefined,
-        codigo: obraForm.codigo || undefined,
-        nombre: obraForm.nombre,
-        estado: obraForm.estado,
-        fecha_inicio: obraForm.fecha_inicio || undefined,
-        fecha_fin_estimada: obraForm.fecha_fin_estimada || undefined,
-        responsable: obraForm.responsable || undefined,
-        descripcion: obraForm.descripcion || undefined,
-        provincia: obraForm.provincia || undefined,
-        municipio: obraForm.municipio || undefined,
-        nivel: obraForm.nivel || undefined,
-        no_aula: obraForm.no_aula || undefined,
-        observacion_legal: obraForm.observacion_legal || undefined,
-        observacion_financiero: obraForm.observacion_financiero || undefined,
-        latitud: obraForm.latitud || undefined,
-        longitud: obraForm.longitud || undefined,
-        distrito_minerd_sigede: obraForm.distrito_minerd_sigede || undefined,
-        fecha_inauguracion: obraForm.fecha_inauguracion || undefined
-      };
+      const updates = formStateToObraUpdates(obraFormState);
+      const obraActualizada = await obrasService.actualizarObra(obraActualId, updates);
 
-      await obrasService.actualizarObra(obraActualId, updates);
+      const contratistaUpdates = formStateToContratistaUpdates(obraFormState);
+      const contratistaId = obraActualizada.contratista_id;
+      if (contratistaUpdates && contratistaId) {
+        await contratistasService.actualizar(contratistaId, contratistaUpdates);
+      }
+
+      const refreshed = await obrasService.obtenerObraPorIdObra(obraActualId);
+      if (refreshed) {
+        setObraFormState(obraToFormState(refreshed));
+      }
       setObraMessage({ type: 'success', text: 'Obra actualizada exitosamente' });
       
       if (onUploadComplete) {
@@ -482,14 +439,6 @@ const FileUpload: React.FC<FileUploadProps> = ({ onUploadComplete, onError, solo
     } finally {
       setSavingObra(false);
     }
-  };
-
-  const handleObraFormChange = (field: keyof Obra) => (event: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => {
-    const value = event.target.value;
-    setObraForm((prev) => ({
-      ...prev,
-      [field]: field === 'no_aula' ? (value ? parseInt(value) : undefined) : value
-    }));
   };
 
   return (
@@ -798,300 +747,36 @@ const FileUpload: React.FC<FileUploadProps> = ({ onUploadComplete, onError, solo
           {/* Formulario de obra - Solo se muestra si hay una obra cargada */}
           {obraActualId && (
             <div className="space-y-6">
-              {/* Sección: Información Básica */}
-              <div className="bg-white rounded-lg shadow-md border border-gray-200 p-6">
-                <div className="flex items-center gap-3 mb-6 pb-3 border-b border-gray-200">
-                  <InfoIcon className="text-[#42A5F5] text-xl" />
-                  <h5 className="text-lg font-semibold text-gray-800">Información Básica</h5>
-                </div>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
-                      Contrato
-                    </label>
-                    <input
-                      type="text"
-                      value={obraForm.contrato || ''}
-                      onChange={handleObraFormChange('contrato')}
-                      placeholder="Ej: 1234-5678 (opcional)"
-                      maxLength={9}
-                      className="w-full px-4 py-2.5 border-2 border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-[#42A5F5] focus:border-[#42A5F5] transition-all"
-                    />
-                    <p className="text-xs text-gray-500 mt-1">Opcional. Guía: xxxx-xxxx (máx. 9 caracteres)</p>
-                  </div>
+              <ObraFormulario
+                form={obraFormState}
+                onChange={setObraFormState}
+                estadosDisponibles={estadosParaDescarga}
+                responsableSugerencias={obraFormResponsableSugerencias}
+                loadingResponsableSugerencias={loadingObraFormResponsable}
+                readOnly={soloLectura}
+              />
 
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
-                      Código
-                    </label>
-                    <input
-                      type="text"
-                      value={obraForm.codigo || ''}
-                      onChange={handleObraFormChange('codigo')}
-                      placeholder="123-456"
-                      className="w-full px-4 py-2.5 border-2 border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-[#42A5F5] focus:border-[#42A5F5] transition-all"
-                    />
-                  </div>
-
-                  <div className="md:col-span-2">
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
-                      Nombre de la Obra <span className="text-red-500">*</span>
-                    </label>
-                    <input
-                      type="text"
-                      value={obraForm.nombre || ''}
-                      onChange={handleObraFormChange('nombre')}
-                      required
-                      className="w-full px-4 py-2.5 border-2 border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-[#42A5F5] focus:border-[#42A5F5] transition-all"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
-                      Estado <span className="text-red-500">*</span>
-                    </label>
-                    <select
-                      value={obraForm.estado || ''}
-                      onChange={handleObraFormChange('estado')}
-                      required
-                      className="w-full px-4 py-2.5 border-2 border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-[#42A5F5] focus:border-[#42A5F5] transition-all bg-white"
-                    >
-                      <option value="">Seleccione un estado</option>
-                      {estadosParaDescarga.map((estado: string) => (
-                        <option key={estado} value={estado}>
-                          {estado}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
-                      <PersonIcon className="inline mr-1 text-gray-500" style={{ fontSize: '18px', verticalAlign: 'middle' }} />
-                      Responsable / Contratista
-                    </label>
-                    <input
-                      type="text"
-                      value={obraForm.responsable || ''}
-                      onChange={handleObraFormChange('responsable')}
-                      placeholder="Nombre del responsable"
-                      className="w-full px-4 py-2.5 border-2 border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-[#42A5F5] focus:border-[#42A5F5] transition-all"
-                    />
-                  </div>
-
-                  <div className="md:col-span-2">
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
-                      Descripción
-                    </label>
-                    <textarea
-                      value={obraForm.descripcion || ''}
-                      onChange={handleObraFormChange('descripcion')}
-                      rows={3}
-                      placeholder="Descripción detallada de la obra..."
-                      className="w-full px-4 py-2.5 border-2 border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-[#42A5F5] focus:border-[#42A5F5] transition-all resize-none"
-                    />
-                  </div>
-                </div>
-              </div>
-
-              {/* Sección: Ubicación */}
-              <div className="bg-white rounded-lg shadow-md border border-gray-200 p-6">
-                <div className="flex items-center gap-3 mb-6 pb-3 border-b border-gray-200">
-                  <LocationOnIcon className="text-[#42A5F5] text-xl" />
-                  <h5 className="text-lg font-semibold text-gray-800">Ubicación</h5>
-                </div>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
-
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
-                      Provincia
-                    </label>
-                    <input
-                      type="text"
-                      value={obraForm.provincia || ''}
-                      onChange={handleObraFormChange('provincia')}
-                      placeholder="Nombre de la provincia"
-                      className="w-full px-4 py-2.5 border-2 border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-[#42A5F5] focus:border-[#42A5F5] transition-all"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
-                      Municipio
-                    </label>
-                    <input
-                      type="text"
-                      value={obraForm.municipio || ''}
-                      onChange={handleObraFormChange('municipio')}
-                      placeholder="Nombre del municipio"
-                      className="w-full px-4 py-2.5 border-2 border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-[#42A5F5] focus:border-[#42A5F5] transition-all"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
-                      Nivel Educativo
-                    </label>
-                    <input
-                      type="text"
-                      value={obraForm.nivel || ''}
-                      onChange={handleObraFormChange('nivel')}
-                      placeholder="Inicial, Primario, Secundario, etc."
-                      className="w-full px-4 py-2.5 border-2 border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-[#42A5F5] focus:border-[#42A5F5] transition-all"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
-                      Número de Aula
-                    </label>
-                    <input
-                      type="number"
-                      value={obraForm.no_aula || ''}
-                      onChange={handleObraFormChange('no_aula')}
-                      placeholder="Ej: 1"
-                      className="w-full px-4 py-2.5 border-2 border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-[#42A5F5] focus:border-[#42A5F5] transition-all"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
-                      Latitud
-                    </label>
-                    <input
-                      type="text"
-                      value={obraForm.latitud || ''}
-                      onChange={handleObraFormChange('latitud')}
-                      placeholder="Ej: 18.4861"
-                      className="w-full px-4 py-2.5 border-2 border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-[#42A5F5] focus:border-[#42A5F5] transition-all"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
-                      Longitud
-                    </label>
-                    <input
-                      type="text"
-                      value={obraForm.longitud || ''}
-                      onChange={handleObraFormChange('longitud')}
-                      placeholder="Ej: -69.9312"
-                      className="w-full px-4 py-2.5 border-2 border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-[#42A5F5] focus:border-[#42A5F5] transition-all"
-                    />
-                  </div>
-
-                  <div className="md:col-span-2">
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
-                      Distrito MINERD SIGEDE
-                    </label>
-                    <input
-                      type="text"
-                      value={obraForm.distrito_minerd_sigede || ''}
-                      onChange={handleObraFormChange('distrito_minerd_sigede')}
-                      placeholder="Código del distrito"
-                      className="w-full px-4 py-2.5 border-2 border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-[#42A5F5] focus:border-[#42A5F5] transition-all"
-                    />
-                  </div>
-                </div>
-              </div>
-
-              {/* Sección: Fechas */}
-              <div className="bg-white rounded-lg shadow-md border border-gray-200 p-6">
-                <div className="flex items-center gap-3 mb-6 pb-3 border-b border-gray-200">
-                  <CalendarTodayIcon className="text-[#42A5F5] text-xl" />
-                  <h5 className="text-lg font-semibold text-gray-800">Fechas Importantes</h5>
-                </div>
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
-                      Fecha de Inicio
-                    </label>
-                    <input
-                      type="date"
-                      value={obraForm.fecha_inicio || ''}
-                      onChange={handleObraFormChange('fecha_inicio')}
-                      className="w-full px-4 py-2.5 border-2 border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-[#42A5F5] focus:border-[#42A5F5] transition-all"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
-                      Fecha Fin Estimada
-                    </label>
-                    <input
-                      type="date"
-                      value={obraForm.fecha_fin_estimada || ''}
-                      onChange={handleObraFormChange('fecha_fin_estimada')}
-                      className="w-full px-4 py-2.5 border-2 border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-[#42A5F5] focus:border-[#42A5F5] transition-all"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
-                      Fecha de Inauguración
-                    </label>
-                    <input
-                      type="date"
-                      value={obraForm.fecha_inauguracion || ''}
-                      onChange={handleObraFormChange('fecha_inauguracion')}
-                      className="w-full px-4 py-2.5 border-2 border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-[#42A5F5] focus:border-[#42A5F5] transition-all"
-                    />
-                  </div>
-                </div>
-              </div>
-
-              {/* Sección: Observaciones */}
-              <div className="bg-white rounded-lg shadow-md border border-gray-200 p-6">
-                <div className="flex items-center gap-3 mb-6 pb-3 border-b border-gray-200">
-                  <DescriptionIcon className="text-[#42A5F5] text-xl" />
-                  <h5 className="text-lg font-semibold text-gray-800">Observaciones</h5>
-                </div>
-                <div className="space-y-5">
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
-                      Observación Legal
-                    </label>
-                    <textarea
-                      value={obraForm.observacion_legal || ''}
-                      onChange={handleObraFormChange('observacion_legal')}
-                      rows={3}
-                      placeholder="Observaciones del área legal..."
-                      className="w-full px-4 py-2.5 border-2 border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-[#42A5F5] focus:border-[#42A5F5] transition-all resize-none"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
-                      Observación Financiero
-                    </label>
-                    <textarea
-                      value={obraForm.observacion_financiero || ''}
-                      onChange={handleObraFormChange('observacion_financiero')}
-                      rows={3}
-                      placeholder="Observaciones del área financiero..."
-                      className="w-full px-4 py-2.5 border-2 border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-[#42A5F5] focus:border-[#42A5F5] transition-all resize-none"
-                    />
-                  </div>
-                </div>
-              </div>
-
-              {/* Botón de guardar */}
+              {!soloLectura && (
               <div className="bg-gradient-to-r from-green-500 to-green-600 rounded-lg shadow-lg p-6">
-                <div className="flex items-center justify-between">
+                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
                   <div className="text-white">
                     <p className="font-semibold text-lg mb-1">¿Listo para guardar los cambios?</p>
-                    <p className="text-sm text-green-50">Asegúrate de revisar toda la información antes de actualizar.</p>
+                    <p className="text-sm text-green-50">
+                      Revisa todas las áreas antes de actualizar.
+                    </p>
                   </div>
                   <button
+                    type="button"
                     onClick={handleActualizarObra}
                     disabled={savingObra}
-                    className="inline-flex items-center px-8 py-3 border-2 border-white rounded-lg shadow-lg text-base font-semibold text-white bg-white bg-opacity-20 hover:bg-opacity-30 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-white disabled:opacity-50 disabled:cursor-not-allowed transition-all transform hover:scale-105"
+                    className="inline-flex items-center justify-center px-8 py-3 border-2 border-white rounded-lg shadow-lg text-base font-semibold text-white bg-white bg-opacity-20 hover:bg-opacity-30 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-white disabled:opacity-50 disabled:cursor-not-allowed transition-all"
                   >
                     <SaveIcon className="mr-2" />
                     {savingObra ? 'Guardando...' : 'Guardar Cambios'}
                   </button>
                 </div>
               </div>
+              )}
             </div>
           )}
         </div>

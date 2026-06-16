@@ -40,7 +40,7 @@ const ObrasTable: React.FC<ObrasTableProps> = ({ refreshTrigger, soloLectura = f
         estado: estado || undefined,
       });
       setObras(response.data.data);
-      setTotalCount(response.data.count);
+      setTotalCount(response.data.count ?? 0);
     } catch (err: any) {
       setError(err.response?.data?.error || 'Error al cargar obras');
     } finally {
@@ -48,25 +48,20 @@ const ObrasTable: React.FC<ObrasTableProps> = ({ refreshTrigger, soloLectura = f
     }
   }, [estadoFilter, rowsPerPage, page, searchQuery]);
 
-  const loadObras = useCallback(() => {
-    loadObrasWithFilters();
-  }, [loadObrasWithFilters]);
-
+  // Al cambiar filtros, volver a la primera página
   useEffect(() => {
-    loadObras();
-  }, [loadObras, refreshTrigger]);
+    setPage(0);
+  }, [searchQuery, estadoFilter]);
 
+  // Búsqueda/filtros con debounce; paginación inmediata
   useEffect(() => {
+    const delay = searchQuery || estadoFilter ? 350 : 0;
     const debounce = setTimeout(() => {
-      if (page !== 0) {
-        setPage(0);
-        return;
-      }
       loadObrasWithFilters();
-    }, 350);
+    }, delay);
 
     return () => clearTimeout(debounce);
-  }, [searchQuery, estadoFilter, page, loadObrasWithFilters]);
+  }, [searchQuery, estadoFilter, page, rowsPerPage, loadObrasWithFilters, refreshTrigger]);
 
   // Cargar lista de estados desde la base de datos (para filtros)
   useEffect(() => {
@@ -545,7 +540,7 @@ const ObrasTable: React.FC<ObrasTableProps> = ({ refreshTrigger, soloLectura = f
                       try {
                         await mantenimientosAPI.eliminarObra(selectedObra.id);
                         setShowDetails(false);
-                        loadObras();
+                        loadObrasWithFilters();
                       } catch (err: any) {
                         setError(err.response?.data?.error || 'Error al eliminar obra');
                       }
