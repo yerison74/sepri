@@ -283,7 +283,7 @@ const FileUpload: React.FC<FileUploadProps> = ({ onUploadComplete, onError, solo
       const url = window.URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
-      a.download = 'plantilla-mantenimientos.xml';
+      a.download = 'plantilla-obras.xml';
       document.body.appendChild(a);
       a.click();
       a.remove();
@@ -301,7 +301,7 @@ const FileUpload: React.FC<FileUploadProps> = ({ onUploadComplete, onError, solo
       const url = window.URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
-      a.download = 'plantilla-mantenimientos.xlsx';
+      a.download = 'plantilla-obras.xlsx';
       document.body.appendChild(a);
       a.click();
       a.remove();

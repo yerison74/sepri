@@ -5,9 +5,15 @@ import {
   Info,
   TableChart
 } from '@mui/icons-material';
+import { PLANTILLA_OBRAS_COLUMNAS } from '../constants/obraPlantillaCarga';
 
-const UploadInstructions: React.FC = () => {
-  return (
+const columnasPorGrupo = PLANTILLA_OBRAS_COLUMNAS.reduce<Record<string, string[]>>((acc, col) => {
+  if (!acc[col.grupo]) acc[col.grupo] = [];
+  acc[col.grupo].push(col.key);
+  return acc;
+}, {});
+
+const UploadInstructions: React.FC = () => {  return (
     <div className="bg-white rounded-lg shadow-md p-6 mb-6">
       <h3 className="text-xl font-semibold mb-4">
         📋 Instrucciones para Cargar Datos
@@ -27,12 +33,22 @@ const UploadInstructions: React.FC = () => {
         <div className="flex items-start gap-3">
           <TableChart className="text-[#42A5F5] mt-1" />
           <div>
-            <div className="font-medium text-sm">Columnas requeridas:</div>
+            <div className="font-medium text-sm">Columna obligatoria:</div>
             <div className="text-sm text-gray-600">
-              codigo, contrato, tipo_obra, nombre, estado, fecha_inicio, fecha_fin_estimada, responsable, descripcion
+              <strong>codigo</strong> — identifica la obra; si ya existe, se actualiza.
             </div>
           </div>
         </div>
+
+        {Object.entries(columnasPorGrupo).map(([grupo, keys]) => (
+          <div key={grupo} className="flex items-start gap-3">
+            <TableChart className="text-[#42A5F5] mt-1" />
+            <div>
+              <div className="font-medium text-sm">{grupo}</div>
+              <div className="text-sm text-gray-600">{keys.join(', ')}</div>
+            </div>
+          </div>
+        ))}
         
         <div className="flex items-start gap-3">
           <CheckCircle className="text-green-500 mt-1" />
@@ -71,7 +87,7 @@ const UploadInstructions: React.FC = () => {
           <CheckCircle className="text-green-500 mt-1" />
           <div>
             <div className="font-medium text-sm">1. Descargar plantilla</div>
-            <div className="text-sm text-gray-600">Haz clic en 'Descargar Plantilla Excel/CSV'</div>
+            <div className="text-sm text-gray-600">Haz clic en &quot;Descargar Plantilla Excel&quot; o &quot;Descargar Plantilla XML&quot;</div>
           </div>
         </div>
         
@@ -86,8 +102,8 @@ const UploadInstructions: React.FC = () => {
         <div className="flex items-start gap-3">
           <CheckCircle className="text-green-500 mt-1" />
           <div>
-            <div className="font-medium text-sm">3. Guardar como CSV</div>
-            <div className="text-sm text-gray-600">Guarda el archivo como CSV (.csv) para subirlo al sistema</div>
+            <div className="font-medium text-sm">3. Guardar archivo</div>
+            <div className="text-sm text-gray-600">Guarda como Excel (.xlsx) o usa la plantilla XML según prefieras</div>
           </div>
         </div>
         
@@ -95,7 +111,7 @@ const UploadInstructions: React.FC = () => {
           <CheckCircle className="text-green-500 mt-1" />
           <div>
             <div className="font-medium text-sm">4. Subir archivo</div>
-            <div className="text-sm text-gray-600">Arrastra el archivo CSV al área de carga o haz clic para seleccionarlo</div>
+            <div className="text-sm text-gray-600">Arrastra el archivo Excel o XML al área de carga o haz clic para seleccionarlo</div>
           </div>
         </div>
       </div>

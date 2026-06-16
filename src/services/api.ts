@@ -18,6 +18,12 @@ import {
 } from './fileProcessor';
 import type { ProgresoCargaCallback } from './fileProcessor';
 import * as XLSX from 'xlsx';
+import {
+  PLANTILLA_OBRAS_HEADERS,
+  PLANTILLA_OBRAS_EJEMPLO,
+  PLANTILLA_OBRAS_COL_WIDTHS,
+  generarXmlPlantillaObras,
+} from '../constants/obraPlantillaCarga';
 
 export type { ProgresoCargaObra, ProgresoCargaCallback } from './fileProcessor';
 
@@ -312,45 +318,7 @@ export const uploadAPI = {
   },
 
   descargarPlantilla: () => {
-    // Generar plantilla XML vacía con todas las columnas necesarias para la tabla obras.
-    // El campo id se genera automáticamente según tipo_obra (OB-xxxx o MT-xxxx), por eso no se incluye aquí.
-    const xmlTemplate = `<?xml version="1.0" encoding="UTF-8"?>
-<mantenimientos>
-  <obra>
-    <!-- Campos obligatorios -->
-    <!-- codigo: identificador único de la obra (ej: 0001-0001). Se usará para crear/actualizar -->
-    <codigo>0001-0001</codigo>
-    <!-- contrato: Código de contrato (máx. 9 caracteres, guía: xxxx-xxxx) -->
-    <contrato>1234-5678</contrato>
-    <!-- tipo_obra: Construccion o Mantenimiento (controla el prefijo del ID OB/MT) -->
-    <tipo_obra>Construccion</tipo_obra>
-    <nombre>Nombre de la obra</nombre>
-    <estado>ACTIVA</estado>
-    
-    <!-- Información general -->
-    <responsable>Nombre del responsable o contratista</responsable>
-    <descripcion>Descripción detallada de la obra</descripcion>
-    
-    <!-- Ubicación -->
-    <provincia>Nombre de la provincia</provincia>
-    <municipio>Nombre del municipio</municipio>
-    <nivel>Nivel educativo (Inicial, Primario, Secundario, etc.)</nivel>
-    <no_aula>1</no_aula>
-    <distrito_minerd_sigede>Código del distrito MINERD SIGEDE</distrito_minerd_sigede>
-    <latitud>18.4861</latitud>
-    <longitud>-69.9312</longitud>
-    
-    <!-- Fechas (formato: YYYY-MM-DD) -->
-    <fecha_inicio>2024-01-01</fecha_inicio>
-    <fecha_fin_estimada>2024-12-31</fecha_fin_estimada>
-    <fecha_inauguracion>2024-06-01</fecha_inauguracion>
-    
-    <!-- Observaciones -->
-    <observacion_legal>Observaciones del área legal</observacion_legal>
-    <observacion_financiero>Observaciones del área financiero</observacion_financiero>
-  </obra>
-</mantenimientos>`;
-    
+    const xmlTemplate = generarXmlPlantillaObras();
     const blob = new Blob([xmlTemplate], { type: 'application/xml' });
     return Promise.resolve({
       data: blob,
@@ -358,103 +326,15 @@ export const uploadAPI = {
   },
 
   descargarPlantillaExcel: () => {
-    // Generar plantilla Excel vacía con todas las columnas necesarias para la tabla obras.
-    // Orden: Obligatorios primero, luego información general, ubicación, fechas, observaciones.
-    const headers = [
-      // Campos obligatorios
-      'codigo',       // Identificador único de la obra (ej: 0001-0001)
-      'contrato',     // Código de contrato (xxxx-xxxx)
-      'tipo_obra',    // Construccion o Mantenimiento
-      'nombre',
-      'estado',
-      
-      // Información general
-      'responsable',
-      'descripcion',
-      
-      // Ubicación
-      'provincia',
-      'municipio',
-      'nivel',
-      'no_aula',
-      'distrito_minerd_sigede',
-      'latitud',
-      'longitud',
-      
-      // Fechas (formato: YYYY-MM-DD)
-      'fecha_inicio',
-      'fecha_fin_estimada',
-      'fecha_inauguracion',
-      
-      // Observaciones
-      'observacion_legal',
-      'observacion_financiero'
-    ];
-    
-    // Crear hoja con encabezados y una fila de ejemplo con valores de muestra
-    const ejemplo = [
-      // Campos obligatorios
-      '0001-0001',      // codigo
-      '1234-5678',      // contrato
-      'Construccion',   // tipo_obra
-      'Nombre de la obra',
-      'ACTIVA',
-      
-      // Información general
-      'Nombre del responsable o contratista',
-      'Descripción detallada de la obra',
-      
-      // Ubicación
-      'Nombre de la provincia',
-      'Nombre del municipio',
-      'Nivel educativo (Inicial, Primario, Secundario, etc.)',
-      1,
-      'Código del distrito MINERD SIGEDE',
-      '18.4861',
-      '-69.9312',
-      
-      // Fechas
-      '2024-01-01',
-      '2024-12-31',
-      '2024-06-01',
-      
-      // Observaciones
-      'Observaciones del área legal',
-      'Observaciones del área financiero'
-    ];
-    
-    const worksheet = XLSX.utils.aoa_to_sheet([headers, ejemplo]);
-    
-    // Ajustar ancho de columnas para mejor visualización
-    const colWidths = [
-      { wch: 12 },  // codigo
-      { wch: 12 },  // contrato
-      { wch: 14 },  // tipo_obra
-      { wch: 30 },  // nombre
-      { wch: 15 },  // estado
-      { wch: 30 },  // responsable
-      { wch: 40 },  // descripcion
-      { wch: 20 },  // provincia
-      { wch: 20 },  // municipio
-      { wch: 25 },  // nivel
-      { wch: 10 },  // no_aula
-      { wch: 25 },  // distrito_minerd_sigede
-      { wch: 12 },  // latitud
-      { wch: 12 },  // longitud
-      { wch: 12 },  // fecha_inicio
-      { wch: 15 },  // fecha_fin_estimada
-      { wch: 15 },  // fecha_inauguracion
-      { wch: 35 },  // observacion_legal
-      { wch: 35 },  // observacion_financiero
-    ];
-    worksheet['!cols'] = colWidths;
-    
+    const worksheet = XLSX.utils.aoa_to_sheet([PLANTILLA_OBRAS_HEADERS, PLANTILLA_OBRAS_EJEMPLO]);
+    worksheet['!cols'] = PLANTILLA_OBRAS_COL_WIDTHS;
+
     const workbook = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(workbook, worksheet, 'Obras');
-    
+
     const excelBuffer = XLSX.write(workbook, { type: 'array', bookType: 'xlsx' });
-    const blob = new Blob([excelBuffer], { 
-      type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' 
+    const blob = new Blob([excelBuffer], {
+      type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
     });
 
     return Promise.resolve({

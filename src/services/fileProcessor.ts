@@ -4,9 +4,15 @@
 
 import * as XLSX from 'xlsx';
 import { XMLParser } from 'fast-xml-parser';
-import { obrasService } from './supabaseService';
+import { obrasService, contratistasService } from './supabaseService';
 import { supabase } from '../lib/supabase';
 import type { Obra } from '../types/database';
+import {
+  mapearRegistroPlantillaObra,
+  flatFromXmlObra,
+  type ContratistaCargaArchivo,
+  type ObraCargaArchivo,
+} from '../utils/obraCargaMappers';
 
 /** Estado de avance al cargar obras desde archivo (UI). */
 export type ProgresoCargaObra = { mensaje: string; porcentaje: number };
@@ -84,11 +90,37 @@ async function reservarIdsObra(tipoObra: string, cantidad: number): Promise<stri
 }
 
 type ItemCargaObra = {
-  obra: Omit<Obra, 'id' | 'created_at' | 'updated_at'>;
+  obra: ObraCargaArchivo;
+  contratista: Partial<ContratistaCargaArchivo>;
   codigoNormalizado: string;
   tipoObraRaw: string;
   etiquetaError: string;
 };
+
+async function sincronizarContratistaCarga(
+  codigoNormalizado: string,
+  contratista: Partial<ContratistaCargaArchivo>,
+  responsable?: string | null,
+): Promise<void> {
+  const tieneDatos =
+    (responsable && responsable.trim()) ||
+    Object.values(contratista).some((v) => v != null && String(v).trim() !== '');
+  if (!tieneDatos) return;
+
+  const obra = await obrasService.obtenerObraPorIdObra(codigoNormalizado);
+  if (!obra?.contratista_id) return;
+
+  const updates: Partial<ContratistaCargaArchivo> = { ...contratista };
+  if (responsable?.trim()) {
+    updates.responsable = responsable.trim();
+  }
+  const payload = Object.fromEntries(
+    Object.entries(updates).filter(([, v]) => v != null && String(v).trim() !== ''),
+  );
+  if (Object.keys(payload).length === 0) return;
+
+  await contratistasService.actualizar(obra.contratista_id, payload);
+}
 
 async function ejecutarCargaObrasLote(
   items: ItemCargaObra[],
@@ -146,10 +178,27 @@ async function ejecutarCargaObrasLote(
   }
 
   const insertsBuffer: Array<Omit<Obra, 'created_at' | 'updated_at'>> = [];
+  const pendientesContratista: Array<{
+    codigo: string;
+    contratista: Partial<ContratistaCargaArchivo>;
+    responsable?: string | null;
+  }> = [];
 
   const flushInserts = async () => {
     if (insertsBuffer.length === 0) return;
+    const batchPendientes = pendientesContratista.splice(0, pendientesContratista.length);
     await obrasService.crearObrasLote(insertsBuffer, { chunkSize: INSERT_BATCH });
+    for (const pending of batchPendientes) {
+      try {
+        await sincronizarContratistaCarga(
+          pending.codigo,
+          pending.contratista,
+          pending.responsable,
+        );
+      } catch {
+        /* no bloquear lote por datos de contratista */
+      }
+    }
     insertsBuffer.length = 0;
   };
 
@@ -158,13 +207,14 @@ async function ejecutarCargaObrasLote(
   for (const it of items) {
     try {
       const tipo = tipoObraNormalizado(it.tipoObraRaw);
-      const { obra, codigoNormalizado } = it;
+      const { obra, codigoNormalizado, contratista } = it;
 
       if (existing.has(codigoNormalizado)) {
         const obraParaActualizar = Object.fromEntries(
           Object.entries(obra).filter(([_, v]) => v !== undefined),
         ) as Partial<Omit<Obra, 'id' | 'created_at' | 'updated_at'>>;
         await obrasService.actualizarObraPorCodigo(codigoNormalizado, obraParaActualizar);
+        await sincronizarContratistaCarga(codigoNormalizado, contratista, obra.responsable);
         resultados.actualizadas += 1;
       } else {
         const idsList = reserved.get(tipo);
@@ -181,6 +231,11 @@ async function ejecutarCargaObrasLote(
           tipo_obra: tipo,
         } as Omit<Obra, 'created_at' | 'updated_at'>;
         insertsBuffer.push(obraParaCrear);
+        pendientesContratista.push({
+          codigo: codigoNormalizado,
+          contratista,
+          responsable: obra.responsable,
+        });
         existing.set(codigoNormalizado, nuevoId);
         resultados.creadas += 1;
         if (insertsBuffer.length >= INSERT_BATCH) {
@@ -277,7 +332,9 @@ export const procesarArchivoXml = async (
 
         const items: ItemCargaObra[] = [];
         for (const obraXml of obrasXml) {
-          const obra = mapearObraDesdeXml(obraXml);
+          const { obra, contratista } = mapearRegistroPlantillaObra(
+            flatFromXmlObra(obraXml as Record<string, unknown>),
+          );
 
           if (!obra.codigo || obra.codigo.trim() === '') {
             resultados.fallidas++;
@@ -290,7 +347,7 @@ export const procesarArchivoXml = async (
           const codigoNormalizado = obra.codigo.trim().toUpperCase();
           const tipoObra = (obra as any).tipo_obra || 'Construccion';
           const etiquetaError = `Obra ${obraXml.id || obraXml['@_id'] || 'desconocida'}`;
-          items.push({ obra, codigoNormalizado, tipoObraRaw: tipoObra, etiquetaError });
+          items.push({ obra, contratista, codigoNormalizado, tipoObraRaw: tipoObra, etiquetaError });
         }
 
         const lote = await ejecutarCargaObrasLote(items, onProgreso, { desde: 32, hasta: 96 });
@@ -366,8 +423,8 @@ export const procesarArchivoExcel = async (
 
         const items: ItemCargaObra[] = [];
         for (let rowIdx = 0; rowIdx < jsonData.length; rowIdx++) {
-          const row = (jsonData as any[])[rowIdx];
-          const obra = mapearObraDesdeExcel(row);
+          const row = (jsonData as Record<string, unknown>[])[rowIdx];
+          const { obra, contratista } = mapearRegistroPlantillaObra(row);
 
           if (!obra.codigo || obra.codigo.trim() === '') {
             resultados.fallidas++;
@@ -381,7 +438,7 @@ export const procesarArchivoExcel = async (
           const codigoNormalizado = obra.codigo.trim().toUpperCase();
           const tipoObra = (obra as any).tipo_obra || 'Construccion';
           const etiquetaError = `Fila ${rowIdx + 2}`;
-          items.push({ obra, codigoNormalizado, tipoObraRaw: tipoObra, etiquetaError });
+          items.push({ obra, contratista, codigoNormalizado, tipoObraRaw: tipoObra, etiquetaError });
         }
 
         const lote = await ejecutarCargaObrasLote(items, onProgreso, { desde: 30, hasta: 96 });
@@ -403,272 +460,6 @@ export const procesarArchivoExcel = async (
 
     reader.readAsBinaryString(file);
   });
-};
-
-/**
- * Mapear datos XML a objeto Obra
- */
-const mapearObraDesdeXml = (
-  obraXml: any,
-): Omit<Obra, 'id' | 'created_at' | 'updated_at'> => {
-  const getValue = (field: any): string | null => {
-    if (!field) return null;
-    if (typeof field === 'string') {
-      return field.trim() || null;
-    }
-    if (typeof field === 'object') {
-      if (field['#text'] !== undefined) {
-        return String(field['#text']).trim() || null;
-      }
-      if (Array.isArray(field) && field.length > 0) {
-        const first = field[0];
-        if (typeof first === 'string') {
-          return first.trim() || null;
-        }
-        if (first && first['#text'] !== undefined) {
-          return String(first['#text']).trim() || null;
-        }
-        return String(first).trim() || null;
-      }
-      return String(field).trim() || null;
-    }
-    return String(field).trim() || null;
-  };
-
-  const getNumber = (field: any): number | null => {
-    const value = getValue(field);
-    if (!value) return null;
-    const num = parseInt(value, 10);
-    return isNaN(num) ? null : num;
-  };
-
-  const getDate = (field: any): string | null => {
-    const value = getValue(field);
-    if (!value) return null;
-
-    try {
-      let date: Date | null = null;
-
-      if (/^\d{4}-\d{2}-\d{2}$/.test(value)) {
-        date = new Date(value + 'T00:00:00');
-      } else if (/^\d{1,2}\/\d{1,2}\/\d{4}$/.test(value)) {
-        const parts = value.split('/');
-        date = new Date(parseInt(parts[2]), parseInt(parts[1]) - 1, parseInt(parts[0]));
-      } else {
-        date = new Date(value);
-      }
-
-      if (!date || isNaN(date.getTime())) {
-        console.warn(`Fecha inválida en XML: ${value}`);
-        return null;
-      }
-
-      const year = date.getFullYear();
-      if (year < 1900 || year > 2100) {
-        console.warn(`Año fuera de rango en XML: ${year} (valor: ${value})`);
-        return null;
-      }
-
-      return date.toISOString().split('T')[0];
-    } catch (error) {
-      console.warn(`Error al parsear fecha en XML: ${value}`, error);
-      return null;
-    }
-  };
-
-  const codigo = getValue(obraXml.codigo) || getValue(obraXml.codigo_contrato) || '';
-  const contrato = getValue(obraXml.contrato);
-  const tipoObra = getValue(obraXml.tipo_obra);
-
-  return {
-    id_obra: null,
-    codigo: codigo || null,
-    contrato: contrato || null,
-    tipo_obra: tipoObra || null,
-    nombre: getValue(obraXml.nombre) || '',
-    estado: getValue(obraXml.estado) || 'NO ESPECIFICADO',
-    fecha_inicio: getDate(obraXml.fecha_inicio),
-    fecha_fin_estimada: getDate(obraXml.fecha_fin_estimada),
-    responsable: getValue(obraXml.responsable),
-    descripcion: getValue(obraXml.descripcion),
-    provincia: getValue(obraXml.provincia),
-    municipio: getValue(obraXml.municipio),
-    nivel: getValue(obraXml.nivel),
-    no_aula: getNumber(obraXml.no_aula),
-    observacion_legal: getValue(obraXml.observacion_legal),
-    observacion_financiero: getValue(obraXml.observacion_financiero),
-    latitud: getValue(obraXml.latitud),
-    longitud: getValue(obraXml.longitud),
-    distrito_minerd_sigede: getValue(obraXml.distrito_minerd_sigede),
-    fecha_inauguracion: getDate(obraXml.fecha_inauguracion),
-  };
-};
-
-/**
- * Mapear datos Excel a objeto Obra
- */
-const mapearObraDesdeExcel = (
-  row: any,
-): Omit<Obra, 'id' | 'created_at' | 'updated_at'> => {
-  const getValue = (field: any): string | null => {
-    if (field === null || field === undefined || field === '') return null;
-    return String(field).trim() || null;
-  };
-
-  const getNumber = (field: any): number | null => {
-    const value = getValue(field);
-    if (!value) return null;
-    const num = parseInt(value, 10);
-    return isNaN(num) ? null : num;
-  };
-
-  const getDate = (field: any): string | null => {
-    if (field === null || field === undefined || field === '') return null;
-
-    if (typeof field === 'number') {
-      try {
-        if (field < 1 || field > 100000) {
-          console.warn(`Fecha serial de Excel fuera de rango: ${field}`);
-          return null;
-        }
-
-        const excelEpoch = new Date(1899, 11, 30);
-        const jsDate = new Date(excelEpoch.getTime() + field * 24 * 60 * 60 * 1000);
-
-        if (isNaN(jsDate.getTime())) {
-          console.warn(`Fecha inválida generada desde serial: ${field}`);
-          return null;
-        }
-
-        const year = jsDate.getFullYear();
-        if (year < 1900 || year > 2100) {
-          console.warn(`Año fuera de rango: ${year}`);
-          return null;
-        }
-
-        return jsDate.toISOString().split('T')[0];
-      } catch (error) {
-        console.warn(`Error al convertir fecha serial de Excel: ${field}`, error);
-        return null;
-      }
-    }
-
-    const value = String(field).trim();
-    if (!value || value === '') return null;
-
-    try {
-      let date: Date | null = null;
-
-      if (/^\d{4}-\d{2}-\d{2}$/.test(value)) {
-        date = new Date(value + 'T00:00:00');
-      } else if (/^\d{1,2}\/\d{1,2}\/\d{4}$/.test(value)) {
-        const parts = value.split('/');
-        date = new Date(parseInt(parts[2]), parseInt(parts[1]) - 1, parseInt(parts[0]));
-      } else {
-        date = new Date(value);
-      }
-
-      if (!date || isNaN(date.getTime())) {
-        console.warn(`Fecha inválida: ${value}`);
-        return null;
-      }
-
-      const year = date.getFullYear();
-      if (year < 1900 || year > 2100) {
-        console.warn(`Año fuera de rango: ${year} (valor: ${value})`);
-        return null;
-      }
-
-      return date.toISOString().split('T')[0];
-    } catch (error) {
-      console.warn(`Error al parsear fecha: ${value}`, error);
-      return null;
-    }
-  };
-
-  const codigo =
-    getValue(row.codigo) ||
-    getValue(row.Código) ||
-    getValue(row.CODIGO) ||
-    getValue(row['NO. CONTRATO']) ||
-    getValue(row['No. Contrato']) ||
-    getValue(row['CÓDIGO']) ||
-    '';
-
-  const contrato =
-    getValue(row.contrato) || getValue(row.Contrato) || getValue(row.CONTRATO) || null;
-
-  const tipoObra =
-    getValue(row.tipo_obra) ||
-    getValue(row.Tipo_Obra) ||
-    getValue(row.TIPO_OBRA) ||
-    null;
-
-  return {
-    id_obra: null,
-    codigo: codigo || null,
-    contrato,
-    tipo_obra: tipoObra,
-    nombre:
-      getValue(row.nombre) ||
-      getValue(row.Nombre) ||
-      getValue(row.NOMBRE) ||
-      '',
-    estado:
-      getValue(row.estado) ||
-      getValue(row.Estado) ||
-      getValue(row.ESTADO) ||
-      'NO ESPECIFICADO',
-    fecha_inicio:
-      getDate(row.fecha_inicio) ||
-      getDate(row['Fecha Inicio']) ||
-      getDate(row['FECHA_INICIO']),
-    fecha_fin_estimada:
-      getDate(row.fecha_fin_estimada) ||
-      getDate(row['Fecha Fin Estimada']) ||
-      getDate(row['FECHA_FIN_ESTIMADA']),
-    responsable:
-      getValue(row.responsable) ||
-      getValue(row.Responsable) ||
-      getValue(row.RESPONSABLE),
-    descripcion:
-      getValue(row.descripcion) ||
-      getValue(row.Descripción) ||
-      getValue(row.DESCRIPCION),
-    provincia:
-      getValue(row.provincia) || getValue(row.Provincia) || getValue(row.PROVINCIA),
-    municipio:
-      getValue(row.municipio) || getValue(row.Municipio) || getValue(row.MUNICIPIO),
-    nivel: getValue(row.nivel) || getValue(row.Nivel) || getValue(row.NIVEL),
-    no_aula:
-      getNumber(row.no_aula) ||
-      getNumber(row['No. Aula']) ||
-      getNumber(row['NO_AULA']),
-    observacion_legal:
-      getValue(row.observacion_legal) ||
-      getValue(row['Observación Legal']) ||
-      getValue(row['OBSERVACION_LEGAL']),
-    observacion_financiero:
-      getValue(row.observacion_financiero) ||
-      getValue(row['Observación Financiero']) ||
-      getValue(row['OBSERVACION_FINANCIERO']),
-    latitud:
-      getValue(row.latitud) ||
-      getValue(row.Latitud) ||
-      getValue(row.LATITUD),
-    longitud:
-      getValue(row.longitud) ||
-      getValue(row.Longitud) ||
-      getValue(row.LONGITUD),
-    distrito_minerd_sigede:
-      getValue(row.distrito_minerd_sigede) ||
-      getValue(row['Distrito MINERD SIGEDE']) ||
-      getValue(row['DISTRITO_MINERD_SIGEDE']),
-    fecha_inauguracion:
-      getDate(row.fecha_inauguracion) ||
-      getDate(row['Fecha Inauguración']) ||
-      getDate(row['FECHA_INAUGURACION']),
-  };
 };
 
 /**
