@@ -12,12 +12,14 @@ import {
   ChevronLeft,
   SupportAgent,
   Assessment,
+  Description,
 } from '@mui/icons-material';
 import FileUpload from './components/FileUpload';
 import StatsDashboard from './components/StatsDashboard';
 import ObrasTable from './components/ObrasTable';
 import TramiteHistory from './components/UploadHistory';
 import ReporteObras from './components/ReporteObras';
+import GestionTecnicaDocumento from './components/GestionTecnicaDocumento';
 import Login from './components/Login';
 import NotificacionesTiempo from './components/NotificacionesTiempo';
 import { useAuth } from './context/AuthContext';
@@ -74,8 +76,9 @@ function App() {
     { icon: <CloudUpload />, label: 'Cargar Obras', index: 2 },
     { icon: <FollowTheSigns />, label: 'Seguimiento de Trámites', index: 3 },
     { icon: <SupportAgent />, label: 'Atención al contratista', index: 4 },
-    { icon: <Assessment />, label: 'Reporte', index: 5 },
-    { icon: <Settings />, label: 'Configuración', index: 6 },
+    { icon: <Description />, label: 'Gestión técnica de documento', index: 5 },
+    { icon: <Assessment />, label: 'Reporte', index: 6 },
+    { icon: <Settings />, label: 'Configuración', index: 7 },
   ];
 
   // Solo mostrar pestañas para las que el usuario tiene permiso
@@ -270,8 +273,16 @@ function App() {
                 </TabPanel>
               )}
 
-              {hasPermission('ver_reporte') && (
+              {hasPermission('ver_gestion_tecnica_documento') && (
                 <TabPanel value={tabValue} index={5}>
+                  <GestionTecnicaDocumento
+                    soloLectura={!hasPermission('editar_gestion_tecnica_documento')}
+                  />
+                </TabPanel>
+              )}
+
+              {hasPermission('ver_reporte') && (
+                <TabPanel value={tabValue} index={6}>
                   <ReporteObras
                     refreshTrigger={refreshTrigger}
                     soloLectura={!hasPermission('editar_reporte')}
@@ -280,7 +291,7 @@ function App() {
               )}
 
               {hasPermission('ver_configuracion') && (
-                <TabPanel value={tabValue} index={6}>
+                <TabPanel value={tabValue} index={7}>
                   <div>
                     <h2 className="text-2xl font-semibold mb-4 text-stone-800">
                       Configuración del Sistema

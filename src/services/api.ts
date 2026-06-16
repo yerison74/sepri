@@ -1,5 +1,5 @@
 import axios, { AxiosInstance, AxiosResponse } from 'axios';
-import { obrasService, historialUploadsService, storageService, tramitesService, notificacionesTiempoService, areasService, formularioContratistaService } from './supabaseService';
+import { obrasService, historialUploadsService, storageService, tramitesService, notificacionesTiempoService, areasService, formularioContratistaService, documentosTecnicosService, contratistasService } from './supabaseService';
 import { getDiasMaximosPorArea } from '../constants/procesos';
 import { mensajeNotificacionTiempo } from '../utils/notificacionesTiempo';
 import type {
@@ -9,6 +9,8 @@ import type {
   Area,
   FormularioContratista,
   MovimientoSolicitudContratista,
+  DocumentoTecnicoObra,
+  MovimientoDocumentoTecnicoObra,
 } from '../types/database';
 import { 
   procesarArchivoXml, 
@@ -121,16 +123,7 @@ export const statsAPI = {
     }
   },
 
-  obtenerReporteObras: async (filtros: {
-    search?: string;
-    estado?: string;
-    responsable?: string;
-    provincia?: string;
-    municipio?: string;
-    nivel?: string;
-    fechaInauguracionDesde?: string;
-    fechaInauguracionHasta?: string;
-  } = {}) => {
+  obtenerReporteObras: async (filtros: import('../types/database').ObrasFilters = {}) => {
     try {
       const data = await obrasService.obtenerEstadisticasReporte(filtros);
       return { data: { data } } as AxiosResponse<{ data: typeof data }>;
@@ -138,6 +131,154 @@ export const statsAPI = {
       throw {
         response: {
           data: { error: error.message || 'Error al generar reporte' },
+          status: 500,
+        },
+      };
+    }
+  },
+};
+
+export const gestionTecnicaDocumentoAPI = {
+  listarDocumentos: async (filtros?: { busqueda?: string }) => {
+    try {
+      const data = await documentosTecnicosService.listar(filtros);
+      return { data: { data } } as AxiosResponse<{ data: DocumentoTecnicoObra[] }>;
+    } catch (error: any) {
+      throw {
+        response: {
+          data: { error: error.message || 'Error al listar documentos' },
+          status: 500,
+        },
+      };
+    }
+  },
+
+  guardarDocumento: async (
+    payload: {
+      solicitud: string;
+      cuadrantes?: string;
+      tipo_adenda?: string;
+      no_adenda_solicitud?: number | string | null;
+      tipo_adenda_anterior?: string;
+      observacion?: string;
+      contratista_id?: string | null;
+      id_sigede: string[];
+    },
+    id?: string,
+  ) => {
+    try {
+      const data = id
+        ? await documentosTecnicosService.actualizar(id, payload)
+        : await documentosTecnicosService.crear(payload);
+      return { data: { data } } as AxiosResponse<{ data: DocumentoTecnicoObra }>;
+    } catch (error: any) {
+      throw {
+        response: {
+          data: { error: error.message || 'Error al guardar documento' },
+          status: 500,
+        },
+      };
+    }
+  },
+
+  eliminarDocumento: async (id: string) => {
+    try {
+      await documentosTecnicosService.eliminar(id);
+      return { data: { ok: true } };
+    } catch (error: any) {
+      throw {
+        response: {
+          data: { error: error.message || 'Error al eliminar documento' },
+          status: 500,
+        },
+      };
+    }
+  },
+
+  listarMovimientos: async (solicitud: string) => {
+    try {
+      const data = await documentosTecnicosService.listarMovimientos(solicitud);
+      return { data: { data } } as AxiosResponse<{ data: MovimientoDocumentoTecnicoObra[] }>;
+    } catch (error: any) {
+      throw {
+        response: {
+          data: { error: error.message || 'Error al listar movimientos' },
+          status: 500,
+        },
+      };
+    }
+  },
+
+  guardarMovimiento: async (payload: {
+    solicitud: string;
+    fecha_solicitud?: string | null;
+    no_tramite?: string | null;
+    departamento?: string | null;
+    fecha_salida?: string | null;
+  }) => {
+    try {
+      const data = await documentosTecnicosService.crearMovimiento(payload);
+      return { data: { data } } as AxiosResponse<{ data: MovimientoDocumentoTecnicoObra }>;
+    } catch (error: any) {
+      throw {
+        response: {
+          data: { error: error.message || 'Error al registrar movimiento' },
+          status: 500,
+        },
+      };
+    }
+  },
+
+  eliminarMovimiento: async (id: string) => {
+    try {
+      await documentosTecnicosService.eliminarMovimiento(id);
+      return { data: { ok: true } };
+    } catch (error: any) {
+      throw {
+        response: {
+          data: { error: error.message || 'Error al eliminar movimiento' },
+          status: 500,
+        },
+      };
+    }
+  },
+
+  buscarContratistas: async (search: string, limit = 8) => {
+    try {
+      const data = await contratistasService.buscar(search, limit);
+      return { data: { data } } as AxiosResponse<{ data: import('../types/database').Contratista[] }>;
+    } catch (error: any) {
+      throw {
+        response: {
+          data: { error: error.message || 'Error al buscar contratistas' },
+          status: 500,
+        },
+      };
+    }
+  },
+
+  buscarObrasSigede: async (search: string, limit = 10) => {
+    try {
+      const data = await obrasService.buscarObrasParaSigede(search, limit);
+      return { data: { data } };
+    } catch (error: any) {
+      throw {
+        response: {
+          data: { error: error.message || 'Error al buscar obras' },
+          status: 500,
+        },
+      };
+    }
+  },
+
+  resumenesSigede: async (ids: string[]) => {
+    try {
+      const data = await obrasService.obtenerResumenesPorSigede(ids);
+      return { data: { data } };
+    } catch (error: any) {
+      throw {
+        response: {
+          data: { error: error.message || 'Error al consultar obras' },
           status: 500,
         },
       };

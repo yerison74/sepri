@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   Assessment,
   Download,
@@ -12,9 +12,13 @@ import {
 } from '@mui/icons-material';
 import { statsAPI, uploadAPI } from '../services/api';
 import type { ReporteObrasStats } from '../types/database';
-import AutocompleteInput from './AutocompleteInput';
 import ReporteObrasMap from './ReporteObrasMap';
 import ReporteObrasTablaDetalle from './ReporteObrasTablaDetalle';
+import ReporteObrasFiltros from './ReporteObrasFiltros';
+import {
+  EMPTY_REPORTE_OBRAS_FILTERS,
+  reporteFiltrosToObrasFilters,
+} from '../constants/obraFiltrosReporte';
 import {
   REPORTE_OBRAS_COLUMNAS,
   obtenerValorReporteCampo,
@@ -31,16 +35,7 @@ const COLORS: Record<string, string> = {
   'NO ESPECIFICADO': '#94A3B8',
 };
 
-const EMPTY_FILTERS = {
-  search: '',
-  estado: '',
-  responsable: '',
-  provincia: '',
-  municipio: '',
-  nivel: '',
-  fechaInauguracionDesde: '',
-  fechaInauguracionHasta: '',
-};
+const EMPTY_FILTERS = { ...EMPTY_REPORTE_OBRAS_FILTERS };
 
 interface ReporteObrasProps {
   refreshTrigger?: number;
@@ -55,47 +50,25 @@ const ReporteObras: React.FC<ReporteObrasProps> = ({ refreshTrigger, soloLectura
   const [error, setError] = useState<string | null>(null);
 
   const [estadosDisponibles, setEstadosDisponibles] = useState<string[]>([]);
-  const [opcionesDescarga, setOpcionesDescarga] = useState<{
-    provincias: string[];
-    municipios: { provincia: string; municipio: string }[];
-    niveles: string[];
-  }>({ provincias: [], municipios: [], niveles: [] });
   const [searchSugerencias, setSearchSugerencias] = useState<string[]>([]);
   const [responsableSugerencias, setResponsableSugerencias] = useState<string[]>([]);
   const [loadingSearchSugerencias, setLoadingSearchSugerencias] = useState(false);
   const [loadingResponsableSugerencias, setLoadingResponsableSugerencias] = useState(false);
 
-  const selectClassName =
-    'px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-[#42A5F5] focus:border-transparent w-full';
-
   useEffect(() => {
     const load = async () => {
       try {
-        const [resEstados, resOpciones] = await Promise.all([
-          statsAPI.obtenerResumenDashboard(),
-          uploadAPI.obtenerOpcionesFiltroDescarga(),
-        ]);
+        const resEstados = await statsAPI.obtenerResumenDashboard();
         const porEstado = resEstados?.data?.data?.estadisticas?.porEstado;
         if (Array.isArray(porEstado)) {
           setEstadosDisponibles(porEstado.map((e: { estado: string }) => e.estado));
         }
-        const opciones = resOpciones?.data?.data;
-        if (opciones) setOpcionesDescarga(opciones);
       } catch {
         setEstadosDisponibles([]);
-        setOpcionesDescarga({ provincias: [], municipios: [], niveles: [] });
       }
     };
     load();
   }, [refreshTrigger]);
-
-  const municipiosDisponibles = useMemo(() => {
-    const { municipios } = opcionesDescarga;
-    if (filters.provincia) {
-      return municipios.filter((m) => m.provincia === filters.provincia).map((m) => m.municipio);
-    }
-    return Array.from(new Set(municipios.map((m) => m.municipio))).sort((a, b) => a.localeCompare(b, 'es'));
-  }, [opcionesDescarga, filters.provincia]);
 
   useEffect(() => {
     const term = filters.search.trim();
@@ -141,9 +114,7 @@ const ReporteObras: React.FC<ReporteObrasProps> = ({ refreshTrigger, soloLectura
     try {
       setLoading(true);
       setError(null);
-      const params = Object.fromEntries(
-        Object.entries(filters).filter(([, v]) => v && v !== ''),
-      );
+      const params = reporteFiltrosToObrasFilters(filters);
       const resp = await statsAPI.obtenerReporteObras(params);
       setReporte(resp.data.data);
     } catch (err: any) {
@@ -201,28 +172,6 @@ const ReporteObras: React.FC<ReporteObrasProps> = ({ refreshTrigger, soloLectura
     }
   };
 
-  const handleFilterChange = (field: keyof typeof filters) => (
-    e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>,
-  ) => {
-    const value = e.target.value;
-    setFilters((prev) => {
-      const next = { ...prev, [field]: value };
-      if (field === 'provincia') {
-        const validos = opcionesDescarga.municipios
-          .filter((m) => m.provincia === value)
-          .map((m) => m.municipio);
-        if (prev.municipio && value && !validos.includes(prev.municipio)) {
-          next.municipio = '';
-        }
-      }
-      return next;
-    });
-  };
-
-  const handleFilterValueChange = (field: keyof typeof filters) => (value: string) => {
-    setFilters((prev) => ({ ...prev, [field]: value }));
-  };
-
   const getEstadoColor = (estado: string) =>
     COLORS[estado.toUpperCase()] || '#757575';
 
@@ -233,8 +182,6 @@ const ReporteObras: React.FC<ReporteObrasProps> = ({ refreshTrigger, soloLectura
 
   const totalEstados = estadoData.reduce((s, i) => s + i.cantidad, 0);
   const maxEstado = estadoData.length > 0 ? Math.max(1, ...estadoData.map((i) => i.cantidad)) : 1;
-
-  const filtrosActivos = Object.entries(filters).filter(([, v]) => v).length;
 
   return (
     <div className="p-0 space-y-5">
@@ -253,7 +200,7 @@ const ReporteObras: React.FC<ReporteObrasProps> = ({ refreshTrigger, soloLectura
             <button
               type="button"
               onClick={() => {
-                setFilters(EMPTY_FILTERS);
+                setFilters({ ...EMPTY_FILTERS });
                 setReporte(null);
               }}
               className="inline-flex items-center gap-2 px-4 py-2 border border-slate-300 rounded-xl text-slate-700 hover:bg-slate-50"
@@ -284,74 +231,15 @@ const ReporteObras: React.FC<ReporteObrasProps> = ({ refreshTrigger, soloLectura
       </div>
 
       {/* Filtros */}
-      <div className="bg-white border border-slate-200 rounded-2xl shadow-sm p-4 sm:p-5 space-y-4">
-        <h3 className="text-sm font-semibold text-slate-600 uppercase tracking-wide">Filtros</h3>
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          <AutocompleteInput
-            value={filters.search}
-            onChange={handleFilterValueChange('search')}
-            options={searchSugerencias}
-            loading={loadingSearchSugerencias}
-            placeholder="Buscar (nombre, código, estado…)"
-          />
-          <select value={filters.estado} onChange={handleFilterChange('estado')} className={selectClassName}>
-            <option value="">Todos los estados</option>
-            {estadosDisponibles.map((estado) => (
-              <option key={estado} value={estado}>{estado}</option>
-            ))}
-          </select>
-          <AutocompleteInput
-            value={filters.responsable}
-            onChange={handleFilterValueChange('responsable')}
-            options={responsableSugerencias}
-            loading={loadingResponsableSugerencias}
-            placeholder="Responsable / Contratista"
-          />
-        </div>
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          <select value={filters.provincia} onChange={handleFilterChange('provincia')} className={selectClassName}>
-            <option value="">Todas las provincias</option>
-            {opcionesDescarga.provincias.map((p) => (
-              <option key={p} value={p}>{p}</option>
-            ))}
-          </select>
-          <select value={filters.municipio} onChange={handleFilterChange('municipio')} className={selectClassName}>
-            <option value="">Todos los municipios</option>
-            {municipiosDisponibles.map((m) => (
-              <option key={m} value={m}>{m}</option>
-            ))}
-          </select>
-          <select value={filters.nivel} onChange={handleFilterChange('nivel')} className={selectClassName}>
-            <option value="">Todos los niveles</option>
-            {opcionesDescarga.niveles.map((n) => (
-              <option key={n} value={n}>{n}</option>
-            ))}
-          </select>
-        </div>
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <div>
-            <label className="block text-xs text-slate-500 mb-1">Inauguración desde</label>
-            <input
-              type="date"
-              value={filters.fechaInauguracionDesde}
-              onChange={handleFilterChange('fechaInauguracionDesde')}
-              className={selectClassName}
-            />
-          </div>
-          <div>
-            <label className="block text-xs text-slate-500 mb-1">Inauguración hasta</label>
-            <input
-              type="date"
-              value={filters.fechaInauguracionHasta}
-              onChange={handleFilterChange('fechaInauguracionHasta')}
-              className={selectClassName}
-            />
-          </div>
-        </div>
-        {filtrosActivos > 0 && (
-          <p className="text-xs text-slate-500">{filtrosActivos} filtro(s) activo(s)</p>
-        )}
-      </div>
+      <ReporteObrasFiltros
+        filters={filters}
+        onChange={setFilters}
+        estadosDisponibles={estadosDisponibles}
+        searchSugerencias={searchSugerencias}
+        responsableSugerencias={responsableSugerencias}
+        loadingSearchSugerencias={loadingSearchSugerencias}
+        loadingResponsableSugerencias={loadingResponsableSugerencias}
+      />
 
       {error && (
         <div className="bg-red-50 border border-red-200 text-red-800 px-4 py-3 rounded-xl">{error}</div>

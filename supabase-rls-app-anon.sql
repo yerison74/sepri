@@ -68,6 +68,8 @@ SELECT public.sepri_rls_anon_all('notificaciones_tiempo');
 SELECT public.sepri_rls_anon_all('notificacion_leida');
 SELECT public.sepri_rls_anon_all('historial_estados');
 SELECT public.sepri_rls_anon_all('contratistas');
+SELECT public.sepri_rls_anon_all('documentos_tecnicos_obra');
+SELECT public.sepri_rls_anon_all('movimiento_documentos_tecnicos_obra');
 
 DROP FUNCTION public.sepri_rls_anon_all(text);
 

@@ -16,6 +16,8 @@ export const PERMISOS = {
   EDITAR_TRAMITES: 'editar_tramites',
   VER_ATENCION_CONTRATISTA: 'ver_atencion_contratista',
   EDITAR_ATENCION_CONTRATISTA: 'editar_atencion_contratista',
+  VER_GESTION_TECNICA_DOCUMENTO: 'ver_gestion_tecnica_documento',
+  EDITAR_GESTION_TECNICA_DOCUMENTO: 'editar_gestion_tecnica_documento',
   VER_CONFIGURACION: 'ver_configuracion',
   EDITAR_CONFIGURACION: 'editar_configuracion',
   VER_REPORTE: 'ver_reporte',
@@ -38,6 +40,8 @@ export const PERMISOS_LISTA: { codigo: PermisoCode; label: string }[] = [
   { codigo: PERMISOS.EDITAR_TRAMITES, label: 'Creación y seguimiento de Trámites' },
   { codigo: PERMISOS.VER_ATENCION_CONTRATISTA, label: 'Visualización de Atención al contratista' },
   { codigo: PERMISOS.EDITAR_ATENCION_CONTRATISTA, label: 'Edición de Atención al contratista' },
+  { codigo: PERMISOS.VER_GESTION_TECNICA_DOCUMENTO, label: 'Visualización de Gestión técnica de documento' },
+  { codigo: PERMISOS.EDITAR_GESTION_TECNICA_DOCUMENTO, label: 'Carga y edición de documentos técnicos' },
   { codigo: PERMISOS.VER_REPORTE, label: 'Visualización de Reporte' },
   { codigo: PERMISOS.EDITAR_REPORTE, label: 'Exportación y reportes' },
   { codigo: PERMISOS.VER_CONFIGURACION, label: 'Visualización de Configuración' },
@@ -51,8 +55,9 @@ export const TAB_PERMISOS: Record<number, PermisoCode> = {
   2: PERMISOS.VER_CARGA_OBRAS,
   3: PERMISOS.VER_TRAMITES,
   4: PERMISOS.VER_ATENCION_CONTRATISTA,
-  5: PERMISOS.VER_REPORTE,
-  6: PERMISOS.VER_CONFIGURACION,
+  5: PERMISOS.VER_GESTION_TECNICA_DOCUMENTO,
+  6: PERMISOS.VER_REPORTE,
+  7: PERMISOS.VER_CONFIGURACION,
 };
 
 export function tienePermiso(permisosUsuario: string[] | null | undefined, codigo: PermisoCode): boolean {

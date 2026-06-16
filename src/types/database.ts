@@ -69,6 +69,47 @@ export interface Obra {
   updated_at?: string | null;
 }
 
+/** Registro base — Gestión técnica de documento. */
+export interface DocumentoTecnicoObra {
+  id: string;
+  solicitud: string;
+  cuadrantes?: string | null;
+  tipo_adenda?: string | null;
+  no_adenda_solicitud?: number | null;
+  contratista_id?: string | null;
+  id_sigede: string[];
+  tipo_adenda_anterior?: string | null;
+  observacion?: string | null;
+  created_at?: string | null;
+  updated_at?: string | null;
+  contratista?: Contratista | null;
+  /** Datos de obra por cada id_sigede (consulta, no persistido). */
+  obras_sigede?: ObraSigedeResumen[];
+}
+
+/** Datos de obra mostrados al seleccionar un ID SIGEDE. */
+export interface ObraSigedeResumen {
+  id_sigede: string;
+  contrato?: string | null;
+  plantel?: string | null;
+  tipo?: string | null;
+  provincia?: string | null;
+  municipio?: string | null;
+  encontrada: boolean;
+}
+
+/** Movimiento u oficio de un documento técnico. */
+export interface MovimientoDocumentoTecnicoObra {
+  id: string;
+  solicitud: string;
+  fecha_solicitud?: string | null;
+  no_tramite?: string | null;
+  departamento?: string | null;
+  fecha_salida?: string | null;
+  created_at?: string | null;
+  area?: Area | null;
+}
+
 export interface HistorialEstado {
   id: number;
   /** Código de la obra (se usa en lugar de obra_id para trazabilidad). */
@@ -203,11 +244,47 @@ export interface ObrasFilters {
   limit?: number;
   offset?: number;
   search?: string;
-  estado?: string;
   responsable?: string;
+  estado?: string;
   provincia?: string;
   municipio?: string;
   nivel?: string;
+  codigo?: string;
+  contrato?: string;
+  nombre?: string;
+  nombre_inaugurado?: string;
+  tipo_obra?: string;
+  descripcion?: string;
+  no_aula?: string;
+  sorteo?: string;
+  area_construccion?: string;
+  coordinador?: string;
+  supervisor?: string;
+  porcentaje_ejecutado?: string;
+  latitud?: string;
+  longitud?: string;
+  distrito_minerd_sigede?: string;
+  presupuesto_total?: string;
+  avance_inicial?: string;
+  numero_ultima_cubicacion?: string;
+  tipo_ultima_cubicacion?: string;
+  estatus_ultima_cubicacion?: string;
+  grupo_ultimo_estatus_cubicacion?: string;
+  total_ultima_cubicacion?: string;
+  ultima_total_cubicado?: string;
+  total_cubicado_base?: string;
+  total_pagado?: string;
+  envio_snip?: string;
+  monto_snip?: string;
+  modificacion_snip?: string;
+  observacion_legal?: string;
+  observacion_financiero?: string;
+  fechaInicioDesde?: string;
+  fechaInicioHasta?: string;
+  fechaFinEstimadaDesde?: string;
+  fechaFinEstimadaHasta?: string;
+  fechaDetenidaDesde?: string;
+  fechaDetenidaHasta?: string;
   fechaInauguracionDesde?: string;
   fechaInauguracionHasta?: string;
 }

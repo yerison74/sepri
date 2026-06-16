@@ -15,7 +15,11 @@ import type {
   ReporteObrasStats,
   ObraUbicacionGps,
   Contratista,
+  DocumentoTecnicoObra,
+  ObraSigedeResumen,
+  MovimientoDocumentoTecnicoObra,
 } from '../types/database';
+import { aplicarFiltrosObrasEnQuery } from '../utils/aplicarFiltrosObrasQuery';
 
 // ── Generador de token seguro (Web Crypto API) ──────────────────────────────
 function generarToken(longitud = 32): string {
@@ -665,6 +669,26 @@ export const contratistasService = {
     if (!data) throw new Error('Contratista no encontrado');
     return data as Contratista;
   },
+
+  buscar: async (search: string, limit = 10): Promise<Contratista[]> => {
+    const term = (search || '').trim();
+    if (term.length < 1) return [];
+    try {
+      const pattern = `%${term.replace(/'/g, "''")}%`;
+      const { data, error } = await supabase
+        .from('contratistas')
+        .select('id, responsable, identificacion, telefono1, telefono2, correo')
+        .ilike('responsable', pattern)
+        .limit(limit);
+      if (error) {
+        if (error.code === '42P01') return [];
+        throw error;
+      }
+      return (data || []) as Contratista[];
+    } catch {
+      return [];
+    }
+  },
 };
 
 async function prepararPayloadObraPersistencia(
@@ -755,32 +779,10 @@ export const obrasService = {
         .from('obras')
         .select(selectCols, { count: 'exact' });
 
-      if (filtros.estado) {
-        query = query.eq('estado', filtros.estado);
-      }
+      query = aplicarFiltrosObrasEnQuery(query, filtros);
 
       if (filtroResponsable) {
         query = query.ilike('contratistas.responsable', `%${filtroResponsable}%`);
-      }
-
-      if (filtros.provincia) {
-        query = query.eq('provincia', filtros.provincia);
-      }
-
-      if (filtros.municipio) {
-        query = query.eq('municipio', filtros.municipio);
-      }
-
-      if (filtros.nivel) {
-        query = query.eq('nivel', filtros.nivel);
-      }
-
-      if (filtros.fechaInauguracionDesde) {
-        query = query.gte('fecha_inauguracion', filtros.fechaInauguracionDesde);
-      }
-
-      if (filtros.fechaInauguracionHasta) {
-        query = query.lte('fecha_inauguracion', filtros.fechaInauguracionHasta);
       }
 
       if (filtros.search) {
@@ -830,22 +832,13 @@ export const obrasService = {
 
       if (error?.message?.includes('contratistas') || error?.code === 'PGRST200') {
         let fallback = supabase.from('obras').select('*', { count: 'exact' });
-        if (filtros.estado) fallback = fallback.eq('estado', filtros.estado);
+        fallback = aplicarFiltrosObrasEnQuery(fallback, filtros);
         if (filtroResponsable) {
           const ids = await buscarContratistaIdsPorResponsable(filtroResponsable);
           if (ids.length > 0) fallback = fallback.in('contratista_id', ids);
           else {
             return { data: [], count: 0 };
           }
-        }
-        if (filtros.provincia) fallback = fallback.eq('provincia', filtros.provincia);
-        if (filtros.municipio) fallback = fallback.eq('municipio', filtros.municipio);
-        if (filtros.nivel) fallback = fallback.eq('nivel', filtros.nivel);
-        if (filtros.fechaInauguracionDesde) {
-          fallback = fallback.gte('fecha_inauguracion', filtros.fechaInauguracionDesde);
-        }
-        if (filtros.fechaInauguracionHasta) {
-          fallback = fallback.lte('fecha_inauguracion', filtros.fechaInauguracionHasta);
         }
         fallback = fallback.order('created_at', { ascending: false });
         if (filtros.limit) fallback = fallback.limit(filtros.limit);
@@ -1464,6 +1457,73 @@ export const obrasService = {
       throw new Error(error.message || 'Error al obtener estadísticas');
     }
   },
+
+  /** Búsqueda de obras para asignar como ID SIGEDE (código o distrito). */
+  buscarObrasParaSigede: async (
+    search: string,
+    limit = 10,
+  ): Promise<
+    Array<{
+      codigo?: string | null;
+      nombre: string;
+      contrato?: string | null;
+      tipo_obra?: string | null;
+      provincia?: string | null;
+      municipio?: string | null;
+      distrito_minerd_sigede?: string | null;
+    }>
+  > => {
+    const term = (search || '').trim();
+    if (term.length < 1) return [];
+    const pattern = `%${term.replace(/'/g, "''")}%`;
+    const { data, error } = await supabase
+      .from('obras')
+      .select('codigo, nombre, contrato, tipo_obra, provincia, municipio, distrito_minerd_sigede')
+      .or(
+        `codigo.ilike.${pattern},nombre.ilike.${pattern},distrito_minerd_sigede.ilike.${pattern}`,
+      )
+      .order('codigo', { ascending: true })
+      .limit(limit);
+    if (error) throw error;
+    return data || [];
+  },
+
+  /** Resumen de obra (contrato, plantel, tipo, ubicación) por cada id_sigede. */
+  obtenerResumenesPorSigede: async (ids: string[]): Promise<ObraSigedeResumen[]> => {
+    const uniq = Array.from(new Set(ids.map((id) => id.trim()).filter(Boolean)));
+    if (uniq.length === 0) return [];
+
+    const cols = 'codigo, nombre, contrato, tipo_obra, provincia, municipio, distrito_minerd_sigede';
+    const [resCodigo, resDistrito] = await Promise.all([
+      supabase.from('obras').select(cols).in('codigo', uniq),
+      supabase.from('obras').select(cols).in('distrito_minerd_sigede', uniq),
+    ]);
+    if (resCodigo.error) throw resCodigo.error;
+    if (resDistrito.error) throw resDistrito.error;
+
+    const porCodigo = new Map(
+      (resCodigo.data || []).map((o) => [String(o.codigo || '').trim(), o]),
+    );
+    const porDistrito = new Map(
+      (resDistrito.data || []).map((o) => [String(o.distrito_minerd_sigede || '').trim(), o]),
+    );
+
+    return uniq.map((idSigede) => {
+      const obra = porCodigo.get(idSigede) || porDistrito.get(idSigede);
+      if (!obra) {
+        return { id_sigede: idSigede, encontrada: false };
+      }
+      return {
+        id_sigede: idSigede,
+        contrato: obra.contrato ?? null,
+        plantel: obra.nombre ?? null,
+        tipo: obra.tipo_obra ?? null,
+        provincia: obra.provincia ?? null,
+        municipio: obra.municipio ?? null,
+        encontrada: true,
+      };
+    });
+  },
 };
 
 // ============================================
@@ -1978,6 +2038,226 @@ export const historialUploadsService = {
       // Re-lanzar el error para que el código que llama pueda manejarlo
       throw error;
     }
+  },
+};
+
+// ============================================
+// DOCUMENTOS TÉCNICOS DE OBRA
+// ============================================
+
+const DOC_TECNICO_SELECT = '*, contratistas(id, responsable, identificacion)';
+const MOV_DOC_TECNICO_SELECT = '*, area:departamento(id, area)';
+
+function parseNoAdendaSolicitud(value: string | number | null | undefined): number | null {
+  if (value === null || value === undefined || value === '') return null;
+  const n = typeof value === 'number' ? value : parseInt(String(value).trim(), 10);
+  return Number.isNaN(n) ? null : n;
+}
+
+function mapDocumentoTecnicoRow(row: Record<string, unknown>): DocumentoTecnicoObra {
+  const contratistaRaw = row.contratistas;
+  const contratista = (
+    Array.isArray(contratistaRaw) ? contratistaRaw[0] : contratistaRaw
+  ) as Contratista | null;
+  const { contratistas: _c, ...rest } = row;
+  const idSigede = Array.isArray(rest.id_sigede)
+    ? (rest.id_sigede as string[]).map(String)
+    : rest.id_sigede
+      ? [String(rest.id_sigede)]
+      : [];
+  return {
+    ...(rest as unknown as DocumentoTecnicoObra),
+    id_sigede: idSigede,
+    no_adenda_solicitud: parseNoAdendaSolicitud(rest.no_adenda_solicitud as string | number | null),
+    contratista: contratista ?? null,
+  };
+}
+
+function mapMovimientoDocumentoRow(row: Record<string, unknown>): MovimientoDocumentoTecnicoObra {
+  const areaRaw = row.area;
+  const area = (Array.isArray(areaRaw) ? areaRaw[0] : areaRaw) as MovimientoDocumentoTecnicoObra['area'];
+  const { area: _a, ...rest } = row;
+  return { ...(rest as unknown as MovimientoDocumentoTecnicoObra), area: area ?? null };
+}
+
+export const documentosTecnicosService = {
+  listar: async (filtros?: { busqueda?: string }): Promise<DocumentoTecnicoObra[]> => {
+    const { data, error } = await supabase
+      .from('documentos_tecnicos_obra')
+      .select(DOC_TECNICO_SELECT)
+      .order('created_at', { ascending: false });
+
+    if (error) throw error;
+
+    let filas = (data || []).map((r) => mapDocumentoTecnicoRow(r as Record<string, unknown>));
+    filas = await Promise.all(
+      filas.map(async (doc) => ({
+        ...doc,
+        obras_sigede: await obrasService.obtenerResumenesPorSigede(doc.id_sigede || []),
+      })),
+    );
+    const term = filtros?.busqueda?.trim().toLowerCase();
+    if (term) {
+      filas = filas.filter((d) => {
+        const responsable = (d.contratista?.responsable || '').toLowerCase();
+        const sigedes = (d.id_sigede || []).join(' ').toLowerCase();
+        return (
+          d.solicitud.toLowerCase().includes(term) ||
+          (d.cuadrantes || '').toLowerCase().includes(term) ||
+          (d.tipo_adenda || '').toLowerCase().includes(term) ||
+          String(d.no_adenda_solicitud ?? '').includes(term) ||
+          (d.tipo_adenda_anterior || '').toLowerCase().includes(term) ||
+          (d.observacion || '').toLowerCase().includes(term) ||
+          responsable.includes(term) ||
+          sigedes.includes(term)
+        );
+      });
+    }
+    return filas;
+  },
+
+  obtenerPorSolicitud: async (solicitud: string): Promise<DocumentoTecnicoObra | null> => {
+    const { data, error } = await supabase
+      .from('documentos_tecnicos_obra')
+      .select(DOC_TECNICO_SELECT)
+      .eq('solicitud', solicitud.trim())
+      .maybeSingle();
+    if (error) throw error;
+    if (!data) return null;
+    const doc = mapDocumentoTecnicoRow(data as Record<string, unknown>);
+    return {
+      ...doc,
+      obras_sigede: await obrasService.obtenerResumenesPorSigede(doc.id_sigede || []),
+    };
+  },
+
+  crear: async (payload: {
+    solicitud: string;
+    cuadrantes?: string;
+    tipo_adenda?: string;
+    no_adenda_solicitud?: number | string | null;
+    tipo_adenda_anterior?: string;
+    observacion?: string;
+    contratista_id?: string | null;
+    id_sigede: string[];
+  }): Promise<DocumentoTecnicoObra> => {
+    const row = {
+      solicitud: payload.solicitud.trim().slice(0, 75),
+      cuadrantes: payload.cuadrantes?.trim() || null,
+      tipo_adenda: payload.tipo_adenda?.trim() || null,
+      no_adenda_solicitud: parseNoAdendaSolicitud(payload.no_adenda_solicitud),
+      tipo_adenda_anterior: payload.tipo_adenda_anterior?.trim() || null,
+      observacion: payload.observacion?.trim() || null,
+      contratista_id: payload.contratista_id || null,
+      id_sigede: payload.id_sigede.filter(Boolean).map((s) => s.trim()).filter(Boolean),
+      updated_at: new Date().toISOString(),
+    };
+
+    const { data, error } = await supabase
+      .from('documentos_tecnicos_obra')
+      .insert(row)
+      .select(DOC_TECNICO_SELECT)
+      .single();
+
+    if (error) throw error;
+    const doc = mapDocumentoTecnicoRow(data as Record<string, unknown>);
+    return {
+      ...doc,
+      obras_sigede: await obrasService.obtenerResumenesPorSigede(doc.id_sigede || []),
+    };
+  },
+
+  actualizar: async (
+    id: string,
+    payload: Partial<{
+      solicitud: string;
+      cuadrantes: string | null;
+      tipo_adenda: string | null;
+      no_adenda_solicitud: number | string | null;
+      tipo_adenda_anterior: string | null;
+      observacion: string | null;
+      contratista_id: string | null;
+      id_sigede: string[];
+    }>,
+  ): Promise<DocumentoTecnicoObra> => {
+    const updates: Record<string, unknown> = { updated_at: new Date().toISOString() };
+    if (payload.solicitud !== undefined) updates.solicitud = payload.solicitud.trim().slice(0, 75);
+    if (payload.cuadrantes !== undefined) updates.cuadrantes = payload.cuadrantes?.trim() || null;
+    if (payload.tipo_adenda !== undefined) updates.tipo_adenda = payload.tipo_adenda?.trim() || null;
+    if (payload.no_adenda_solicitud !== undefined) {
+      updates.no_adenda_solicitud = parseNoAdendaSolicitud(payload.no_adenda_solicitud);
+    }
+    if (payload.tipo_adenda_anterior !== undefined) {
+      updates.tipo_adenda_anterior = payload.tipo_adenda_anterior?.trim() || null;
+    }
+    if (payload.observacion !== undefined) {
+      updates.observacion = payload.observacion?.trim() || null;
+    }
+    if (payload.contratista_id !== undefined) updates.contratista_id = payload.contratista_id;
+    if (payload.id_sigede !== undefined) {
+      updates.id_sigede = payload.id_sigede.filter(Boolean).map((s) => s.trim()).filter(Boolean);
+    }
+
+    const { data, error } = await supabase
+      .from('documentos_tecnicos_obra')
+      .update(updates)
+      .eq('id', id)
+      .select(DOC_TECNICO_SELECT)
+      .single();
+
+    if (error) throw error;
+    const doc = mapDocumentoTecnicoRow(data as Record<string, unknown>);
+    return {
+      ...doc,
+      obras_sigede: await obrasService.obtenerResumenesPorSigede(doc.id_sigede || []),
+    };
+  },
+
+  eliminar: async (id: string): Promise<void> => {
+    const { error } = await supabase.from('documentos_tecnicos_obra').delete().eq('id', id);
+    if (error) throw error;
+  },
+
+  listarMovimientos: async (solicitud: string): Promise<MovimientoDocumentoTecnicoObra[]> => {
+    const { data, error } = await supabase
+      .from('movimiento_documentos_tecnicos_obra')
+      .select(MOV_DOC_TECNICO_SELECT)
+      .eq('solicitud', solicitud.trim())
+      .order('fecha_solicitud', { ascending: false, nullsFirst: false })
+      .order('created_at', { ascending: false });
+
+    if (error) throw error;
+    return (data || []).map((r) => mapMovimientoDocumentoRow(r as Record<string, unknown>));
+  },
+
+  crearMovimiento: async (payload: {
+    solicitud: string;
+    fecha_solicitud?: string | null;
+    no_tramite?: string | null;
+    departamento?: string | null;
+    fecha_salida?: string | null;
+  }): Promise<MovimientoDocumentoTecnicoObra> => {
+    const row = {
+      solicitud: payload.solicitud.trim(),
+      fecha_solicitud: payload.fecha_solicitud || null,
+      no_tramite: payload.no_tramite?.trim() || null,
+      departamento: payload.departamento?.trim() || null,
+      fecha_salida: payload.fecha_salida || null,
+    };
+
+    const { data, error } = await supabase
+      .from('movimiento_documentos_tecnicos_obra')
+      .insert(row)
+      .select(MOV_DOC_TECNICO_SELECT)
+      .single();
+
+    if (error) throw error;
+    return mapMovimientoDocumentoRow(data as Record<string, unknown>);
+  },
+
+  eliminarMovimiento: async (id: string): Promise<void> => {
+    const { error } = await supabase.from('movimiento_documentos_tecnicos_obra').delete().eq('id', id);
+    if (error) throw error;
   },
 };
 

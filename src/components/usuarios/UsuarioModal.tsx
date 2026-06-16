@@ -34,6 +34,7 @@ const MODULOS_PERMISOS = [
   { id: 'carga_obras', label: 'Carga de Obras', icon: '📋', verKey: 'ver_carga_obras', editarKey: 'editar_carga_obras' },
   { id: 'tramites', label: 'Seguimiento de Trámite', icon: '📄', verKey: 'ver_tramites', editarKey: 'editar_tramites' },
   { id: 'atencion_contratista', label: 'Atención al contratista', icon: '🧑‍💼', verKey: 'ver_atencion_contratista', editarKey: 'editar_atencion_contratista' },
+  { id: 'gestion_tecnica_documento', label: 'Gestión técnica de documento', icon: '📁', verKey: 'ver_gestion_tecnica_documento', editarKey: 'editar_gestion_tecnica_documento' },
   { id: 'reporte', label: 'Reporte', icon: '📊', verKey: 'ver_reporte', editarKey: 'editar_reporte' },
   { id: 'configuracion', label: 'Configuración', icon: '⚙️', verKey: 'ver_configuracion', editarKey: 'editar_configuracion' },
 ] as const;
