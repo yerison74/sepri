@@ -18,6 +18,12 @@ import {
   formStateToContratistaUpdates,
   type ObraFormState,
 } from '../utils/obraFormulario';
+import {
+  BTN_PRIMARY,
+  BTN_SECONDARY,
+  BTN_ACCENT,
+  BTN_GHOST,
+} from '../constants/buttonStyles';
 
 interface FileUploadProps {
   onUploadComplete?: () => void;
@@ -469,7 +475,7 @@ const FileUpload: React.FC<FileUploadProps> = ({ onUploadComplete, onError, solo
               <button
                 onClick={handleValidate}
                 disabled={!file || uploading || downloading}
-                className="inline-flex items-center px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-[#42A5F5] hover:bg-blue-600 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-[#42A5F5] disabled:opacity-50 disabled:cursor-not-allowed"
+                className={BTN_SECONDARY}
               >
                 <CheckCircleIcon className="mr-2" />
                 Validar archivo
@@ -477,7 +483,7 @@ const FileUpload: React.FC<FileUploadProps> = ({ onUploadComplete, onError, solo
               <button
                 onClick={handleUpload}
                 disabled={!file || uploading || downloading}
-                className="inline-flex items-center px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-[#42A5F5] hover:bg-blue-600 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-[#42A5F5] disabled:opacity-50 disabled:cursor-not-allowed"
+                className={BTN_PRIMARY}
               >
                 <CloudUploadIcon className="mr-2" />
                 Subir y procesar
@@ -583,7 +589,7 @@ const FileUpload: React.FC<FileUploadProps> = ({ onUploadComplete, onError, solo
             <button
               onClick={handleDownloadData}
               disabled={downloading}
-              className="inline-flex items-center justify-center px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-[#FFA726] hover:bg-orange-600 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-[#FFA726] disabled:opacity-50 disabled:cursor-not-allowed"
+              className={BTN_ACCENT}
             >
               <DownloadIcon className="mr-2" />
               {downloading ? 'Generando archivo...' : 'Descargar obras'}
@@ -656,14 +662,14 @@ const FileUpload: React.FC<FileUploadProps> = ({ onUploadComplete, onError, solo
             <div className="flex flex-col sm:flex-row gap-2">
               <button
                 onClick={handleDownloadTemplate}
-                className="inline-flex items-center px-3 py-1.5 text-xs text-gray-600 hover:text-gray-800 hover:bg-gray-100 rounded transition-colors"
+                className={BTN_GHOST}
               >
                 <DownloadIcon className="mr-1 text-sm" />
                 Plantilla XML
               </button>
               <button
                 onClick={handleDownloadTemplateExcel}
-                className="inline-flex items-center px-3 py-1.5 text-xs text-gray-600 hover:text-gray-800 hover:bg-gray-100 rounded transition-colors"
+                className={BTN_GHOST}
               >
                 <DownloadIcon className="mr-1 text-sm" />
                 Plantilla Excel
@@ -717,7 +723,7 @@ const FileUpload: React.FC<FileUploadProps> = ({ onUploadComplete, onError, solo
                 <button
                   onClick={handleBuscarObra}
                   disabled={loadingObra || !obraId.trim()}
-                  className="inline-flex items-center justify-center px-6 py-3 border border-transparent rounded-lg shadow-md text-base font-medium text-white bg-[#42A5F5] hover:bg-blue-600 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-[#42A5F5] disabled:opacity-50 disabled:cursor-not-allowed transition-all transform hover:scale-105 whitespace-nowrap"
+                  className={BTN_PRIMARY}
                 >
                   <SearchIcon className="mr-2" />
                   {loadingObra ? 'Buscando...' : 'Buscar Obra'}
@@ -769,7 +775,7 @@ const FileUpload: React.FC<FileUploadProps> = ({ onUploadComplete, onError, solo
                     type="button"
                     onClick={handleActualizarObra}
                     disabled={savingObra}
-                    className="inline-flex items-center justify-center px-8 py-3 border-2 border-white rounded-lg shadow-lg text-base font-semibold text-white bg-white bg-opacity-20 hover:bg-opacity-30 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-white disabled:opacity-50 disabled:cursor-not-allowed transition-all"
+                    className={`${BTN_PRIMARY} !bg-white/20 !text-white border border-white/40 hover:!bg-white/30`}
                   >
                     <SaveIcon className="mr-2" />
                     {savingObra ? 'Guardando...' : 'Guardar Cambios'}

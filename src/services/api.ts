@@ -26,6 +26,12 @@ import {
   PLANTILLA_OBRAS_COL_WIDTHS,
   generarXmlPlantillaObras,
 } from '../constants/obraPlantillaCarga';
+import {
+  construirWorkbookExport,
+  construirWorkbookPlantilla,
+  parsearArchivoExcel,
+  workbookABlob,
+} from '../utils/gestionTecnicaDocumentoExcel';
 
 export type { ProgresoCargaObra, ProgresoCargaCallback } from './fileProcessor';
 
@@ -158,9 +164,15 @@ export const gestionTecnicaDocumentoAPI = {
       solicitud: string;
       cuadrantes?: string;
       tipo_adenda?: string;
-      no_adenda_solicitud?: number | string | null;
+      no_adenda_solicituda?: number | string | null;
       tipo_adenda_anterior?: string;
+      numero_adenda_anterior?: string | null;
+      numero_adenda_actual?: string | null;
       observacion?: string;
+      monto_contrato_base?: number | string | null;
+      monto_adenda_anterior?: number | string | null;
+      monto_adenda_solicitada?: number | string | null;
+      monto_total?: number | string | null;
       contratista_id?: string | null;
       id_sigede: string[];
     },
@@ -212,6 +224,7 @@ export const gestionTecnicaDocumentoAPI = {
   guardarMovimiento: async (payload: {
     solicitud: string;
     fecha_solicitud?: string | null;
+    fecha_entrada?: string | null;
     no_tramite?: string | null;
     departamento?: string | null;
     fecha_salida?: string | null;
@@ -279,6 +292,70 @@ export const gestionTecnicaDocumentoAPI = {
       throw {
         response: {
           data: { error: error.message || 'Error al consultar obras' },
+          status: 500,
+        },
+      };
+    }
+  },
+
+  exportarExcel: async (filtros?: { busqueda?: string }) => {
+    try {
+      const documentos = await documentosTecnicosService.listar(filtros);
+      const movimientos = await documentosTecnicosService.listarTodosMovimientos();
+      const solicitudes = new Set(documentos.map((d) => d.solicitud));
+      const movimientosFiltrados = filtros?.busqueda?.trim()
+        ? movimientos.filter((m) => solicitudes.has(m.solicitud))
+        : movimientos;
+
+      const wb = construirWorkbookExport(documentos, movimientosFiltrados);
+      const blob = workbookABlob(wb);
+      return { data: blob } as AxiosResponse<Blob>;
+    } catch (error: any) {
+      throw {
+        response: {
+          data: { error: error.message || 'Error al exportar Excel' },
+          status: 500,
+        },
+      };
+    }
+  },
+
+  descargarPlantillaExcel: () => {
+    try {
+      const wb = construirWorkbookPlantilla();
+      const blob = workbookABlob(wb);
+      return Promise.resolve({ data: blob } as AxiosResponse<Blob>);
+    } catch (error: any) {
+      throw {
+        response: {
+          data: { error: error.message || 'Error al generar plantilla' },
+          status: 500,
+        },
+      };
+    }
+  },
+
+  importarExcel: async (file: File) => {
+    try {
+      const buffer = await file.arrayBuffer();
+      const { documentos, movimientos } = parsearArchivoExcel(buffer);
+
+      if (documentos.length === 0 && movimientos.length === 0) {
+        throw new Error(
+          'No se encontraron filas válidas. Use las hojas "Documentos" y "Movimientos" con los encabezados de la plantilla.',
+        );
+      }
+
+      const resultado = await documentosTecnicosService.importarMasivo({
+        documentos,
+        movimientos,
+      });
+
+      return { data: { data: resultado } };
+    } catch (error: any) {
+      throw {
+        response: {
+          data: { error: error.message || 'Error al importar Excel' },
           status: 500,
         },
       };

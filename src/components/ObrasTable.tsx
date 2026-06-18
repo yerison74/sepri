@@ -9,6 +9,12 @@ import {
 } from '@mui/icons-material';
 import { mantenimientosAPI, statsAPI, Obra } from '../services/api';
 import ObraMap from './ObraMap';
+import {
+  BTN_PRIMARY,
+  BTN_SECONDARY,
+  BTN_SECONDARY_SM,
+  BTN_DANGER,
+} from '../constants/buttonStyles';
 
 interface ObrasTableProps {
   refreshTrigger?: number;
@@ -176,7 +182,7 @@ const ObrasTable: React.FC<ObrasTableProps> = ({ refreshTrigger, soloLectura = f
 
           <button
             onClick={handleClearFilters}
-            className="xl:col-span-1 inline-flex items-center justify-center gap-2 px-5 py-2.5 border border-slate-300 text-slate-700 rounded-xl font-semibold hover:bg-slate-50 transition-colors"
+            className={`${BTN_SECONDARY} xl:col-span-1`}
           >
             <Tune sx={{ fontSize: 20 }} />
             Limpiar
@@ -320,7 +326,7 @@ const ObrasTable: React.FC<ObrasTableProps> = ({ refreshTrigger, soloLectura = f
           <button
             onClick={() => handleChangePage(page - 1)}
             disabled={page === 0}
-            className="inline-flex items-center gap-1.5 px-3.5 py-2 border border-slate-300 text-slate-700 rounded-xl hover:bg-slate-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+            className={BTN_SECONDARY_SM}
           >
             <NavigateBefore sx={{ fontSize: 20 }} />
             Anterior
@@ -328,7 +334,7 @@ const ObrasTable: React.FC<ObrasTableProps> = ({ refreshTrigger, soloLectura = f
           <button
             onClick={() => handleChangePage(page + 1)}
             disabled={page >= totalPages - 1}
-            className="inline-flex items-center gap-1.5 px-3.5 py-2 border border-slate-300 text-slate-700 rounded-xl hover:bg-slate-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+            className={BTN_SECONDARY_SM}
           >
             Siguiente
             <NavigateNext sx={{ fontSize: 20 }} />
@@ -546,7 +552,7 @@ const ObrasTable: React.FC<ObrasTableProps> = ({ refreshTrigger, soloLectura = f
                       }
                     }
                   }}
-                  className="px-6 py-2.5 bg-red-500 text-white rounded-lg hover:bg-red-600 transition-all font-medium flex items-center gap-2 shadow-md hover:shadow-lg hover:scale-105 active:scale-95"
+                  className={`${BTN_DANGER} flex items-center gap-2`}
                 >
                   <Delete fontSize="small" />
                   Eliminar
@@ -554,7 +560,7 @@ const ObrasTable: React.FC<ObrasTableProps> = ({ refreshTrigger, soloLectura = f
               )}
               <button
                 onClick={() => setShowDetails(false)}
-                className="px-6 py-2.5 bg-[#42A5F5] text-white rounded-lg hover:bg-blue-600 transition-all font-medium shadow-md hover:shadow-lg hover:scale-105 active:scale-95"
+                className={BTN_PRIMARY}
               >
                 Cerrar
               </button>

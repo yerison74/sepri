@@ -8,7 +8,10 @@ import {
   Add,
   KeyboardArrowDown,
   Check,
+  Upload,
+  Download,
 } from '@mui/icons-material';
+import { descargarBlob } from '../utils/gestionTecnicaDocumentoExcel';
 import { gestionTecnicaDocumentoAPI } from '../services/api';
 import type {
   Contratista,
@@ -17,7 +20,16 @@ import type {
   ObraSigedeResumen,
 } from '../types/database';
 import { useAreas } from '../hooks/useAreas';
-import { TIPOS_ADENDA } from '../constants/gestionTecnicaDocumento';
+import { TIPOS_ADENDA, formatMontoDOP, parseMontoDOP, montoFormDesdeNumero, esMontoValido, esCodigoAdendaValido, normalizarCodigoAdenda } from '../constants/gestionTecnicaDocumento';
+import { validarMovimientoDocumento } from '../utils/validarMovimientoDocumento';
+import {
+  BTN_PRIMARY,
+  BTN_PRIMARY_SM,
+  BTN_SECONDARY,
+  BTN_SECONDARY_SM,
+  BTN_LINK,
+  BTN_ICON,
+} from '../constants/buttonStyles';
 
 interface GestionTecnicaDocumentoProps {
   soloLectura?: boolean;
@@ -228,9 +240,15 @@ function ItemSeleccionado({
 const EMPTY_DOC_FORM = {
   solicitud: '',
   cuadrantes: '',
-  tipo_adenda: '',
-  no_adenda_solicitud: '',
+  monto_contrato_base: '',
   tipo_adenda_anterior: '',
+  numero_adenda_anterior: '',
+  monto_adenda_anterior: '',
+  tipo_adenda: '',
+  numero_adenda_actual: '',
+  no_adenda_solicituda: '',
+  monto_adenda_solicitada: '',
+  monto_total: '',
   observacion: '',
   contratista_id: '' as string | null,
   id_sigede: [] as string[],
@@ -281,6 +299,79 @@ function CampoDetalle({ label, value }: { label: string; value?: string | number
     <div className="space-y-0.5">
       <p className="text-[11px] font-medium text-slate-500 uppercase tracking-wide">{label}</p>
       <p className="text-sm text-slate-800">{value != null && value !== '' ? value : '—'}</p>
+    </div>
+  );
+}
+
+function CampoDetalleMonto({ label, value }: { label: string; value?: number | null }) {
+  return <CampoDetalle label={label} value={formatMontoDOP(value)} />;
+}
+
+function InputMontoDOP({
+  id,
+  label,
+  value,
+  onChange,
+  className = '',
+}: {
+  id: string;
+  label: string;
+  value: string;
+  onChange: (value: string) => void;
+  className?: string;
+}) {
+  return (
+    <div className={`space-y-1 ${className}`}>
+      <label htmlFor={id} className={labelClass}>
+        {label}
+      </label>
+      <div className="relative">
+        <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-xs font-medium text-slate-400">
+          RD$
+        </span>
+        <input
+          id={id}
+          type="text"
+          inputMode="decimal"
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          className={`${inputClass} pl-11 tabular-nums`}
+          placeholder="0.00"
+        />
+      </div>
+    </div>
+  );
+}
+
+function InputCodigoAdenda({
+  id,
+  label,
+  value,
+  onChange,
+  className = '',
+}: {
+  id: string;
+  label: string;
+  value: string;
+  onChange: (value: string) => void;
+  className?: string;
+}) {
+  return (
+    <div className={`space-y-1 ${className}`}>
+      <label htmlFor={id} className={labelClass}>
+        {label}
+      </label>
+      <input
+        id={id}
+        type="text"
+        inputMode="text"
+        maxLength={9}
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        className={`${inputClass} font-mono tabular-nums`}
+        placeholder="1234-5678"
+        title="Formato: 1 a 4 dígitos, guion, 1 a 4 dígitos"
+      />
     </div>
   );
 }
@@ -346,6 +437,7 @@ function TablaObrasSigede({
 
 const EMPTY_MOV_FORM = {
   fecha_solicitud: '',
+  fecha_entrada: '',
   no_tramite: '',
   departamento: '',
   fecha_salida: '',
@@ -360,8 +452,13 @@ const GestionTecnicaDocumento: React.FC<GestionTecnicaDocumentoProps> = ({ soloL
   const [loading, setLoading] = useState(true);
   const [loadingMov, setLoadingMov] = useState(false);
   const [guardando, setGuardando] = useState(false);
+  const [exportando, setExportando] = useState(false);
+  const [importando, setImportando] = useState(false);
+  const [mensajeExito, setMensajeExito] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busqueda, setBusqueda] = useState('');
+  const inputImportRef = useRef<HTMLInputElement>(null);
+  const formularioRef = useRef<HTMLFormElement>(null);
 
   const [docForm, setDocForm] = useState(EMPTY_DOC_FORM);
   const [obraBusqueda, setObraBusqueda] = useState('');
@@ -472,10 +569,16 @@ const GestionTecnicaDocumento: React.FC<GestionTecnicaDocumentoProps> = ({ soloL
     setDocForm({
       solicitud: doc.solicitud,
       cuadrantes: doc.cuadrantes || '',
-      tipo_adenda: doc.tipo_adenda || '',
-      no_adenda_solicitud:
-        doc.no_adenda_solicitud != null ? String(doc.no_adenda_solicitud) : '',
+      monto_contrato_base: montoFormDesdeNumero(doc.monto_contrato_base),
       tipo_adenda_anterior: doc.tipo_adenda_anterior || '',
+      numero_adenda_anterior: doc.numero_adenda_anterior || '',
+      monto_adenda_anterior: montoFormDesdeNumero(doc.monto_adenda_anterior),
+      tipo_adenda: doc.tipo_adenda || '',
+      numero_adenda_actual: doc.numero_adenda_actual || '',
+      no_adenda_solicituda:
+        doc.no_adenda_solicituda != null ? String(doc.no_adenda_solicituda) : '',
+      monto_adenda_solicitada: montoFormDesdeNumero(doc.monto_adenda_solicitada),
+      monto_total: montoFormDesdeNumero(doc.monto_total),
       observacion: doc.observacion || '',
       contratista_id: doc.contratista_id || null,
       id_sigede: [...(doc.id_sigede || [])],
@@ -488,6 +591,10 @@ const GestionTecnicaDocumento: React.FC<GestionTecnicaDocumentoProps> = ({ soloL
   const seleccionarDocumento = async (doc: DocumentoTecnicoObra) => {
     setSeleccionado(doc);
     setMovForm(EMPTY_MOV_FORM);
+    if (!soloLectura) {
+      cargarDocEnFormulario(doc);
+      formularioRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
     await cargarMovimientos(doc.solicitud);
   };
 
@@ -510,9 +617,29 @@ const GestionTecnicaDocumento: React.FC<GestionTecnicaDocumentoProps> = ({ soloL
       setError('El nombre del solicitante es obligatorio');
       return;
     }
-    if (docForm.no_adenda_solicitud !== '' && !/^\d+$/.test(docForm.no_adenda_solicitud)) {
-      setError('No. adenda solicitud debe ser un número entero');
+    if (docForm.no_adenda_solicituda !== '' && !/^\d+$/.test(docForm.no_adenda_solicituda)) {
+      setError('No. adendas (solicituda) debe ser un número entero');
       return;
+    }
+    if (!esCodigoAdendaValido(docForm.numero_adenda_anterior)) {
+      setError('Código adenda anterior: use formato 1234-5678 (1 a 4 dígitos, guion, 1 a 4 dígitos)');
+      return;
+    }
+    if (!esCodigoAdendaValido(docForm.numero_adenda_actual)) {
+      setError('Código adenda actual: use formato 1234-5678 (1 a 4 dígitos, guion, 1 a 4 dígitos)');
+      return;
+    }
+    const camposMonto = [
+      ['Monto contrato base', docForm.monto_contrato_base],
+      ['Monto adenda anterior', docForm.monto_adenda_anterior],
+      ['Monto adenda solicitada', docForm.monto_adenda_solicitada],
+      ['Monto total', docForm.monto_total],
+    ] as const;
+    for (const [nombre, valor] of camposMonto) {
+      if (!esMontoValido(valor)) {
+        setError(`${nombre} debe ser un monto válido en pesos dominicanos`);
+        return;
+      }
     }
     try {
       setGuardando(true);
@@ -521,10 +648,18 @@ const GestionTecnicaDocumento: React.FC<GestionTecnicaDocumentoProps> = ({ soloL
         {
           solicitud: docForm.solicitud,
           cuadrantes: docForm.cuadrantes,
-          tipo_adenda: docForm.tipo_adenda || undefined,
-          no_adenda_solicitud:
-            docForm.no_adenda_solicitud === '' ? null : parseInt(docForm.no_adenda_solicitud, 10),
+          monto_contrato_base: parseMontoDOP(docForm.monto_contrato_base),
           tipo_adenda_anterior: docForm.tipo_adenda_anterior || undefined,
+          numero_adenda_anterior: normalizarCodigoAdenda(docForm.numero_adenda_anterior),
+          monto_adenda_anterior: parseMontoDOP(docForm.monto_adenda_anterior),
+          tipo_adenda: docForm.tipo_adenda || undefined,
+          numero_adenda_actual: normalizarCodigoAdenda(docForm.numero_adenda_actual),
+          no_adenda_solicituda:
+            docForm.no_adenda_solicituda === ''
+              ? null
+              : parseInt(docForm.no_adenda_solicituda, 10),
+          monto_adenda_solicitada: parseMontoDOP(docForm.monto_adenda_solicitada),
+          monto_total: parseMontoDOP(docForm.monto_total),
           observacion: docForm.observacion,
           contratista_id: contratistaSel?.id || docForm.contratista_id || null,
           id_sigede: docForm.id_sigede,
@@ -536,6 +671,9 @@ const GestionTecnicaDocumento: React.FC<GestionTecnicaDocumentoProps> = ({ soloL
       await cargarDocumentos();
       if (guardado) {
         setSeleccionado(guardado);
+        if (!soloLectura) {
+          cargarDocEnFormulario(guardado);
+        }
         await cargarMovimientos(guardado.solicitud);
       }
     } catch (err: any) {
@@ -564,15 +702,26 @@ const GestionTecnicaDocumento: React.FC<GestionTecnicaDocumentoProps> = ({ soloL
   const handleGuardarMovimiento = async (e: React.FormEvent) => {
     e.preventDefault();
     if (soloLectura || !seleccionado) return;
+
+    const payload = {
+      fecha_solicitud: movForm.fecha_solicitud || null,
+      fecha_entrada: movForm.fecha_entrada || null,
+      no_tramite: movForm.no_tramite || null,
+      departamento: movForm.departamento || null,
+      fecha_salida: movForm.fecha_salida || null,
+    };
+    const errorValidacion = validarMovimientoDocumento(movimientos, payload);
+    if (errorValidacion) {
+      setError(errorValidacion);
+      return;
+    }
+
     try {
       setGuardando(true);
       setError(null);
       await gestionTecnicaDocumentoAPI.guardarMovimiento({
         solicitud: seleccionado.solicitud,
-        fecha_solicitud: movForm.fecha_solicitud || null,
-        no_tramite: movForm.no_tramite || null,
-        departamento: movForm.departamento || null,
-        fecha_salida: movForm.fecha_salida || null,
+        ...payload,
       });
       setMovForm(EMPTY_MOV_FORM);
       await cargarMovimientos(seleccionado.solicitud);
@@ -594,21 +743,131 @@ const GestionTecnicaDocumento: React.FC<GestionTecnicaDocumentoProps> = ({ soloL
     }
   };
 
+  const handleExportarExcel = async () => {
+    try {
+      setExportando(true);
+      setError(null);
+      setMensajeExito(null);
+      const resp = await gestionTecnicaDocumentoAPI.exportarExcel({
+        busqueda: busqueda.trim() || undefined,
+      });
+      const fecha = new Date().toISOString().split('T')[0];
+      descargarBlob(resp.data, `documentos-tecnicos-${fecha}.xlsx`);
+    } catch (err: any) {
+      setError(err?.response?.data?.error || 'No se pudo exportar el Excel');
+    } finally {
+      setExportando(false);
+    }
+  };
+
+  const handleDescargarPlantilla = async () => {
+    try {
+      setError(null);
+      const resp = await gestionTecnicaDocumentoAPI.descargarPlantillaExcel();
+      descargarBlob(resp.data, 'plantilla-documentos-tecnicos.xlsx');
+    } catch (err: any) {
+      setError(err?.response?.data?.error || 'No se pudo descargar la plantilla');
+    }
+  };
+
+  const handleImportarExcel = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    if (!file || soloLectura) return;
+
+    try {
+      setImportando(true);
+      setError(null);
+      setMensajeExito(null);
+      const resp = await gestionTecnicaDocumentoAPI.importarExcel(file);
+      const r = resp.data.data;
+      const partes = [
+        `${r.documentosCreados} documento(s) creado(s)`,
+        r.documentosActualizados > 0 ? `${r.documentosActualizados} actualizado(s)` : '',
+        `${r.movimientosCreados} movimiento(s) registrado(s)`,
+      ].filter(Boolean);
+      let msg = `Importación completada: ${partes.join(', ')}.`;
+      if (r.errores.length > 0) {
+        msg += ` ${r.errores.length} advertencia(s): ${r.errores.slice(0, 3).join(' · ')}`;
+        if (r.errores.length > 3) msg += ` … (+${r.errores.length - 3} más)`;
+      }
+      setMensajeExito(msg);
+      await cargarDocumentos();
+      if (seleccionado) await cargarMovimientos(seleccionado.solicitud);
+    } catch (err: any) {
+      setError(err?.response?.data?.error || 'No se pudo importar el Excel');
+    } finally {
+      setImportando(false);
+    }
+  };
+
+  const btnSecundarioClass = BTN_SECONDARY_SM;
+
   return (
     <div className="space-y-5">
       <div className="bg-white rounded-2xl border border-slate-200/80 px-4 py-4 sm:px-6 shadow-sm shadow-slate-100">
-        <h2 className="text-xl sm:text-2xl font-semibold text-slate-800 flex items-center gap-2.5">
-          <Description className="text-[#42A5F5]" sx={{ fontSize: 28 }} />
-          Gestión técnica de documento
-        </h2>
-        <p className="text-sm text-slate-400 mt-1.5">
-          Registre la información básica de cada solicitud y consulte los movimientos u oficios al seleccionar un documento.
-        </p>
+        <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4">
+          <div>
+            <h2 className="text-xl sm:text-2xl font-semibold text-slate-800 flex items-center gap-2.5">
+              <Description className="text-[#42A5F5]" sx={{ fontSize: 28 }} />
+              Gestión técnica de documento
+            </h2>
+            <p className="text-sm text-slate-400 mt-1.5">
+              Registre la información básica de cada solicitud y consulte los movimientos u oficios al seleccionar un documento.
+            </p>
+          </div>
+          <div className="flex flex-wrap items-center gap-2 shrink-0">
+            <button
+              type="button"
+              onClick={handleExportarExcel}
+              disabled={exportando || importando}
+              className={btnSecundarioClass}
+            >
+              <Download sx={{ fontSize: 18 }} />
+              {exportando ? 'Exportando…' : 'Exportar Excel'}
+            </button>
+            {!soloLectura && (
+              <>
+                <button
+                  type="button"
+                  onClick={handleDescargarPlantilla}
+                  disabled={importando}
+                  className={btnSecundarioClass}
+                >
+                  <Download sx={{ fontSize: 18 }} />
+                  Plantilla
+                </button>
+                <button
+                  type="button"
+                  onClick={() => inputImportRef.current?.click()}
+                  disabled={importando}
+                  className={BTN_PRIMARY_SM}
+                >
+                  <Upload sx={{ fontSize: 18 }} />
+                  {importando ? 'Importando…' : 'Importar Excel'}
+                </button>
+                <input
+                  ref={inputImportRef}
+                  type="file"
+                  accept=".xlsx,.xls"
+                  className="hidden"
+                  onChange={handleImportarExcel}
+                />
+              </>
+            )}
+          </div>
+        </div>
       </div>
 
       {soloLectura && (
         <div className="bg-amber-50/80 border border-amber-200/60 text-amber-800 px-4 py-3 rounded-xl text-sm">
           Solo visualización: no tienes permiso para crear, editar o eliminar registros.
+        </div>
+      )}
+
+      {mensajeExito && (
+        <div className="bg-emerald-50/80 border border-emerald-200/60 text-emerald-800 px-4 py-3 rounded-xl text-sm">
+          {mensajeExito}
         </div>
       )}
 
@@ -618,11 +877,14 @@ const GestionTecnicaDocumento: React.FC<GestionTecnicaDocumentoProps> = ({ soloL
 
       {!soloLectura && (
         <form
+          ref={formularioRef}
           onSubmit={handleGuardarDocumento}
           className="bg-white border border-slate-200/80 rounded-2xl shadow-sm shadow-slate-100 p-4 sm:p-6 space-y-5"
         >
           <h3 className="text-sm font-semibold text-slate-700 tracking-wide">
-            {editandoId ? 'Editar documento' : 'Nuevo documento'}
+            {editandoId
+              ? `Editar documento${seleccionado ? ` — ${seleccionado.solicitud}` : ''}`
+              : 'Nuevo documento'}
           </h3>
 
           <div className="space-y-5">
@@ -655,37 +917,172 @@ const GestionTecnicaDocumento: React.FC<GestionTecnicaDocumentoProps> = ({ soloL
               </div>
             </div>
 
+            <div
+              className={`rounded-xl border p-4 space-y-3 transition-colors ${
+                editandoId
+                  ? 'border-[#42A5F5]/30 bg-blue-50/30'
+                  : 'border-slate-100 bg-slate-50/40'
+              }`}
+            >
+              <p className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider">
+                ID SIGEDE (obras)
+              </p>
+              <p className="text-xs text-slate-400">
+                {editandoId
+                  ? 'Agregue o quite obras SIGEDE del documento seleccionado y pulse «Actualizar documento».'
+                  : 'Asigne una o más obras por código o distrito SIGEDE.'}
+              </p>
+              <AutocompleteBusqueda
+                value={obraBusqueda}
+                onChange={setObraBusqueda}
+                placeholder="Buscar por código, nombre o distrito SIGEDE…"
+                abierto={obraOpciones.length > 0}
+              >
+                {obraOpciones.map((obra, idx) => {
+                  const id = idSigedeDesdeObra(obra);
+                  const yaAsignada = docForm.id_sigede.includes(id);
+                  return (
+                    <li key={`${id}-${idx}`}>
+                      <div
+                        role="option"
+                        aria-selected={false}
+                        tabIndex={!id || yaAsignada ? -1 : 0}
+                        className={`${dropdownItemClass} ${
+                          !id || yaAsignada ? 'opacity-40 cursor-not-allowed hover:bg-white active:bg-white' : ''
+                        }`}
+                        onClick={() => {
+                          if (!id || yaAsignada) return;
+                          agregarObraSigede(obra);
+                        }}
+                        onKeyDown={(e) => {
+                          if ((!id || yaAsignada) && (e.key === 'Enter' || e.key === ' ')) return;
+                          if (e.key === 'Enter' || e.key === ' ') {
+                            e.preventDefault();
+                            agregarObraSigede(obra);
+                          }
+                        }}
+                      >
+                        <span className="flex items-baseline gap-1.5 min-w-0">
+                          <span className="font-mono text-xs text-[#42A5F5] shrink-0">{id || '—'}</span>
+                          <span className="text-slate-600 truncate">{obra.nombre}</span>
+                        </span>
+                        {(obra.contrato || obra.municipio) && (
+                          <span className="block text-xs text-slate-400 truncate mt-0.5">
+                            {[obra.contrato && `Contrato ${obra.contrato}`, obra.municipio]
+                              .filter(Boolean)
+                              .join(' · ')}
+                          </span>
+                        )}
+                        {yaAsignada && (
+                          <span className="block text-[11px] text-slate-400 mt-0.5">Ya asignada</span>
+                        )}
+                      </div>
+                    </li>
+                  );
+                })}
+              </AutocompleteBusqueda>
+              <TablaObrasSigede filas={obrasResumen} onQuitar={quitarSigede} />
+            </div>
+
             <div>
-              <p className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider mb-3">Adenda</p>
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                <SelectTipoAdenda
-                  id="tipo-adenda"
-                  label="Tipo adenda"
-                  value={docForm.tipo_adenda}
-                  onChange={(value) => setDocForm((p) => ({ ...p, tipo_adenda: value }))}
+              <p className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider mb-3">
+                Montos y adendas (DOP)
+              </p>
+              <div className="space-y-4">
+                <InputMontoDOP
+                  id="monto-contrato-base"
+                  label="Monto contrato base"
+                  value={docForm.monto_contrato_base}
+                  onChange={(v) => setDocForm((p) => ({ ...p, monto_contrato_base: v }))}
+                  className="max-w-xs"
                 />
-                <div className="space-y-1">
-                  <label htmlFor="no-adenda-solicitud" className={labelClass}>
-                    No. adenda solicitud
-                  </label>
-                  <input
-                    id="no-adenda-solicitud"
-                    type="number"
-                    min={0}
-                    step={1}
-                    value={docForm.no_adenda_solicitud}
-                    onChange={(e) => setDocForm((p) => ({ ...p, no_adenda_solicitud: e.target.value }))}
-                    className={inputClass}
-                    placeholder="Número entero"
+
+                <div className="rounded-xl border border-slate-100 bg-slate-50/50 p-4 space-y-3">
+                  <p className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider">
+                    Adenda anterior
+                  </p>
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                    <SelectTipoAdenda
+                      id="tipo-adenda-anterior"
+                      label="Tipo adenda anterior"
+                      value={docForm.tipo_adenda_anterior}
+                      onChange={(value) => setDocForm((p) => ({ ...p, tipo_adenda_anterior: value }))}
+                    />
+                    <InputCodigoAdenda
+                      id="numero-adenda-anterior"
+                      label="Código adenda anterior"
+                      value={docForm.numero_adenda_anterior}
+                      onChange={(v) => setDocForm((p) => ({ ...p, numero_adenda_anterior: v }))}
+                    />
+                    <InputMontoDOP
+                      id="monto-adenda-anterior"
+                      label="Monto adenda anterior"
+                      value={docForm.monto_adenda_anterior}
+                      onChange={(v) => setDocForm((p) => ({ ...p, monto_adenda_anterior: v }))}
+                    />
+                  </div>
+                </div>
+
+                <div
+                  className={`rounded-xl border p-4 space-y-3 transition-colors ${
+                    editandoId
+                      ? 'border-[#42A5F5]/25 bg-blue-50/25'
+                      : 'border-slate-100 bg-slate-50/40'
+                  }`}
+                >
+                  <p className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider">
+                    Adenda actual (solicitud)
+                  </p>
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+                    <SelectTipoAdenda
+                      id="tipo-adenda"
+                      label="Tipo adenda"
+                      value={docForm.tipo_adenda}
+                      onChange={(value) => setDocForm((p) => ({ ...p, tipo_adenda: value }))}
+                    />
+                    <InputCodigoAdenda
+                      id="numero-adenda-actual"
+                      label="Código adenda actual"
+                      value={docForm.numero_adenda_actual}
+                      onChange={(v) => setDocForm((p) => ({ ...p, numero_adenda_actual: v }))}
+                    />
+                    <div className="space-y-1">
+                      <label htmlFor="no-adenda-solicituda" className={labelClass}>
+                        No. adendas (solicituda)
+                      </label>
+                      <input
+                        id="no-adenda-solicituda"
+                        type="number"
+                        min={0}
+                        step={1}
+                        value={docForm.no_adenda_solicituda}
+                        onChange={(e) =>
+                          setDocForm((p) => ({ ...p, no_adenda_solicituda: e.target.value }))
+                        }
+                        className={inputClass}
+                        placeholder="Cantidad acumulada"
+                        title="Cantidad de adendas que lleva el documento hasta el momento"
+                      />
+                    </div>
+                    <InputMontoDOP
+                      id="monto-adenda-solicitada"
+                      label="Monto adenda solicitada"
+                      value={docForm.monto_adenda_solicitada}
+                      onChange={(v) => setDocForm((p) => ({ ...p, monto_adenda_solicitada: v }))}
+                    />
+                  </div>
+                </div>
+
+                <div className="rounded-xl border border-slate-200/80 bg-white p-4 max-w-xs shadow-sm shadow-slate-100/80">
+                  <InputMontoDOP
+                    id="monto-total"
+                    label="Monto total"
+                    value={docForm.monto_total}
+                    onChange={(v) => setDocForm((p) => ({ ...p, monto_total: v }))}
                   />
                 </div>
-                <SelectTipoAdenda
-                  id="tipo-adenda-anterior"
-                  label="Tipo adenda anterior"
-                  value={docForm.tipo_adenda_anterior}
-                  onChange={(value) => setDocForm((p) => ({ ...p, tipo_adenda_anterior: value }))}
-                />
-                <div className="space-y-1 md:col-span-2 lg:col-span-3">
+
+                <div className="space-y-1">
                   <label className={labelClass}>Observación</label>
                   <textarea
                     value={docForm.observacion}
@@ -699,9 +1096,9 @@ const GestionTecnicaDocumento: React.FC<GestionTecnicaDocumentoProps> = ({ soloL
 
             <div>
               <p className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider mb-3">
-                Contratista y obras
+                Contratista
               </p>
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div className="space-y-1.5 md:col-span-2">
                   <label className={labelClass}>Contratista</label>
                   {contratistaSel ? (
@@ -755,61 +1152,6 @@ const GestionTecnicaDocumento: React.FC<GestionTecnicaDocumentoProps> = ({ soloL
                     </AutocompleteBusqueda>
                   )}
                 </div>
-                <div className="space-y-1.5 md:col-span-3">
-                  <label className={labelClass}>ID SIGEDE (obra)</label>
-                  <AutocompleteBusqueda
-                    value={obraBusqueda}
-                    onChange={setObraBusqueda}
-                    placeholder="Buscar por código, nombre o distrito SIGEDE…"
-                    abierto={obraOpciones.length > 0}
-                  >
-                    {obraOpciones.map((obra, idx) => {
-                      const id = idSigedeDesdeObra(obra);
-                      const yaAsignada = docForm.id_sigede.includes(id);
-                      return (
-                        <li key={`${id}-${idx}`}>
-                          <div
-                            role="option"
-                            aria-selected={false}
-                            tabIndex={!id || yaAsignada ? -1 : 0}
-                            className={`${dropdownItemClass} ${
-                              !id || yaAsignada ? 'opacity-40 cursor-not-allowed hover:bg-white active:bg-white' : ''
-                            }`}
-                            onClick={() => {
-                              if (!id || yaAsignada) return;
-                              agregarObraSigede(obra);
-                            }}
-                            onKeyDown={(e) => {
-                              if ((!id || yaAsignada) && (e.key === 'Enter' || e.key === ' ')) return;
-                              if (e.key === 'Enter' || e.key === ' ') {
-                                e.preventDefault();
-                                agregarObraSigede(obra);
-                              }
-                            }}
-                          >
-                            <span className="flex items-baseline gap-1.5 min-w-0">
-                              <span className="font-mono text-xs text-[#42A5F5] shrink-0">{id || '—'}</span>
-                              <span className="text-slate-600 truncate">{obra.nombre}</span>
-                            </span>
-                            {(obra.contrato || obra.municipio) && (
-                              <span className="block text-xs text-slate-400 truncate mt-0.5">
-                                {[obra.contrato && `Contrato ${obra.contrato}`, obra.municipio]
-                                  .filter(Boolean)
-                                  .join(' · ')}
-                              </span>
-                            )}
-                            {yaAsignada && (
-                              <span className="block text-[11px] text-slate-400 mt-0.5">Ya asignada</span>
-                            )}
-                          </div>
-                        </li>
-                      );
-                    })}
-                  </AutocompleteBusqueda>
-                  <div className="mt-3">
-                    <TablaObrasSigede filas={obrasResumen} onQuitar={quitarSigede} />
-                  </div>
-                </div>
               </div>
             </div>
           </div>
@@ -818,7 +1160,7 @@ const GestionTecnicaDocumento: React.FC<GestionTecnicaDocumentoProps> = ({ soloL
               <button
                 type="button"
                 onClick={resetDocForm}
-                className="px-4 py-2 border border-slate-200 rounded-xl text-slate-600 text-sm hover:bg-slate-50 transition-colors"
+                className={BTN_SECONDARY}
               >
                 Cancelar edición
               </button>
@@ -826,7 +1168,7 @@ const GestionTecnicaDocumento: React.FC<GestionTecnicaDocumentoProps> = ({ soloL
             <button
               type="submit"
               disabled={guardando}
-              className="inline-flex items-center gap-2 px-4 py-2.5 bg-[#42A5F5] text-white rounded-xl hover:bg-[#1E88E5] disabled:opacity-50 text-sm font-medium shadow-sm shadow-blue-200/40 transition-colors"
+              className={BTN_PRIMARY}
             >
               <Save sx={{ fontSize: 18 }} />
               {guardando ? 'Guardando…' : editandoId ? 'Actualizar documento' : 'Registrar documento'}
@@ -862,8 +1204,9 @@ const GestionTecnicaDocumento: React.FC<GestionTecnicaDocumentoProps> = ({ soloL
                     <th className="px-3 py-2.5 text-left text-xs font-medium text-slate-500 whitespace-nowrap">Solicitante</th>
                     <th className="px-3 py-2.5 text-left text-xs font-medium text-slate-500 whitespace-nowrap">Cuadrantes</th>
                     <th className="px-3 py-2.5 text-left text-xs font-medium text-slate-500 whitespace-nowrap">Tipo adenda</th>
-                    <th className="px-3 py-2.5 text-left text-xs font-medium text-slate-500 whitespace-nowrap">No. adenda</th>
-                    <th className="px-3 py-2.5 text-left text-xs font-medium text-slate-500 whitespace-nowrap">Tipo adenda ant.</th>
+                    <th className="px-3 py-2.5 text-left text-xs font-medium text-slate-500 whitespace-nowrap">Cód. actual</th>
+                    <th className="px-3 py-2.5 text-left text-xs font-medium text-slate-500 whitespace-nowrap">Adendas</th>
+                    <th className="px-3 py-2.5 text-left text-xs font-medium text-slate-500 whitespace-nowrap">Cód. ant.</th>
                     <th className="px-3 py-2.5 text-left text-xs font-medium text-slate-500 whitespace-nowrap">Contratista</th>
                     <th className="px-3 py-2.5 text-left text-xs font-medium text-slate-500 whitespace-nowrap">SIGEDE</th>
                     <th className="px-3 py-2.5 text-left text-xs font-medium text-slate-500 whitespace-nowrap">Observación</th>
@@ -886,10 +1229,15 @@ const GestionTecnicaDocumento: React.FC<GestionTecnicaDocumentoProps> = ({ soloL
                         <td className="px-3 py-2.5 text-slate-800">{doc.solicitud}</td>
                         <td className="px-3 py-2.5 text-slate-500 text-xs">{doc.cuadrantes || '—'}</td>
                         <td className="px-3 py-2.5 text-slate-500 text-xs">{doc.tipo_adenda || '—'}</td>
-                        <td className="px-3 py-2.5 text-slate-500 text-xs tabular-nums">
-                          {doc.no_adenda_solicitud != null ? doc.no_adenda_solicitud : '—'}
+                        <td className="px-3 py-2.5 text-slate-500 text-xs font-mono tabular-nums">
+                          {doc.numero_adenda_actual || '—'}
                         </td>
-                        <td className="px-3 py-2.5 text-slate-500 text-xs">{doc.tipo_adenda_anterior || '—'}</td>
+                        <td className="px-3 py-2.5 text-slate-500 text-xs tabular-nums">
+                          {doc.no_adenda_solicituda != null ? doc.no_adenda_solicituda : '—'}
+                        </td>
+                        <td className="px-3 py-2.5 text-slate-500 text-xs font-mono tabular-nums">
+                          {doc.numero_adenda_anterior || '—'}
+                        </td>
                         <td className="px-3 py-2.5 text-slate-600 text-xs max-w-[120px] truncate" title={doc.contratista?.responsable || ''}>
                           {doc.contratista?.responsable || '—'}
                         </td>
@@ -905,8 +1253,11 @@ const GestionTecnicaDocumento: React.FC<GestionTecnicaDocumentoProps> = ({ soloL
                               <button
                                 type="button"
                                 title="Editar"
-                                onClick={() => cargarDocEnFormulario(doc)}
-                                className="text-xs text-[#42A5F5] hover:text-[#1E88E5] px-2 py-1 rounded-lg hover:bg-blue-50 transition-colors"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  seleccionarDocumento(doc);
+                                }}
+                                className={BTN_LINK}
                               >
                                 Editar
                               </button>
@@ -914,7 +1265,7 @@ const GestionTecnicaDocumento: React.FC<GestionTecnicaDocumentoProps> = ({ soloL
                                 type="button"
                                 title="Eliminar"
                                 onClick={() => handleEliminarDocumento(doc)}
-                                className="p-1.5 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors"
+                                className={BTN_ICON}
                               >
                                 <Delete sx={{ fontSize: 16 }} />
                               </button>
@@ -944,13 +1295,41 @@ const GestionTecnicaDocumento: React.FC<GestionTecnicaDocumentoProps> = ({ soloL
 
                 <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 p-3.5 bg-slate-50/60 rounded-xl border border-slate-100">
                   <CampoDetalle label="Cuadrantes" value={seleccionado.cuadrantes} />
-                  <CampoDetalle label="Tipo adenda" value={seleccionado.tipo_adenda} />
-                  <CampoDetalle label="No. adenda" value={seleccionado.no_adenda_solicitud} />
-                  <CampoDetalle label="Tipo adenda anterior" value={seleccionado.tipo_adenda_anterior} />
+                  <CampoDetalleMonto label="Monto contrato base" value={seleccionado.monto_contrato_base} />
                   <CampoDetalle label="Contratista" value={seleccionado.contratista?.responsable} />
-                  <CampoDetalle
-                    label="SIGEDE"
-                    value={(seleccionado.id_sigede || []).join(', ') || undefined}
+                </div>
+
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 p-3.5 bg-slate-50/40 rounded-xl border border-slate-100">
+                  <p className="sm:col-span-3 text-[11px] font-semibold text-slate-400 uppercase tracking-wider">
+                    Adenda anterior
+                  </p>
+                  <CampoDetalle label="Tipo" value={seleccionado.tipo_adenda_anterior} />
+                  <CampoDetalle label="Código" value={seleccionado.numero_adenda_anterior} />
+                  <CampoDetalleMonto label="Monto" value={seleccionado.monto_adenda_anterior} />
+                </div>
+
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 p-3.5 bg-blue-50/30 rounded-xl border border-[#42A5F5]/15">
+                  <p className="col-span-full text-[11px] font-semibold text-slate-500 uppercase tracking-wider">
+                    Adenda actual (solicitud)
+                  </p>
+                  <CampoDetalle label="Tipo adenda" value={seleccionado.tipo_adenda} />
+                  <CampoDetalle label="Código" value={seleccionado.numero_adenda_actual} />
+                  <CampoDetalle label="No. adendas" value={seleccionado.no_adenda_solicituda} />
+                  <CampoDetalleMonto label="Monto solicitado" value={seleccionado.monto_adenda_solicitada} />
+                  <CampoDetalleMonto label="Monto total" value={seleccionado.monto_total} />
+                </div>
+
+                <div>
+                  <h4 className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider mb-2">
+                    Obras (SIGEDE)
+                  </h4>
+                  <TablaObrasSigede
+                    filas={
+                      editandoId === seleccionado.id
+                        ? obrasResumen
+                        : seleccionado.obras_sigede || []
+                    }
+                    soloLectura
                   />
                 </div>
 
@@ -960,13 +1339,6 @@ const GestionTecnicaDocumento: React.FC<GestionTecnicaDocumentoProps> = ({ soloL
                     {seleccionado.observacion}
                   </p>
                 )}
-
-                <div>
-                  <h4 className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider mb-2">
-                    Obras (SIGEDE)
-                  </h4>
-                  <TablaObrasSigede filas={seleccionado.obras_sigede || []} soloLectura />
-                </div>
               </div>
 
               <div>
@@ -977,20 +1349,40 @@ const GestionTecnicaDocumento: React.FC<GestionTecnicaDocumentoProps> = ({ soloL
               {!soloLectura && (
                 <form onSubmit={handleGuardarMovimiento} className="space-y-3 p-3.5 mb-4 bg-slate-50/60 rounded-xl border border-slate-100">
                   <p className="text-xs font-medium text-slate-500">Nuevo movimiento</p>
+                  <p className="text-[11px] text-slate-400 leading-relaxed">
+                    La entrada y salida definen el período del movimiento. No puede repetirse el trámite ni
+                    superponerse fechas con otro movimiento del mismo documento.
+                  </p>
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                     <div className="space-y-1">
-                      <label className="text-xs text-slate-500">Fecha solicitud</label>
+                      <label className="text-xs text-slate-500">
+                        Fecha entrada <span className="text-red-400">*</span>
+                      </label>
                       <input
                         type="date"
-                        value={movForm.fecha_solicitud}
-                        onChange={(e) => setMovForm((p) => ({ ...p, fecha_solicitud: e.target.value }))}
+                        required
+                        value={movForm.fecha_entrada}
+                        onChange={(e) => setMovForm((p) => ({ ...p, fecha_entrada: e.target.value }))}
                         className={inputClass}
                       />
                     </div>
                     <div className="space-y-1">
-                      <label className="text-xs text-slate-500">No. trámite</label>
+                      <label className="text-xs text-slate-500">Fecha salida</label>
+                      <input
+                        type="date"
+                        value={movForm.fecha_salida}
+                        min={movForm.fecha_entrada || undefined}
+                        onChange={(e) => setMovForm((p) => ({ ...p, fecha_salida: e.target.value }))}
+                        className={inputClass}
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <label className="text-xs text-slate-500">
+                        No. trámite <span className="text-red-400">*</span>
+                      </label>
                       <input
                         type="text"
+                        required
                         value={movForm.no_tramite}
                         onChange={(e) => setMovForm((p) => ({ ...p, no_tramite: e.target.value }))}
                         className={inputClass}
@@ -1005,20 +1397,20 @@ const GestionTecnicaDocumento: React.FC<GestionTecnicaDocumentoProps> = ({ soloL
                       placeholder="Seleccione área…"
                       options={areas.map((a) => ({ value: a.id, label: a.area }))}
                     />
-                    <div className="space-y-1">
-                      <label className="text-xs text-slate-500">Fecha salida</label>
+                    <div className="space-y-1 sm:col-span-2">
+                      <label className="text-xs text-slate-500">Fecha solicitud</label>
                       <input
                         type="date"
-                        value={movForm.fecha_salida}
-                        onChange={(e) => setMovForm((p) => ({ ...p, fecha_salida: e.target.value }))}
-                        className={inputClass}
+                        value={movForm.fecha_solicitud}
+                        onChange={(e) => setMovForm((p) => ({ ...p, fecha_solicitud: e.target.value }))}
+                        className={`${inputClass} max-w-xs`}
                       />
                     </div>
                   </div>
                   <button
                     type="submit"
                     disabled={guardando}
-                    className="inline-flex items-center gap-2 px-3 py-2 bg-[#42A5F5] text-white rounded-xl text-sm hover:bg-[#1E88E5] disabled:opacity-50 shadow-sm shadow-blue-200/30 transition-colors"
+                    className={BTN_PRIMARY_SM}
                   >
                     <Add sx={{ fontSize: 16 }} />
                     Agregar movimiento
@@ -1037,10 +1429,11 @@ const GestionTecnicaDocumento: React.FC<GestionTecnicaDocumentoProps> = ({ soloL
                   <table className="min-w-full text-sm">
                     <thead>
                       <tr className="bg-slate-50/80 border-b border-slate-100">
-                        <th className="px-3 py-2.5 text-left text-xs font-medium text-slate-500">F. solicitud</th>
+                        <th className="px-3 py-2.5 text-left text-xs font-medium text-slate-500">F. entrada</th>
+                        <th className="px-3 py-2.5 text-left text-xs font-medium text-slate-500">F. salida</th>
                         <th className="px-3 py-2.5 text-left text-xs font-medium text-slate-500">No. trámite</th>
                         <th className="px-3 py-2.5 text-left text-xs font-medium text-slate-500">Departamento</th>
-                        <th className="px-3 py-2.5 text-left text-xs font-medium text-slate-500">F. salida</th>
+                        <th className="px-3 py-2.5 text-left text-xs font-medium text-slate-500">F. solicitud</th>
                         {!soloLectura && (
                           <th className="px-3 py-2.5 text-center text-xs font-medium text-slate-500" />
                         )}
@@ -1049,16 +1442,17 @@ const GestionTecnicaDocumento: React.FC<GestionTecnicaDocumentoProps> = ({ soloL
                     <tbody className="divide-y divide-slate-50">
                       {movimientos.map((mov) => (
                         <tr key={mov.id} className="hover:bg-slate-50/50 transition-colors">
-                          <td className="px-3 py-2.5 text-slate-600 text-xs">{mov.fecha_solicitud?.slice(0, 10) || '—'}</td>
+                          <td className="px-3 py-2.5 text-slate-600 text-xs">{mov.fecha_entrada?.slice(0, 10) || '—'}</td>
+                          <td className="px-3 py-2.5 text-slate-600 text-xs">{mov.fecha_salida?.slice(0, 10) || '—'}</td>
                           <td className="px-3 py-2.5 text-slate-600 text-xs">{mov.no_tramite || '—'}</td>
                           <td className="px-3 py-2.5 text-slate-600 text-xs">{mov.area?.area || mov.departamento || '—'}</td>
-                          <td className="px-3 py-2.5 text-slate-600 text-xs">{mov.fecha_salida?.slice(0, 10) || '—'}</td>
+                          <td className="px-3 py-2.5 text-slate-600 text-xs">{mov.fecha_solicitud?.slice(0, 10) || '—'}</td>
                           {!soloLectura && (
                             <td className="px-3 py-2.5 text-center">
                               <button
                                 type="button"
                                 onClick={() => handleEliminarMovimiento(mov)}
-                                className="p-1.5 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors"
+                                className={BTN_ICON}
                               >
                                 <Delete sx={{ fontSize: 16 }} />
                               </button>

@@ -20,6 +20,7 @@ import type {
   MovimientoDocumentoTecnicoObra,
 } from '../types/database';
 import { aplicarFiltrosObrasEnQuery } from '../utils/aplicarFiltrosObrasQuery';
+import { ordenarMovimientosDocumento, validarMovimientoDocumento } from '../utils/validarMovimientoDocumento';
 
 // ── Generador de token seguro (Web Crypto API) ──────────────────────────────
 function generarToken(longitud = 32): string {
@@ -2054,6 +2055,22 @@ function parseNoAdendaSolicitud(value: string | number | null | undefined): numb
   return Number.isNaN(n) ? null : n;
 }
 
+function parseMontoDocumento(value: string | number | null | undefined): number | null {
+  if (value === null || value === undefined || value === '') return null;
+  if (typeof value === 'number') {
+    return Number.isNaN(value) ? null : Math.round(value * 100) / 100;
+  }
+  const normalized = String(value).trim().replace(/[^\d.,-]/g, '').replace(/,/g, '');
+  const n = parseFloat(normalized);
+  return Number.isNaN(n) ? null : Math.round(n * 100) / 100;
+}
+
+function parseCodigoAdenda(value: string | number | null | undefined): string | null {
+  if (value === null || value === undefined) return null;
+  const trimmed = String(value).trim();
+  return trimmed || null;
+}
+
 function mapDocumentoTecnicoRow(row: Record<string, unknown>): DocumentoTecnicoObra {
   const contratistaRaw = row.contratistas;
   const contratista = (
@@ -2068,7 +2085,11 @@ function mapDocumentoTecnicoRow(row: Record<string, unknown>): DocumentoTecnicoO
   return {
     ...(rest as unknown as DocumentoTecnicoObra),
     id_sigede: idSigede,
-    no_adenda_solicitud: parseNoAdendaSolicitud(rest.no_adenda_solicitud as string | number | null),
+    no_adenda_solicituda: parseNoAdendaSolicitud(
+      (rest.no_adenda_solicituda ?? rest.no_adenda_solicitud) as string | number | null,
+    ),
+    numero_adenda_anterior: parseCodigoAdenda(rest.numero_adenda_anterior as string | number | null),
+    numero_adenda_actual: parseCodigoAdenda(rest.numero_adenda_actual as string | number | null),
     contratista: contratista ?? null,
   };
 }
@@ -2105,7 +2126,9 @@ export const documentosTecnicosService = {
           d.solicitud.toLowerCase().includes(term) ||
           (d.cuadrantes || '').toLowerCase().includes(term) ||
           (d.tipo_adenda || '').toLowerCase().includes(term) ||
-          String(d.no_adenda_solicitud ?? '').includes(term) ||
+          String(d.no_adenda_solicituda ?? '').includes(term) ||
+          (d.numero_adenda_anterior || '').toLowerCase().includes(term) ||
+          (d.numero_adenda_actual || '').toLowerCase().includes(term) ||
           (d.tipo_adenda_anterior || '').toLowerCase().includes(term) ||
           (d.observacion || '').toLowerCase().includes(term) ||
           responsable.includes(term) ||
@@ -2135,9 +2158,15 @@ export const documentosTecnicosService = {
     solicitud: string;
     cuadrantes?: string;
     tipo_adenda?: string;
-    no_adenda_solicitud?: number | string | null;
+    no_adenda_solicituda?: number | string | null;
     tipo_adenda_anterior?: string;
+    numero_adenda_anterior?: string | null;
+    numero_adenda_actual?: string | null;
     observacion?: string;
+    monto_contrato_base?: number | string | null;
+    monto_adenda_anterior?: number | string | null;
+    monto_adenda_solicitada?: number | string | null;
+    monto_total?: number | string | null;
     contratista_id?: string | null;
     id_sigede: string[];
   }): Promise<DocumentoTecnicoObra> => {
@@ -2145,9 +2174,15 @@ export const documentosTecnicosService = {
       solicitud: payload.solicitud.trim().slice(0, 75),
       cuadrantes: payload.cuadrantes?.trim() || null,
       tipo_adenda: payload.tipo_adenda?.trim() || null,
-      no_adenda_solicitud: parseNoAdendaSolicitud(payload.no_adenda_solicitud),
+      no_adenda_solicituda: parseNoAdendaSolicitud(payload.no_adenda_solicituda),
       tipo_adenda_anterior: payload.tipo_adenda_anterior?.trim() || null,
+      numero_adenda_anterior: parseCodigoAdenda(payload.numero_adenda_anterior),
+      numero_adenda_actual: parseCodigoAdenda(payload.numero_adenda_actual),
       observacion: payload.observacion?.trim() || null,
+      monto_contrato_base: parseMontoDocumento(payload.monto_contrato_base),
+      monto_adenda_anterior: parseMontoDocumento(payload.monto_adenda_anterior),
+      monto_adenda_solicitada: parseMontoDocumento(payload.monto_adenda_solicitada),
+      monto_total: parseMontoDocumento(payload.monto_total),
       contratista_id: payload.contratista_id || null,
       id_sigede: payload.id_sigede.filter(Boolean).map((s) => s.trim()).filter(Boolean),
       updated_at: new Date().toISOString(),
@@ -2173,9 +2208,15 @@ export const documentosTecnicosService = {
       solicitud: string;
       cuadrantes: string | null;
       tipo_adenda: string | null;
-      no_adenda_solicitud: number | string | null;
+      no_adenda_solicituda: number | string | null;
       tipo_adenda_anterior: string | null;
+      numero_adenda_anterior: string | null;
+      numero_adenda_actual: string | null;
       observacion: string | null;
+      monto_contrato_base: number | string | null;
+      monto_adenda_anterior: number | string | null;
+      monto_adenda_solicitada: number | string | null;
+      monto_total: number | string | null;
       contratista_id: string | null;
       id_sigede: string[];
     }>,
@@ -2184,14 +2225,32 @@ export const documentosTecnicosService = {
     if (payload.solicitud !== undefined) updates.solicitud = payload.solicitud.trim().slice(0, 75);
     if (payload.cuadrantes !== undefined) updates.cuadrantes = payload.cuadrantes?.trim() || null;
     if (payload.tipo_adenda !== undefined) updates.tipo_adenda = payload.tipo_adenda?.trim() || null;
-    if (payload.no_adenda_solicitud !== undefined) {
-      updates.no_adenda_solicitud = parseNoAdendaSolicitud(payload.no_adenda_solicitud);
+    if (payload.no_adenda_solicituda !== undefined) {
+      updates.no_adenda_solicituda = parseNoAdendaSolicitud(payload.no_adenda_solicituda);
     }
     if (payload.tipo_adenda_anterior !== undefined) {
       updates.tipo_adenda_anterior = payload.tipo_adenda_anterior?.trim() || null;
     }
+    if (payload.numero_adenda_anterior !== undefined) {
+      updates.numero_adenda_anterior = parseCodigoAdenda(payload.numero_adenda_anterior);
+    }
+    if (payload.numero_adenda_actual !== undefined) {
+      updates.numero_adenda_actual = parseCodigoAdenda(payload.numero_adenda_actual);
+    }
     if (payload.observacion !== undefined) {
       updates.observacion = payload.observacion?.trim() || null;
+    }
+    if (payload.monto_contrato_base !== undefined) {
+      updates.monto_contrato_base = parseMontoDocumento(payload.monto_contrato_base);
+    }
+    if (payload.monto_adenda_anterior !== undefined) {
+      updates.monto_adenda_anterior = parseMontoDocumento(payload.monto_adenda_anterior);
+    }
+    if (payload.monto_adenda_solicitada !== undefined) {
+      updates.monto_adenda_solicitada = parseMontoDocumento(payload.monto_adenda_solicitada);
+    }
+    if (payload.monto_total !== undefined) {
+      updates.monto_total = parseMontoDocumento(payload.monto_total);
     }
     if (payload.contratista_id !== undefined) updates.contratista_id = payload.contratista_id;
     if (payload.id_sigede !== undefined) {
@@ -2223,23 +2282,34 @@ export const documentosTecnicosService = {
       .from('movimiento_documentos_tecnicos_obra')
       .select(MOV_DOC_TECNICO_SELECT)
       .eq('solicitud', solicitud.trim())
-      .order('fecha_solicitud', { ascending: false, nullsFirst: false })
-      .order('created_at', { ascending: false });
+      .order('fecha_entrada', { ascending: true, nullsFirst: false })
+      .order('fecha_salida', { ascending: true, nullsFirst: false })
+      .order('created_at', { ascending: true });
 
     if (error) throw error;
-    return (data || []).map((r) => mapMovimientoDocumentoRow(r as Record<string, unknown>));
+    const filas = (data || []).map((r) => mapMovimientoDocumentoRow(r as Record<string, unknown>));
+    return ordenarMovimientosDocumento(filas);
   },
 
   crearMovimiento: async (payload: {
     solicitud: string;
     fecha_solicitud?: string | null;
+    fecha_entrada?: string | null;
     no_tramite?: string | null;
     departamento?: string | null;
     fecha_salida?: string | null;
   }): Promise<MovimientoDocumentoTecnicoObra> => {
-    const row = {
-      solicitud: payload.solicitud.trim(),
+    const solicitud = payload.solicitud.trim();
+    const existentes = await documentosTecnicosService.listarMovimientos(solicitud);
+    const errorValidacion = validarMovimientoDocumento(existentes, payload);
+    if (errorValidacion) {
+      throw new Error(errorValidacion);
+    }
+
+    const row: Record<string, string | null> = {
+      solicitud,
       fecha_solicitud: payload.fecha_solicitud || null,
+      fecha_entrada: payload.fecha_entrada || null,
       no_tramite: payload.no_tramite?.trim() || null,
       departamento: payload.departamento?.trim() || null,
       fecha_salida: payload.fecha_salida || null,
@@ -2251,13 +2321,182 @@ export const documentosTecnicosService = {
       .select(MOV_DOC_TECNICO_SELECT)
       .single();
 
-    if (error) throw error;
+    if (error) {
+      const msg = error.message || '';
+      if (/fecha_entrada/i.test(msg) && (error.code === 'PGRST204' || /column/i.test(msg))) {
+        throw new Error(
+          'Falta la columna fecha_entrada en la base de datos. Ejecute supabase-documentos-tecnicos-alter.sql en Supabase (SQL Editor) y recargue la página.',
+        );
+      }
+      if (error.code === '23505' && /no_tramite|tramite/i.test(msg)) {
+        throw new Error('El número de trámite ya está registrado en este documento.');
+      }
+      throw error;
+    }
     return mapMovimientoDocumentoRow(data as Record<string, unknown>);
   },
 
   eliminarMovimiento: async (id: string): Promise<void> => {
     const { error } = await supabase.from('movimiento_documentos_tecnicos_obra').delete().eq('id', id);
     if (error) throw error;
+  },
+
+  listarTodosMovimientos: async (): Promise<MovimientoDocumentoTecnicoObra[]> => {
+    const { data, error } = await supabase
+      .from('movimiento_documentos_tecnicos_obra')
+      .select(MOV_DOC_TECNICO_SELECT)
+      .order('solicitud', { ascending: true })
+      .order('fecha_entrada', { ascending: true, nullsFirst: false })
+      .order('fecha_salida', { ascending: true, nullsFirst: false });
+
+    if (error) throw error;
+    return (data || []).map((r) => mapMovimientoDocumentoRow(r as Record<string, unknown>));
+  },
+
+  importarMasivo: async (payload: {
+    documentos: Array<{
+      solicitud: string;
+      cuadrantes?: string;
+      tipo_adenda?: string;
+      no_adenda_solicituda?: number | null;
+      tipo_adenda_anterior?: string;
+      numero_adenda_anterior?: string | null;
+      numero_adenda_actual?: string | null;
+      observacion?: string;
+      monto_contrato_base?: number | null;
+      monto_adenda_anterior?: number | null;
+      monto_adenda_solicitada?: number | null;
+      monto_total?: number | null;
+      contratista?: string;
+      id_sigede?: string[];
+    }>;
+    movimientos: Array<{
+      solicitud: string;
+      fecha_solicitud?: string | null;
+      fecha_entrada?: string | null;
+      no_tramite?: string | null;
+      departamento?: string | null;
+      fecha_salida?: string | null;
+    }>;
+  }): Promise<{
+    documentosCreados: number;
+    documentosActualizados: number;
+    movimientosCreados: number;
+    errores: string[];
+  }> => {
+    const resultado = {
+      documentosCreados: 0,
+      documentosActualizados: 0,
+      movimientosCreados: 0,
+      errores: [] as string[],
+    };
+
+    if (payload.documentos.length === 0 && payload.movimientos.length === 0) {
+      throw new Error('El archivo no contiene documentos ni movimientos para importar');
+    }
+
+    const areas = await areasService.obtenerAreas();
+    const areaPorNombre = new Map(
+      areas.map((a) => [a.area.trim().toLowerCase(), a.id] as const),
+    );
+
+    const solicitudesRegistradas = new Set<string>();
+
+    for (let i = 0; i < payload.documentos.length; i++) {
+      const fila = payload.documentos[i];
+      const filaNum = i + 2;
+      try {
+        if (!fila.solicitud.trim()) {
+          resultado.errores.push(`Documentos fila ${filaNum}: solicitud vacía`);
+          continue;
+        }
+
+        let contratista_id: string | null = null;
+        if (fila.contratista?.trim()) {
+          contratista_id = await contratistasService.buscarOCrearPorResponsable(fila.contratista);
+        }
+
+        const existente = await documentosTecnicosService.obtenerPorSolicitud(fila.solicitud);
+        const docPayload = {
+          solicitud: fila.solicitud,
+          cuadrantes: fila.cuadrantes,
+          monto_contrato_base: fila.monto_contrato_base,
+          tipo_adenda_anterior: fila.tipo_adenda_anterior,
+          numero_adenda_anterior: fila.numero_adenda_anterior,
+          numero_adenda_actual: fila.numero_adenda_actual,
+          monto_adenda_anterior: fila.monto_adenda_anterior,
+          tipo_adenda: fila.tipo_adenda,
+          no_adenda_solicituda: fila.no_adenda_solicituda,
+          monto_adenda_solicitada: fila.monto_adenda_solicitada,
+          monto_total: fila.monto_total,
+          observacion: fila.observacion,
+          contratista_id,
+          id_sigede: fila.id_sigede || [],
+        };
+
+        if (existente) {
+          await documentosTecnicosService.actualizar(existente.id, docPayload);
+          resultado.documentosActualizados += 1;
+        } else {
+          await documentosTecnicosService.crear(docPayload);
+          resultado.documentosCreados += 1;
+        }
+        solicitudesRegistradas.add(fila.solicitud.trim().toLowerCase());
+      } catch (err: unknown) {
+        const msg = err instanceof Error ? err.message : 'Error desconocido';
+        resultado.errores.push(`Documentos fila ${filaNum}: ${msg}`);
+      }
+    }
+
+    for (let i = 0; i < payload.movimientos.length; i++) {
+      const fila = payload.movimientos[i];
+      const filaNum = i + 2;
+      try {
+        const solicitud = fila.solicitud.trim();
+        if (!solicitud) {
+          resultado.errores.push(`Movimientos fila ${filaNum}: solicitud vacía`);
+          continue;
+        }
+
+        const docExiste =
+          solicitudesRegistradas.has(solicitud.toLowerCase()) ||
+          (await documentosTecnicosService.obtenerPorSolicitud(solicitud));
+
+        if (!docExiste) {
+          resultado.errores.push(
+            `Movimientos fila ${filaNum}: no existe documento con solicitud "${solicitud}"`,
+          );
+          continue;
+        }
+
+        let departamentoId: string | null = null;
+        if (fila.departamento?.trim()) {
+          departamentoId =
+            areaPorNombre.get(fila.departamento.trim().toLowerCase()) || null;
+          if (!departamentoId) {
+            resultado.errores.push(
+              `Movimientos fila ${filaNum}: departamento "${fila.departamento}" no encontrado`,
+            );
+            continue;
+          }
+        }
+
+        await documentosTecnicosService.crearMovimiento({
+          solicitud,
+          fecha_solicitud: fila.fecha_solicitud || null,
+          fecha_entrada: fila.fecha_entrada || null,
+          no_tramite: fila.no_tramite || null,
+          departamento: departamentoId,
+          fecha_salida: fila.fecha_salida || null,
+        });
+        resultado.movimientosCreados += 1;
+      } catch (err: unknown) {
+        const msg = err instanceof Error ? err.message : 'Error desconocido';
+        resultado.errores.push(`Movimientos fila ${filaNum}: ${msg}`);
+      }
+    }
+
+    return resultado;
   },
 };
 

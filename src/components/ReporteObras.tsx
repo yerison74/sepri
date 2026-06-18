@@ -24,6 +24,11 @@ import {
   obtenerValorReporteCampo,
   formatearValorReporte,
 } from '../constants/reporteObrasAreas';
+import {
+  BTN_PRIMARY,
+  BTN_SECONDARY,
+  BTN_ACCENT,
+} from '../constants/buttonStyles';
 
 const COLORS: Record<string, string> = {
   ACTIVA: '#4361EE',
@@ -203,7 +208,7 @@ const ReporteObras: React.FC<ReporteObrasProps> = ({ refreshTrigger, soloLectura
                 setFilters({ ...EMPTY_FILTERS });
                 setReporte(null);
               }}
-              className="inline-flex items-center gap-2 px-4 py-2 border border-slate-300 rounded-xl text-slate-700 hover:bg-slate-50"
+              className={BTN_SECONDARY}
             >
               <Tune sx={{ fontSize: 18 }} />
               Limpiar
@@ -212,7 +217,7 @@ const ReporteObras: React.FC<ReporteObrasProps> = ({ refreshTrigger, soloLectura
               type="button"
               onClick={handleExportExcel}
               disabled={exporting || !reporte?.obrasDetalle?.length || soloLectura}
-              className="inline-flex items-center gap-2 px-4 py-2 border border-[#FFA726] text-[#E65100] rounded-xl hover:bg-orange-50 disabled:opacity-50"
+              className={BTN_ACCENT}
             >
               <Download sx={{ fontSize: 18 }} />
               {exporting ? 'Exportando…' : 'Exportar Excel'}
@@ -221,7 +226,7 @@ const ReporteObras: React.FC<ReporteObrasProps> = ({ refreshTrigger, soloLectura
               type="button"
               onClick={generarReporte}
               disabled={loading}
-              className="inline-flex items-center gap-2 px-4 py-2 bg-[#42A5F5] text-white rounded-xl hover:bg-blue-600 disabled:opacity-50 font-medium"
+              className={BTN_PRIMARY}
             >
               <FilterList sx={{ fontSize: 18 }} />
               {loading ? 'Generando…' : 'Generar reporte'}

@@ -6,3 +6,47 @@ export const TIPOS_ADENDA = [
 ] as const;
 
 export type TipoAdenda = (typeof TIPOS_ADENDA)[number];
+
+/** Formato de montos en pesos dominicanos para visualización. */
+export function formatMontoDOP(value?: number | null): string {
+  if (value == null || Number.isNaN(value)) return '—';
+  return value.toLocaleString('es-DO', {
+    style: 'currency',
+    currency: 'DOP',
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  });
+}
+
+/** Convierte texto de formulario a monto (null si vacío o inválido). */
+export function parseMontoDOP(value: string): number | null {
+  const trimmed = value.trim();
+  if (!trimmed) return null;
+  const normalized = trimmed.replace(/[^\d.,-]/g, '').replace(/,/g, '');
+  const n = parseFloat(normalized);
+  if (Number.isNaN(n)) return null;
+  return Math.round(n * 100) / 100;
+}
+
+export function montoFormDesdeNumero(value?: number | null): string {
+  if (value == null || Number.isNaN(value)) return '';
+  return String(value);
+}
+
+export function esMontoValido(value: string): boolean {
+  if (!value.trim()) return true;
+  return parseMontoDOP(value) != null;
+}
+
+/** Código de adenda: 1–4 dígitos, guion, 1–4 dígitos (ej. 12-345, 1234-5678). */
+export const PATRON_CODIGO_ADENDA = /^\d{1,4}-\d{1,4}$/;
+
+export function esCodigoAdendaValido(value: string): boolean {
+  if (!value.trim()) return true;
+  return PATRON_CODIGO_ADENDA.test(value.trim());
+}
+
+export function normalizarCodigoAdenda(value: string): string | null {
+  const trimmed = value.trim();
+  return trimmed || null;
+}

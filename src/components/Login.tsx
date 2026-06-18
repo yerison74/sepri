@@ -1,6 +1,10 @@
 import { useState } from 'react';
 import { loginUsuario } from '../services/login.service';
 import { useAuth } from '../context/AuthContext';
+import { BTN_PRIMARY } from '../constants/buttonStyles';
+
+const inputClass =
+  'w-full px-3 py-3 mt-1.5 mb-5 border border-slate-200 rounded-xl text-sm text-slate-800 placeholder:text-slate-400 bg-white transition-all focus:outline-none focus:border-[#42A5F5]/50 focus:ring-2 focus:ring-[#42A5F5]/10';
 
 export default function Login() {
   const { login } = useAuth();
@@ -25,88 +29,39 @@ export default function Login() {
   };
 
   return (
-    <div style={{
-      minHeight: '100vh',
-      background: '#f4f6f8',
-      display: 'flex',
-      alignItems: 'center',
-      justifyContent: 'center'
-    }}>
-      <div style={{
-        width: 420,
-        background: '#fff',
-        borderRadius: 16,
-        padding: '32px 36px',
-        boxShadow: '0 10px 30px rgba(0,0,0,.15)'
-      }}>
-        <h1 style={{
-          textAlign: 'center',
-          color: '#4aa3ff',
-          marginBottom: 8
-        }}>
+    <div className="min-h-screen bg-slate-100 flex items-center justify-center p-4">
+      <div className="w-full max-w-md bg-white rounded-2xl border border-slate-200/80 shadow-lg shadow-slate-200/50 px-8 py-8">
+        <h1 className="text-center text-2xl font-semibold text-[#42A5F5] mb-2">
           Seguimiento de Procesos Internos
         </h1>
 
-        <p style={{
-          textAlign: 'center',
-          color: '#6b7280',
-          marginBottom: 32
-        }}>
-          Inicia sesión con tu usuario
-        </p>
+        <p className="text-center text-sm text-slate-500 mb-8">Inicia sesión con tu usuario</p>
 
         {error && (
-          <p style={{ color: 'red', marginBottom: 12 }}>
+          <p className="text-sm text-red-600 bg-red-50 border border-red-100 rounded-xl px-3 py-2 mb-4">
             {error}
           </p>
         )}
 
         <form onSubmit={handleSubmit}>
-          <label style={{ fontWeight: 500 }}>Nombre de usuario</label>
+          <label className="text-sm font-medium text-slate-700">Nombre de usuario</label>
           <input
             placeholder="Ej: jperez"
             value={usuario}
-            onChange={e => setUsuario(e.target.value)}
-            style={{
-              width: '100%',
-              padding: 12,
-              marginTop: 6,
-              marginBottom: 20,
-              borderRadius: 8,
-              border: '1px solid #d1d5db'
-            }}
+            onChange={(e) => setUsuario(e.target.value)}
+            className={inputClass}
           />
 
-          <label style={{ fontWeight: 500 }}>Contraseña</label>
+          <label className="text-sm font-medium text-slate-700">Contraseña</label>
           <input
             type="password"
+            placeholder="••••••••"
             value={password}
-            onChange={e => setPassword(e.target.value)}
-            style={{
-              width: '100%',
-              padding: 12,
-              marginTop: 6,
-              marginBottom: 28,
-              borderRadius: 8,
-              border: '1px solid #d1d5db'
-            }}
+            onChange={(e) => setPassword(e.target.value)}
+            className={`${inputClass} mb-7`}
           />
 
-          <button
-            type="submit"
-            disabled={loading}
-            style={{
-              width: '100%',
-              padding: 14,
-              background: loading ? '#93c5fd' : '#4aa3ff',
-              color: '#fff',
-              border: 'none',
-              borderRadius: 10,
-              fontSize: 16,
-              fontWeight: 600,
-              cursor: loading ? 'wait' : 'pointer'
-            }}
-          >
+          <button type="submit" disabled={loading} className={`${BTN_PRIMARY} w-full !py-3 text-base`}>
             {loading ? 'Verificando…' : 'Iniciar sesión'}
           </button>
         </form>

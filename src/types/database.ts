@@ -75,11 +75,17 @@ export interface DocumentoTecnicoObra {
   solicitud: string;
   cuadrantes?: string | null;
   tipo_adenda?: string | null;
-  no_adenda_solicitud?: number | null;
+  no_adenda_solicituda?: number | null;
   contratista_id?: string | null;
   id_sigede: string[];
   tipo_adenda_anterior?: string | null;
+  numero_adenda_anterior?: string | null;
+  numero_adenda_actual?: string | null;
   observacion?: string | null;
+  monto_contrato_base?: number | null;
+  monto_adenda_anterior?: number | null;
+  monto_adenda_solicitada?: number | null;
+  monto_total?: number | null;
   created_at?: string | null;
   updated_at?: string | null;
   contratista?: Contratista | null;
@@ -103,6 +109,7 @@ export interface MovimientoDocumentoTecnicoObra {
   id: string;
   solicitud: string;
   fecha_solicitud?: string | null;
+  fecha_entrada?: string | null;
   no_tramite?: string | null;
   departamento?: string | null;
   fecha_salida?: string | null;
