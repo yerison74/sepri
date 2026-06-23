@@ -24,8 +24,11 @@ export const MOVIMIENTOS_EXCEL_HEADERS = [
   'Fecha solicitud',
   'Fecha entrada',
   'No. trámite',
+  'Oficio',
+  'Estatus',
   'Departamento',
   'Fecha salida',
+  'Observaciones',
 ] as const;
 
 export const DOCUMENTOS_EXCEL_EJEMPLO: string[] = [
@@ -50,8 +53,11 @@ export const MOVIMIENTOS_EXCEL_EJEMPLO: string[] = [
   '2025-01-15',
   '2025-01-20',
   'TR-2025-001',
+  'OF-2025-042',
+  'En Proceso',
   'Dirección técnica',
   '2025-02-01',
+  'Ejemplo de observación del movimiento',
 ];
 
 export const DOCUMENTOS_EXCEL_COL_WIDTHS = [
@@ -76,6 +82,9 @@ export const MOVIMIENTOS_EXCEL_COL_WIDTHS = [
   { wch: 16 },
   { wch: 16 },
   { wch: 18 },
+  { wch: 16 },
+  { wch: 14 },
   { wch: 24 },
   { wch: 16 },
+  { wch: 36 },
 ];

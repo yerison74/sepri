@@ -34,8 +34,11 @@ export interface FilaMovimientoExcel {
   fecha_solicitud?: string | null;
   fecha_entrada?: string | null;
   no_tramite?: string | null;
+  oficio?: string | null;
+  estatus?: string | null;
   departamento?: string | null;
   fecha_salida?: string | null;
+  observaciones?: string | null;
 }
 
 export interface ResultadoParseoExcel {
@@ -163,17 +166,25 @@ function filaAMovimiento(row: Record<string, unknown>): FilaMovimientoExcel | nu
   const fechaEnt = parseExcelFecha(valorCelda(row, 'Fecha entrada'));
   const fechaSal = parseExcelFecha(valorCelda(row, 'Fecha salida'));
   const noTramite = String(valorCelda(row, 'No. trámite', 'No. tramite', 'No tramite') || '').trim();
+  const oficio = String(valorCelda(row, 'Oficio') || '').trim();
+  const estatus = String(valorCelda(row, 'Estatus', 'Estado') || '').trim();
   const depto = String(valorCelda(row, 'Departamento') || '').trim();
+  const observaciones = String(valorCelda(row, 'Observaciones', 'Observación', 'Observacion') || '').trim();
 
-  if (!fechaSol && !fechaEnt && !fechaSal && !noTramite && !depto) return null;
+  if (!fechaSol && !fechaEnt && !fechaSal && !noTramite && !oficio && !estatus && !depto && !observaciones) {
+    return null;
+  }
 
   return {
     solicitud: solicitud.slice(0, 75),
     fecha_solicitud: fechaSol,
     fecha_entrada: fechaEnt,
     no_tramite: noTramite || null,
+    oficio: oficio || null,
+    estatus: estatus || null,
     departamento: depto || null,
     fecha_salida: fechaSal,
+    observaciones: observaciones || null,
   };
 }
 
@@ -202,8 +213,11 @@ export function movimientoAFilaExport(mov: MovimientoDocumentoTecnicoObra): stri
     mov.fecha_solicitud?.slice(0, 10) || '',
     mov.fecha_entrada?.slice(0, 10) || '',
     mov.no_tramite || '',
+    mov.oficio || '',
+    mov.estatus || '',
     mov.area?.area || mov.departamento || '',
     mov.fecha_salida?.slice(0, 10) || '',
+    mov.observaciones || '',
   ];
 }
 

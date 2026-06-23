@@ -278,11 +278,49 @@ COMMENT ON COLUMN public.documentos_tecnicos_obra.numero_adenda_actual IS
 
 
 
-CREATE UNIQUE INDEX IF NOT EXISTS idx_mov_doc_tecnicos_solicitud_tramite
+DROP INDEX IF EXISTS public.idx_mov_doc_tecnicos_solicitud_tramite;
+
+
+
+ALTER TABLE public.movimiento_documentos_tecnicos_obra
+
+  ADD COLUMN IF NOT EXISTS oficio varchar(120);
+
+
+
+ALTER TABLE public.movimiento_documentos_tecnicos_obra
+
+  ADD COLUMN IF NOT EXISTS estatus varchar(40);
+
+
+
+COMMENT ON COLUMN public.movimiento_documentos_tecnicos_obra.oficio IS
+
+  'Número o referencia de oficio del movimiento.';
+
+COMMENT ON COLUMN public.movimiento_documentos_tecnicos_obra.estatus IS
+
+  'En Proceso, Detenida o Certificada.';
+
+
+
+CREATE INDEX IF NOT EXISTS idx_mov_doc_tecnicos_solicitud_tramite
 
   ON public.movimiento_documentos_tecnicos_obra(solicitud, lower(trim(no_tramite)))
 
   WHERE no_tramite IS NOT NULL AND trim(no_tramite) <> '';
+
+
+
+ALTER TABLE public.movimiento_documentos_tecnicos_obra
+
+  ADD COLUMN IF NOT EXISTS observaciones text;
+
+
+
+COMMENT ON COLUMN public.movimiento_documentos_tecnicos_obra.observaciones IS
+
+  'Notas u observaciones del movimiento (gestión técnica de documento).';
 
 
 

@@ -6,6 +6,8 @@ export interface MovimientoDocumentoInput {
   fecha_salida?: string | null;
   no_tramite?: string | null;
   departamento?: string | null;
+  oficio?: string | null;
+  estatus?: string | null;
 }
 
 type RangoFechas = { inicio: string; fin: string };
@@ -25,68 +27,20 @@ export function rangoMovimiento(mov: MovimientoDocumentoInput): RangoFechas | nu
   return { inicio: entrada, fin: salida };
 }
 
-function rangosSeSolapan(a: RangoFechas, b: RangoFechas): boolean {
-  return a.inicio < b.fin && b.inicio < a.fin;
-}
-
-function huellaMovimiento(mov: MovimientoDocumentoInput): string {
-  const rango = rangoMovimiento(mov);
-  return [
-    rango?.inicio ?? '',
-    rango?.fin ?? '',
-    normalizarFecha(mov.fecha_solicitud) ?? '',
-    (mov.no_tramite || '').trim().toLowerCase(),
-    (mov.departamento || '').trim().toLowerCase(),
-  ].join('|');
-}
-
-function normalizarTramite(tramite?: string | null): string {
-  return (tramite || '').trim();
-}
-
 /**
- * Valida un movimiento nuevo contra los existentes del mismo documento.
- * Devuelve mensaje de error o null si es válido.
+ * Validación mínima: solo coherencia entrada/salida cuando ambas están presentes.
+ * Ningún campo es obligatorio; el trámite puede repetirse para agrupar movimientos.
  */
 export function validarMovimientoDocumento(
-  existentes: MovimientoDocumentoTecnicoObra[],
+  _existentes: MovimientoDocumentoTecnicoObra[],
   nuevo: MovimientoDocumentoInput,
-  excluirId?: string,
+  _excluirId?: string,
 ): string | null {
-  const lista = excluirId ? existentes.filter((m) => m.id !== excluirId) : existentes;
-
-  const tramite = normalizarTramite(nuevo.no_tramite);
-  if (!tramite) {
-    return 'El número de trámite es obligatorio.';
-  }
-
-  if (!normalizarFecha(nuevo.fecha_entrada)) {
-    return 'La fecha de entrada es obligatoria (inicio del movimiento).';
-  }
-
-  const rangoNuevo = rangoMovimiento(nuevo);
-  if (!rangoNuevo) {
+  const entrada = normalizarFecha(nuevo.fecha_entrada);
+  const salida = normalizarFecha(nuevo.fecha_salida);
+  if (entrada && salida && salida < entrada) {
     return 'La fecha de salida no puede ser anterior a la fecha de entrada.';
   }
-
-  const huellaNueva = huellaMovimiento(nuevo);
-
-  for (const existente of lista) {
-    const tramiteExistente = normalizarTramite(existente.no_tramite);
-    if (tramiteExistente && tramite.toLowerCase() === tramiteExistente.toLowerCase()) {
-      return `El número de trámite «${tramite}» ya está registrado en este documento.`;
-    }
-
-    if (huellaNueva === huellaMovimiento(existente)) {
-      return 'Este movimiento ya existe en el documento (mismos datos).';
-    }
-
-    const rangoExistente = rangoMovimiento(existente);
-    if (rangoExistente && rangosSeSolapan(rangoNuevo, rangoExistente)) {
-      return `Las fechas chocan con otro movimiento (${rangoExistente.inicio} — ${rangoExistente.fin}).`;
-    }
-  }
-
   return null;
 }
 
@@ -105,6 +59,9 @@ export function ordenarMovimientosDocumento(
 function claveOrdenMovimiento(mov: MovimientoDocumentoTecnicoObra): string {
   const rango = rangoMovimiento(mov);
   if (rango) return `${rango.inicio}|${rango.fin}`;
-  const fallback = normalizarFecha(mov.fecha_solicitud);
+  const fallback =
+    normalizarFecha(mov.fecha_entrada) ||
+    normalizarFecha(mov.fecha_solicitud) ||
+    normalizarFecha(mov.created_at);
   return fallback ? `${fallback}|${fallback}` : '9999-99-99|9999-99-99';
 }

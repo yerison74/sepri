@@ -17,6 +17,8 @@ interface ReporteObrasFiltrosProps {
   responsableSugerencias: string[];
   loadingSearchSugerencias: boolean;
   loadingResponsableSugerencias: boolean;
+  /** Sin tarjeta exterior (dentro de SeccionColapsable). */
+  embebido?: boolean;
 }
 
 const inputClassName =
@@ -30,6 +32,7 @@ const ReporteObrasFiltros: React.FC<ReporteObrasFiltrosProps> = ({
   responsableSugerencias,
   loadingSearchSugerencias,
   loadingResponsableSugerencias,
+  embebido = false,
 }) => {
   const [gruposAbiertos, setGruposAbiertos] = useState<Record<string, boolean>>({
     PLANTEL: true,
@@ -132,18 +135,9 @@ const ReporteObrasFiltros: React.FC<ReporteObrasFiltrosProps> = ({
 
   const activos = contarFiltrosActivos(filters);
 
-  return (
-    <div className="bg-white border border-slate-200 rounded-2xl shadow-sm p-4 sm:p-5 space-y-4">
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <h3 className="text-sm font-semibold text-slate-600 uppercase tracking-wide">Filtros</h3>
-        {activos > 0 && (
-          <span className="text-xs text-slate-500 bg-slate-100 px-2 py-1 rounded-full">
-            {activos} filtro(s) activo(s)
-          </span>
-        )}
-      </div>
-
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+  const contenido = (
+    <>
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-3 sm:gap-4">
         <div className="space-y-1">
           <label className="block text-xs font-medium text-slate-600">Búsqueda general</label>
           <AutocompleteInput
@@ -206,6 +200,24 @@ const ReporteObrasFiltros: React.FC<ReporteObrasFiltrosProps> = ({
           );
         })}
       </div>
+    </>
+  );
+
+  if (embebido) {
+    return <div className="p-3 sm:p-4 space-y-3">{contenido}</div>;
+  }
+
+  return (
+    <div className="bg-white border border-slate-200 rounded-2xl shadow-sm p-4 sm:p-5 space-y-4">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <h3 className="text-sm font-semibold text-slate-600 uppercase tracking-wide">Filtros</h3>
+        {activos > 0 && (
+          <span className="text-xs text-slate-500 bg-slate-100 px-2 py-1 rounded-full">
+            {activos} filtro(s) activo(s)
+          </span>
+        )}
+      </div>
+      {contenido}
     </div>
   );
 };

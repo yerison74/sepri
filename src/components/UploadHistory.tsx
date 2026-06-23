@@ -82,7 +82,9 @@ const ESTADO_OPTIONS: { value: string; label: string }[] = [
 /** Etiqueta del chip en listado: BD + respaldo por id FC-* (atención al contratista). */
 function chipLabelTipoTramite(tramite: Tramite): string {
   if (tramite.tipo_tramite === 'tipo_contratista') return 'Contratista';
+  if (tramite.tipo_tramite === 'tipo_gestion_tecnica') return 'Gestión técnica';
   if (tramite.tipo_tramite === 'tipo_interno') return 'Interno';
+  if ((tramite.titulo || '').startsWith('Doc. técnico')) return 'Gestión técnica';
   const id = (tramite.id || '').toUpperCase();
   if (id.startsWith('FC-')) return 'Contratista';
   return 'Interno';

@@ -21,6 +21,7 @@ import type {
 } from '../types/database';
 import { aplicarFiltrosObrasEnQuery } from '../utils/aplicarFiltrosObrasQuery';
 import { ordenarMovimientosDocumento, validarMovimientoDocumento } from '../utils/validarMovimientoDocumento';
+import { esEstatusMovimientoValido } from '../constants/gestionTecnicaDocumento';
 
 // ── Generador de token seguro (Web Crypto API) ──────────────────────────────
 function generarToken(longitud = 32): string {
@@ -2101,6 +2102,153 @@ function mapMovimientoDocumentoRow(row: Record<string, unknown>): MovimientoDocu
   return { ...(rest as unknown as MovimientoDocumentoTecnicoObra), area: area ?? null };
 }
 
+const AREA_ORIGEN_GESTION_TECNICA = 'Gestión técnica de documento';
+
+function resolverNombreAreaPorId(
+  departamentoId: string | null | undefined,
+  areas: Area[],
+): string | null {
+  if (!departamentoId?.trim()) return null;
+  return areas.find((a) => a.id === departamentoId.trim())?.area ?? null;
+}
+
+function mapearEstatusAEstadoTramite(estatus: string | null | undefined): Tramite['estado'] {
+  const e = (estatus || '').trim();
+  if (e === 'Detenida') return 'detenido';
+  if (e === 'Certificada') return 'completado';
+  return 'en_transito';
+}
+
+function mapearEstatusAEstadoResultante(estatus: string | null | undefined): string | null {
+  const e = (estatus || '').trim();
+  if (e === 'Detenida') return 'detenido';
+  if (e === 'Certificada') return 'completado';
+  return null;
+}
+
+async function obtenerAreaOrigenMovimientoDocumento(
+  noTramite: string,
+  movimientoActualId: string,
+  areas: Area[],
+): Promise<string> {
+  const { data, error } = await supabase
+    .from('movimiento_documentos_tecnicos_obra')
+    .select('id, departamento, fecha_entrada, created_at')
+    .eq('no_tramite', noTramite.trim())
+    .order('fecha_entrada', { ascending: true, nullsFirst: false })
+    .order('created_at', { ascending: true });
+
+  if (error) throw error;
+
+  const filas = data || [];
+  const idx = filas.findIndex((r) => r.id === movimientoActualId);
+  if (idx <= 0) return AREA_ORIGEN_GESTION_TECNICA;
+
+  const prev = filas[idx - 1];
+  return resolverNombreAreaPorId(prev.departamento, areas) || AREA_ORIGEN_GESTION_TECNICA;
+}
+
+/** Garantiza registro en `tramites` para que `no_tramite` pueda recibir movimientos de seguimiento. */
+async function asegurarTramiteGestionTecnica(params: {
+  noTramite: string;
+  solicitud: string;
+  areaDestinatario: string;
+  oficio?: string | null;
+}): Promise<void> {
+  const { data: existing, error: selErr } = await supabase
+    .from('tramites')
+    .select('id')
+    .eq('id', params.noTramite.trim())
+    .maybeSingle();
+  if (selErr) throw selErr;
+  if (existing?.id) return;
+
+  const { data: doc, error: docErr } = await supabase
+    .from('documentos_tecnicos_obra')
+    .select('tipo_adenda')
+    .eq('solicitud', params.solicitud.trim())
+    .maybeSingle();
+  if (docErr) throw docErr;
+
+  const tituloBase = `Doc. técnico ${params.solicitud}`;
+  const titulo = doc?.tipo_adenda
+    ? `${tituloBase} - ${doc.tipo_adenda}`
+    : tituloBase;
+
+  const { error: insErr } = await supabase.from('tramites').insert({
+    id: params.noTramite.trim(),
+    titulo,
+    oficio: params.oficio?.trim() || null,
+    nombre_destinatario: params.solicitud,
+    area_destinatario: params.areaDestinatario,
+    area_destino_final: params.areaDestinatario,
+    proceso: null,
+    estado: 'en_transito',
+    codigo_barras: params.noTramite.trim(),
+    archivo_pdf: null,
+    nombre_archivo: null,
+  });
+  if (insErr) throw insErr;
+}
+
+/**
+ * Replica el movimiento de gestión técnica en `movimientos_tramites` para Seguimiento de trámite.
+ * Notifica por Realtime a usuarios cuyo `usuarios_app.area` coincide con `area_destino`.
+ */
+async function sincronizarMovimientoGestionTecnicaATramite(
+  movimiento: MovimientoDocumentoTecnicoObra,
+  opciones: { usuario?: string | null } = {},
+): Promise<void> {
+  const noTramite = movimiento.no_tramite?.trim();
+  if (!noTramite) return;
+
+  const areas = await areasService.obtenerAreas();
+  const areaDestinoNombre =
+    movimiento.area?.area || resolverNombreAreaPorId(movimiento.departamento, areas);
+  if (!areaDestinoNombre) return;
+
+  await asegurarTramiteGestionTecnica({
+    noTramite,
+    solicitud: movimiento.solicitud,
+    areaDestinatario: areaDestinoNombre,
+    oficio: movimiento.oficio,
+  });
+
+  const areaOrigen = await obtenerAreaOrigenMovimientoDocumento(
+    noTramite,
+    movimiento.id,
+    areas,
+  );
+
+  const estatus = movimiento.estatus?.trim() || '';
+  const esDetenido = estatus === 'Detenida';
+  const esCompletado = estatus === 'Certificada';
+  const areaDestinoMovimiento =
+    esDetenido || esCompletado ? areaOrigen : areaDestinoNombre;
+
+  const observacionesPartes = [
+    movimiento.observaciones?.trim() || null,
+    `Solicitud: ${movimiento.solicitud}`,
+    estatus ? `Estatus: ${estatus}` : null,
+    movimiento.fecha_entrada ? `Entrada: ${movimiento.fecha_entrada}` : null,
+    'Origen: Gestión técnica de documento',
+  ].filter(Boolean);
+
+  await tramitesService.registrarMovimiento(noTramite, {
+    area_origen: areaOrigen,
+    area_destino: areaDestinoMovimiento,
+    oficio: movimiento.oficio?.trim() || null,
+    observaciones: observacionesPartes.join(' | '),
+    usuario: opciones.usuario?.trim() || 'Gestión técnica de documento',
+    estado_resultante: mapearEstatusAEstadoResultante(estatus),
+  });
+
+  await tramitesService.actualizarTramite(noTramite, {
+    area_destinatario: areaDestinoNombre,
+    estado: mapearEstatusAEstadoTramite(estatus),
+  });
+}
+
 export const documentosTecnicosService = {
   listar: async (filtros?: { busqueda?: string }): Promise<DocumentoTecnicoObra[]> => {
     const { data, error } = await supabase
@@ -2296,8 +2444,12 @@ export const documentosTecnicosService = {
     fecha_solicitud?: string | null;
     fecha_entrada?: string | null;
     no_tramite?: string | null;
+    oficio?: string | null;
+    estatus?: string | null;
     departamento?: string | null;
     fecha_salida?: string | null;
+    observaciones?: string | null;
+    usuario?: string | null;
   }): Promise<MovimientoDocumentoTecnicoObra> => {
     const solicitud = payload.solicitud.trim();
     const existentes = await documentosTecnicosService.listarMovimientos(solicitud);
@@ -2305,14 +2457,20 @@ export const documentosTecnicosService = {
     if (errorValidacion) {
       throw new Error(errorValidacion);
     }
+    if (payload.estatus?.trim() && !esEstatusMovimientoValido(payload.estatus)) {
+      throw new Error('Estatus debe ser: En Proceso, Detenida o Certificada');
+    }
 
     const row: Record<string, string | null> = {
       solicitud,
       fecha_solicitud: payload.fecha_solicitud || null,
       fecha_entrada: payload.fecha_entrada || null,
       no_tramite: payload.no_tramite?.trim() || null,
+      oficio: payload.oficio?.trim() || null,
+      estatus: payload.estatus?.trim() || null,
       departamento: payload.departamento?.trim() || null,
       fecha_salida: payload.fecha_salida || null,
+      observaciones: payload.observaciones?.trim() || null,
     };
 
     const { data, error } = await supabase
@@ -2323,16 +2481,70 @@ export const documentosTecnicosService = {
 
     if (error) {
       const msg = error.message || '';
-      if (/fecha_entrada/i.test(msg) && (error.code === 'PGRST204' || /column/i.test(msg))) {
+      if (/fecha_entrada|oficio|estatus|observaciones/i.test(msg) && (error.code === 'PGRST204' || /column/i.test(msg))) {
         throw new Error(
-          'Falta la columna fecha_entrada en la base de datos. Ejecute supabase-documentos-tecnicos-alter.sql en Supabase (SQL Editor) y recargue la página.',
+          'Faltan columnas en movimiento_documentos_tecnicos_obra. Ejecute supabase-documentos-tecnicos-alter.sql en Supabase y recargue la página.',
         );
-      }
-      if (error.code === '23505' && /no_tramite|tramite/i.test(msg)) {
-        throw new Error('El número de trámite ya está registrado en este documento.');
       }
       throw error;
     }
+    const movimiento = mapMovimientoDocumentoRow(data as Record<string, unknown>);
+    try {
+      await sincronizarMovimientoGestionTecnicaATramite(movimiento, {
+        usuario: payload.usuario,
+      });
+    } catch (syncErr: unknown) {
+      const msg = syncErr instanceof Error ? syncErr.message : 'Error al sincronizar con seguimiento de trámite';
+      throw new Error(
+        `Movimiento guardado, pero no se pudo sincronizar con Seguimiento de trámite: ${msg}`,
+      );
+    }
+    return movimiento;
+  },
+
+  actualizarMovimiento: async (
+    id: string,
+    payload: {
+      solicitud: string;
+      fecha_solicitud?: string | null;
+      fecha_entrada?: string | null;
+      no_tramite?: string | null;
+      oficio?: string | null;
+      estatus?: string | null;
+      departamento?: string | null;
+      fecha_salida?: string | null;
+      observaciones?: string | null;
+    },
+  ): Promise<MovimientoDocumentoTecnicoObra> => {
+    const solicitud = payload.solicitud.trim();
+    const existentes = await documentosTecnicosService.listarMovimientos(solicitud);
+    const errorValidacion = validarMovimientoDocumento(existentes, payload, id);
+    if (errorValidacion) {
+      throw new Error(errorValidacion);
+    }
+    if (payload.estatus?.trim() && !esEstatusMovimientoValido(payload.estatus)) {
+      throw new Error('Estatus debe ser: En Proceso, Detenida o Certificada');
+    }
+
+    const updates: Record<string, string | null> = {
+      fecha_solicitud: payload.fecha_solicitud || null,
+      fecha_entrada: payload.fecha_entrada || null,
+      no_tramite: payload.no_tramite?.trim() || null,
+      oficio: payload.oficio?.trim() || null,
+      estatus: payload.estatus?.trim() || null,
+      departamento: payload.departamento?.trim() || null,
+      fecha_salida: payload.fecha_salida || null,
+      observaciones: payload.observaciones?.trim() || null,
+    };
+
+    const { data, error } = await supabase
+      .from('movimiento_documentos_tecnicos_obra')
+      .update(updates)
+      .eq('id', id)
+      .select(MOV_DOC_TECNICO_SELECT)
+      .single();
+
+    if (error) throw error;
     return mapMovimientoDocumentoRow(data as Record<string, unknown>);
   },
 
@@ -2375,8 +2587,11 @@ export const documentosTecnicosService = {
       fecha_solicitud?: string | null;
       fecha_entrada?: string | null;
       no_tramite?: string | null;
+      oficio?: string | null;
+      estatus?: string | null;
       departamento?: string | null;
       fecha_salida?: string | null;
+      observaciones?: string | null;
     }>;
   }): Promise<{
     documentosCreados: number;
@@ -2486,8 +2701,12 @@ export const documentosTecnicosService = {
           fecha_solicitud: fila.fecha_solicitud || null,
           fecha_entrada: fila.fecha_entrada || null,
           no_tramite: fila.no_tramite || null,
+          oficio: fila.oficio || null,
+          estatus: fila.estatus || null,
           departamento: departamentoId,
           fecha_salida: fila.fecha_salida || null,
+          observaciones: fila.observaciones || null,
+          usuario: 'Importación Excel',
         });
         resultado.movimientosCreados += 1;
       } catch (err: unknown) {

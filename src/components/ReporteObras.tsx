@@ -15,9 +15,11 @@ import type { ReporteObrasStats } from '../types/database';
 import ReporteObrasMap from './ReporteObrasMap';
 import ReporteObrasTablaDetalle from './ReporteObrasTablaDetalle';
 import ReporteObrasFiltros from './ReporteObrasFiltros';
+import SeccionColapsable from './ui/SeccionColapsable';
 import {
   EMPTY_REPORTE_OBRAS_FILTERS,
   reporteFiltrosToObrasFilters,
+  contarFiltrosActivos,
 } from '../constants/obraFiltrosReporte';
 import {
   REPORTE_OBRAS_COLUMNAS,
@@ -28,6 +30,7 @@ import {
   BTN_PRIMARY,
   BTN_SECONDARY,
   BTN_ACCENT,
+  BTN_PRIMARY_SM,
 } from '../constants/buttonStyles';
 
 const COLORS: Record<string, string> = {
@@ -59,6 +62,15 @@ const ReporteObras: React.FC<ReporteObrasProps> = ({ refreshTrigger, soloLectura
   const [responsableSugerencias, setResponsableSugerencias] = useState<string[]>([]);
   const [loadingSearchSugerencias, setLoadingSearchSugerencias] = useState(false);
   const [loadingResponsableSugerencias, setLoadingResponsableSugerencias] = useState(false);
+
+  const [secFiltros, setSecFiltros] = useState(true);
+  const [secResumen, setSecResumen] = useState(true);
+  const [secMapa, setSecMapa] = useState(false);
+  const [secDesglose, setSecDesglose] = useState(false);
+  const [secDetalle, setSecDetalle] = useState(true);
+  const [secInauguraciones, setSecInauguraciones] = useState(false);
+
+  const filtrosActivos = contarFiltrosActivos(filters);
 
   useEffect(() => {
     const load = async () => {
@@ -122,6 +134,9 @@ const ReporteObras: React.FC<ReporteObrasProps> = ({ refreshTrigger, soloLectura
       const params = reporteFiltrosToObrasFilters(filters);
       const resp = await statsAPI.obtenerReporteObras(params);
       setReporte(resp.data.data);
+      if (resp.data.data?.obrasProximasInaugurar?.length) {
+        setSecInauguraciones(true);
+      }
     } catch (err: any) {
       setError(err?.response?.data?.error || 'Error al generar el reporte');
       setReporte(null);
@@ -189,16 +204,16 @@ const ReporteObras: React.FC<ReporteObrasProps> = ({ refreshTrigger, soloLectura
   const maxEstado = estadoData.length > 0 ? Math.max(1, ...estadoData.map((i) => i.cantidad)) : 1;
 
   return (
-    <div className="p-0 space-y-5">
-      <div className="bg-white rounded-xl border border-slate-200 px-4 py-4 sm:px-5 shadow-sm">
+    <div className="flex flex-col gap-3 min-h-[calc(100dvh-5.5rem)] sm:min-h-[calc(100dvh-6rem)]">
+      <div className="bg-white rounded-xl border border-slate-200 px-3 py-3 sm:px-5 shadow-sm shrink-0">
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
           <div>
-            <h2 className="text-2xl sm:text-3xl font-bold text-slate-800 flex items-center gap-2">
-              <Assessment className="text-[#42A5F5]" />
+            <h2 className="text-lg sm:text-xl font-semibold text-slate-800 flex items-center gap-2">
+              <Assessment className="text-[#42A5F5]" sx={{ fontSize: 24 }} />
               Reporte de Obras
             </h2>
-            <p className="text-sm text-slate-500 mt-1">
-              Aplica filtros y obtén estadísticas del conjunto de obras seleccionado.
+            <p className="text-xs sm:text-sm text-slate-500 mt-1">
+              Filtre, genere el reporte y expanda solo las secciones que necesite.
             </p>
           </div>
           <div className="flex flex-wrap gap-2">
@@ -220,7 +235,7 @@ const ReporteObras: React.FC<ReporteObrasProps> = ({ refreshTrigger, soloLectura
               className={BTN_ACCENT}
             >
               <Download sx={{ fontSize: 18 }} />
-              {exporting ? 'Exportando…' : 'Exportar Excel'}
+              {exporting ? 'Exportando…' : 'Excel'}
             </button>
             <button
               type="button"
@@ -229,169 +244,201 @@ const ReporteObras: React.FC<ReporteObrasProps> = ({ refreshTrigger, soloLectura
               className={BTN_PRIMARY}
             >
               <FilterList sx={{ fontSize: 18 }} />
-              {loading ? 'Generando…' : 'Generar reporte'}
+              {loading ? 'Generando…' : 'Generar'}
             </button>
           </div>
         </div>
       </div>
 
-      {/* Filtros */}
-      <ReporteObrasFiltros
-        filters={filters}
-        onChange={setFilters}
-        estadosDisponibles={estadosDisponibles}
-        searchSugerencias={searchSugerencias}
-        responsableSugerencias={responsableSugerencias}
-        loadingSearchSugerencias={loadingSearchSugerencias}
-        loadingResponsableSugerencias={loadingResponsableSugerencias}
-      />
+      <SeccionColapsable
+        titulo="Filtros de búsqueda"
+        descripcion="Búsqueda general, responsable y filtros avanzados por área."
+        abierto={secFiltros}
+        onToggle={() => setSecFiltros((v) => !v)}
+        className="shrink-0"
+        badge={
+          filtrosActivos > 0 ? (
+            <span className="text-[10px] font-medium text-[#42A5F5] bg-blue-50 px-1.5 py-0.5 rounded-md">
+              {filtrosActivos} activo{filtrosActivos !== 1 ? 's' : ''}
+            </span>
+          ) : undefined
+        }
+        acciones={
+          <button type="button" onClick={generarReporte} disabled={loading} className={BTN_PRIMARY_SM}>
+            {loading ? '…' : 'Aplicar'}
+          </button>
+        }
+        contenidoClassName="!p-0"
+      >
+        <ReporteObrasFiltros
+          filters={filters}
+          onChange={setFilters}
+          estadosDisponibles={estadosDisponibles}
+          searchSugerencias={searchSugerencias}
+          responsableSugerencias={responsableSugerencias}
+          loadingSearchSugerencias={loadingSearchSugerencias}
+          loadingResponsableSugerencias={loadingResponsableSugerencias}
+          embebido
+        />
+      </SeccionColapsable>
 
       {error && (
-        <div className="bg-red-50 border border-red-200 text-red-800 px-4 py-3 rounded-xl">{error}</div>
+        <div className="bg-red-50 border border-red-200 text-red-800 px-3 py-2 rounded-xl text-sm shrink-0">
+          {error}
+        </div>
       )}
 
       {loading && !reporte && (
-        <div className="flex justify-center py-16">
-          <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-[#42A5F5]" />
+        <div className="flex-1 flex items-center justify-center min-h-[8rem]">
+          <div className="animate-spin rounded-full h-10 w-10 border-2 border-slate-200 border-t-[#42A5F5]" />
         </div>
       )}
 
       {reporte && (
-        <>
-          {/* Resumen */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
-            <div className="bg-white rounded-xl border border-slate-200 p-4 shadow-sm">
-              <div className="text-xs font-semibold text-slate-500 uppercase mb-1">Total obras</div>
-              <div className="text-3xl font-bold text-slate-800">{reporte.estadisticas.totalObras}</div>
+        <div className="flex-1 min-h-0 flex flex-col gap-3 overflow-y-auto">
+          <SeccionColapsable
+            titulo="Resumen"
+            abierto={secResumen}
+            onToggle={() => setSecResumen((v) => !v)}
+            className="shrink-0"
+          >
+            <div className="grid grid-cols-2 lg:grid-cols-4 gap-2 sm:gap-3">
+              <KpiCard label="Total obras" value={reporte.estadisticas.totalObras} />
+              <KpiCard label="Estados" value={estadoData.length} />
+              <KpiCard label="Total aulas" value={reporte.estadisticas.totalAulas} />
+              <KpiCard label="Con GPS" value={reporte.estadisticas.conUbicacion} />
             </div>
-            <div className="bg-white rounded-xl border border-slate-200 p-4 shadow-sm">
-              <div className="text-xs font-semibold text-slate-500 uppercase mb-1">Estados distintos</div>
-              <div className="text-3xl font-bold text-slate-800">{estadoData.length}</div>
-            </div>
-            <div className="bg-white rounded-xl border border-slate-200 p-4 shadow-sm">
-              <div className="text-xs font-semibold text-slate-500 uppercase mb-1">Total aulas</div>
-              <div className="text-3xl font-bold text-slate-800">{reporte.estadisticas.totalAulas}</div>
-            </div>
-            <div className="bg-white rounded-xl border border-slate-200 p-4 shadow-sm">
-              <div className="text-xs font-semibold text-slate-500 uppercase mb-1">Con ubicación GPS</div>
-              <div className="text-3xl font-bold text-slate-800">{reporte.estadisticas.conUbicacion}</div>
-            </div>
-          </div>
+          </SeccionColapsable>
 
-          {/* Mapa + estados */}
-          <div className="grid grid-cols-1 lg:grid-cols-5 gap-4">
-            <div className="lg:col-span-3 bg-white rounded-xl border border-slate-200 p-4 sm:p-5 shadow-sm">
-              <h3 className="text-lg font-semibold text-slate-800 flex items-center gap-2 mb-1">
-                <Public className="text-[#42A5F5]" />
-                Ubicación GPS de obras
-              </h3>
-              <p className="text-sm text-slate-500 mb-3">
-                {reporte.obrasConUbicacion?.length ?? 0} de {reporte.estadisticas.totalObras} obras
-                con coordenadas GPS en el filtro aplicado.
-              </p>
-              <ReporteObrasMap
-                obras={reporte.obrasConUbicacion ?? []}
-                height="320px"
+          <SeccionColapsable
+            titulo="Mapa y distribución por estado"
+            descripcion="El mapa se carga solo al expandir esta sección."
+            abierto={secMapa}
+            onToggle={() => setSecMapa((v) => !v)}
+            className="shrink-0"
+          >
+            <div className="grid grid-cols-1 lg:grid-cols-5 gap-3">
+              <div className="lg:col-span-3">
+                <p className="text-xs text-slate-500 mb-2">
+                  {reporte.obrasConUbicacion?.length ?? 0} de {reporte.estadisticas.totalObras} obras
+                  con coordenadas GPS.
+                </p>
+                {secMapa && (
+                  <ReporteObrasMap obras={reporte.obrasConUbicacion ?? []} height="280px" />
+                )}
+              </div>
+              <div className="lg:col-span-2">
+                {estadoData.length > 0 ? (
+                  <div className="space-y-2 max-h-72 overflow-y-auto">
+                    {estadoData.map((item) => {
+                      const pct = totalEstados > 0 ? (item.cantidad / totalEstados) * 100 : 0;
+                      return (
+                        <div key={item.estado} className="space-y-1">
+                          <div className="flex justify-between text-xs sm:text-sm">
+                            <span className="font-medium text-slate-700 truncate">{item.estado}</span>
+                            <span className="text-slate-500 shrink-0 ml-2">
+                              {item.cantidad} ({pct.toFixed(1)}%)
+                            </span>
+                          </div>
+                          <div className="h-1.5 bg-slate-100 rounded-full overflow-hidden">
+                            <div
+                              className="h-full rounded-full"
+                              style={{
+                                width: `${(item.cantidad / maxEstado) * 100}%`,
+                                backgroundColor: item.color,
+                              }}
+                            />
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                ) : (
+                  <p className="text-slate-500 text-sm">Sin datos para los filtros aplicados</p>
+                )}
+              </div>
+            </div>
+          </SeccionColapsable>
+
+          <SeccionColapsable
+            titulo="Desglose estadístico"
+            descripcion="Provincia, municipio, nivel educativo y responsables."
+            abierto={secDesglose}
+            onToggle={() => setSecDesglose((v) => !v)}
+            className="shrink-0"
+          >
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
+              <TablaReporte
+                titulo="Por provincia"
+                icon={<Place className="text-slate-400" fontSize="small" />}
+                columnas={['Provincia', 'Obras']}
+                filas={reporte.obrasPorProvincia.map((r) => [r.provincia, String(r.cantidad)])}
+              />
+              <TablaReporte
+                titulo="Por municipio (top 15)"
+                icon={<LocationOn className="text-slate-400" fontSize="small" />}
+                columnas={['Municipio', 'Provincia', 'Obras']}
+                filas={reporte.obrasPorMunicipio.slice(0, 15).map((r) => [
+                  r.municipio,
+                  r.provincia,
+                  String(r.cantidad),
+                ])}
+              />
+              <TablaReporte
+                titulo="Por nivel educativo"
+                icon={<School className="text-slate-400" fontSize="small" />}
+                columnas={['Nivel', 'Obras']}
+                filas={reporte.obrasPorNivel.map((r) => [r.nivel, String(r.cantidad)])}
+              />
+              <TablaReporte
+                titulo="Por responsable (top 15)"
+                icon={<Groups className="text-slate-400" fontSize="small" />}
+                columnas={['Responsable', 'Obras']}
+                filas={reporte.obrasPorResponsable.map((r) => [r.responsable, String(r.cantidad)])}
               />
             </div>
-            <div className="lg:col-span-2 bg-white rounded-xl border border-slate-200 p-4 sm:p-5 shadow-sm">
-              <h3 className="text-lg font-semibold text-slate-800 mb-3">Por estado</h3>
-              {estadoData.length > 0 ? (
-                <div className="space-y-2 max-h-80 overflow-y-auto">
-                  {estadoData.map((item) => {
-                    const pct = totalEstados > 0 ? (item.cantidad / totalEstados) * 100 : 0;
-                    return (
-                      <div key={item.estado} className="space-y-1">
-                        <div className="flex justify-between text-sm">
-                          <span className="font-medium text-slate-700 truncate">{item.estado}</span>
-                          <span className="text-slate-500 shrink-0 ml-2">
-                            {item.cantidad} ({pct.toFixed(1)}%)
-                          </span>
-                        </div>
-                        <div className="h-2 bg-slate-100 rounded-full overflow-hidden">
-                          <div
-                            className="h-full rounded-full"
-                            style={{
-                              width: `${(item.cantidad / maxEstado) * 100}%`,
-                              backgroundColor: item.color,
-                            }}
-                          />
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              ) : (
-                <p className="text-slate-500 text-sm">Sin datos para los filtros aplicados</p>
-              )}
+          </SeccionColapsable>
+
+          <SeccionColapsable
+            titulo="Detalle por áreas"
+            descripcion="Tabla completa agrupada por PLANTEL, CONSTRUCCIÓN, UBICACIÓN, etc."
+            abierto={secDetalle}
+            onToggle={() => setSecDetalle((v) => !v)}
+            className="flex-1 min-h-[12rem]"
+            contenidoClassName="!p-2 sm:!p-3 min-h-0"
+          >
+            <div className="flex-1 min-h-0 overflow-auto rounded-xl border border-slate-200">
+              <ReporteObrasTablaDetalle obras={reporte.obrasDetalle ?? []} />
             </div>
-          </div>
+          </SeccionColapsable>
 
-          {/* Tablas */}
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-            <TablaReporte
-              titulo="Por provincia"
-              icon={<Place className="text-slate-400" />}
-              columnas={['Provincia', 'Obras']}
-              filas={reporte.obrasPorProvincia.map((r) => [r.provincia, String(r.cantidad)])}
-            />
-            <TablaReporte
-              titulo="Por municipio (top 15)"
-              icon={<LocationOn className="text-slate-400" />}
-              columnas={['Municipio', 'Provincia', 'Obras']}
-              filas={reporte.obrasPorMunicipio.slice(0, 15).map((r) => [
-                r.municipio,
-                r.provincia,
-                String(r.cantidad),
-              ])}
-            />
-            <TablaReporte
-              titulo="Por nivel educativo"
-              icon={<School className="text-slate-400" />}
-              columnas={['Nivel', 'Obras']}
-              filas={reporte.obrasPorNivel.map((r) => [r.nivel, String(r.cantidad)])}
-            />
-            <TablaReporte
-              titulo="Por responsable (top 15)"
-              icon={<Groups className="text-slate-400" />}
-              columnas={['Responsable', 'Obras']}
-              filas={reporte.obrasPorResponsable.map((r) => [r.responsable, String(r.cantidad)])}
-            />
-          </div>
-
-          {/* Detalle por áreas */}
-          <div className="bg-white rounded-xl border border-slate-200 p-4 sm:p-5 shadow-sm">
-            <h3 className="text-lg font-semibold text-slate-800 mb-1">
-              Detalle por áreas
-            </h3>
-            <p className="text-sm text-slate-500 mb-4">
-              Columnas agrupadas según PLANTEL, CONSTRUCCIÓN, UBICACIÓN, CONTRATISTA, PRESUPUESTO,
-              CUBICACIÓN, TIEMPOS, SNIP y OBSERVACIONES.
-            </p>
-            <ReporteObrasTablaDetalle obras={reporte.obrasDetalle ?? []} />
-          </div>
-
-          {/* Próximas inauguraciones */}
           {reporte.obrasProximasInaugurar.length > 0 && (
-            <div className="bg-white rounded-xl border border-slate-200 p-4 sm:p-5 shadow-sm">
-              <h3 className="text-lg font-semibold text-slate-800 mb-3">
-                Próximas a inaugurar (30 días)
-              </h3>
-              <div className="overflow-x-auto">
+            <SeccionColapsable
+              titulo="Próximas a inaugurar (30 días)"
+              abierto={secInauguraciones}
+              onToggle={() => setSecInauguraciones((v) => !v)}
+              className="shrink-0"
+              badge={
+                <span className="text-[10px] font-medium text-amber-700 bg-amber-50 px-1.5 py-0.5 rounded-md">
+                  {reporte.obrasProximasInaugurar.length}
+                </span>
+              }
+            >
+              <div className="overflow-x-auto rounded-xl border border-slate-200">
                 <table className="min-w-full text-sm">
-                  <thead className="bg-slate-100">
+                  <thead className="bg-slate-100 sticky top-0">
                     <tr>
-                      <th className="px-3 py-2 text-left">Código</th>
-                      <th className="px-3 py-2 text-left">Nombre</th>
-                      <th className="px-3 py-2 text-left">Estado</th>
-                      <th className="px-3 py-2 text-left">Provincia</th>
-                      <th className="px-3 py-2 text-left">Inauguración</th>
+                      <th className="px-3 py-2 text-left text-xs font-medium text-slate-600">Código</th>
+                      <th className="px-3 py-2 text-left text-xs font-medium text-slate-600">Nombre</th>
+                      <th className="px-3 py-2 text-left text-xs font-medium text-slate-600">Estado</th>
+                      <th className="px-3 py-2 text-left text-xs font-medium text-slate-600">Provincia</th>
+                      <th className="px-3 py-2 text-left text-xs font-medium text-slate-600">Inauguración</th>
                     </tr>
                   </thead>
                   <tbody>
                     {reporte.obrasProximasInaugurar.map((obra) => (
                       <tr key={obra.id} className="border-t border-slate-100">
-                        <td className="px-3 py-2 font-mono">{obra.codigo || obra.id}</td>
+                        <td className="px-3 py-2 font-mono text-xs">{obra.codigo || obra.id}</td>
                         <td className="px-3 py-2">{obra.nombre}</td>
                         <td className="px-3 py-2">{obra.estado}</td>
                         <td className="px-3 py-2">{obra.provincia || '—'}</td>
@@ -401,13 +448,22 @@ const ReporteObras: React.FC<ReporteObrasProps> = ({ refreshTrigger, soloLectura
                   </tbody>
                 </table>
               </div>
-            </div>
+            </SeccionColapsable>
           )}
-        </>
+        </div>
       )}
     </div>
   );
 };
+
+function KpiCard({ label, value }: { label: string; value: number }) {
+  return (
+    <div className="bg-slate-50/80 rounded-xl border border-slate-100 p-3">
+      <div className="text-[10px] font-semibold text-slate-500 uppercase mb-0.5">{label}</div>
+      <div className="text-xl sm:text-2xl font-bold text-slate-800 tabular-nums">{value}</div>
+    </div>
+  );
+}
 
 function TablaReporte({
   titulo,
@@ -421,18 +477,20 @@ function TablaReporte({
   filas: string[][];
 }) {
   return (
-    <div className="bg-white rounded-xl border border-slate-200 p-4 sm:p-5 shadow-sm">
-      <h3 className="text-lg font-semibold mb-3 flex items-center gap-2 text-slate-800">
+    <div className="rounded-xl border border-slate-200 bg-slate-50/40 p-3">
+      <h4 className="text-sm font-semibold mb-2 flex items-center gap-2 text-slate-800">
         {icon}
         {titulo}
-      </h3>
+      </h4>
       {filas.length > 0 ? (
-        <div className="max-h-72 overflow-y-auto rounded-lg border border-slate-200">
+        <div className="max-h-56 overflow-y-auto rounded-lg border border-slate-200 bg-white">
           <table className="min-w-full text-sm">
             <thead className="sticky top-0 bg-slate-100">
               <tr>
                 {columnas.map((c) => (
-                  <th key={c} className="py-2 px-3 text-left font-semibold text-slate-600">{c}</th>
+                  <th key={c} className="py-1.5 px-2 text-left text-xs font-semibold text-slate-600">
+                    {c}
+                  </th>
                 ))}
               </tr>
             </thead>
@@ -442,7 +500,11 @@ function TablaReporte({
                   {fila.map((celda, j) => (
                     <td
                       key={j}
-                      className={`py-2 px-3 ${j === fila.length - 1 ? 'text-right font-semibold text-slate-500' : 'text-slate-800'}`}
+                      className={`py-1.5 px-2 text-xs sm:text-sm ${
+                        j === fila.length - 1
+                          ? 'text-right font-semibold text-slate-500'
+                          : 'text-slate-800'
+                      }`}
                     >
                       {celda}
                     </td>
@@ -453,7 +515,7 @@ function TablaReporte({
           </table>
         </div>
       ) : (
-        <p className="text-slate-500 text-sm py-4 text-center">Sin datos</p>
+        <p className="text-slate-500 text-sm py-3 text-center">Sin datos</p>
       )}
     </div>
   );

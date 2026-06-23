@@ -226,8 +226,12 @@ export const gestionTecnicaDocumentoAPI = {
     fecha_solicitud?: string | null;
     fecha_entrada?: string | null;
     no_tramite?: string | null;
+    oficio?: string | null;
+    estatus?: string | null;
     departamento?: string | null;
     fecha_salida?: string | null;
+    observaciones?: string | null;
+    usuario?: string | null;
   }) => {
     try {
       const data = await documentosTecnicosService.crearMovimiento(payload);
@@ -236,6 +240,33 @@ export const gestionTecnicaDocumentoAPI = {
       throw {
         response: {
           data: { error: error.message || 'Error al registrar movimiento' },
+          status: 500,
+        },
+      };
+    }
+  },
+
+  actualizarMovimiento: async (
+    id: string,
+    payload: {
+      solicitud: string;
+      fecha_solicitud?: string | null;
+      fecha_entrada?: string | null;
+      no_tramite?: string | null;
+      oficio?: string | null;
+      estatus?: string | null;
+      departamento?: string | null;
+      fecha_salida?: string | null;
+      observaciones?: string | null;
+    },
+  ) => {
+    try {
+      const data = await documentosTecnicosService.actualizarMovimiento(id, payload);
+      return { data: { data } } as AxiosResponse<{ data: MovimientoDocumentoTecnicoObra }>;
+    } catch (error: any) {
+      throw {
+        response: {
+          data: { error: error.message || 'Error al actualizar movimiento' },
           status: 500,
         },
       };

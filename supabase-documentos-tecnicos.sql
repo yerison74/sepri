@@ -43,8 +43,11 @@ CREATE TABLE public.movimiento_documentos_tecnicos_obra (
   fecha_solicitud date,
   fecha_entrada   date,
   no_tramite      varchar(120),
+  oficio          varchar(120),
+  estatus         varchar(40),
   departamento    text REFERENCES public.area(id) ON DELETE SET NULL,
   fecha_salida    date,
+  observaciones   text,
   created_at      timestamptz NOT NULL DEFAULT now()
 );
 
@@ -52,8 +55,7 @@ CREATE INDEX IF NOT EXISTS idx_mov_doc_tecnicos_solicitud
   ON public.movimiento_documentos_tecnicos_obra(solicitud);
 CREATE INDEX IF NOT EXISTS idx_mov_doc_tecnicos_departamento
   ON public.movimiento_documentos_tecnicos_obra(departamento);
-
-CREATE UNIQUE INDEX IF NOT EXISTS idx_mov_doc_tecnicos_solicitud_tramite
+CREATE INDEX IF NOT EXISTS idx_mov_doc_tecnicos_solicitud_tramite
   ON public.movimiento_documentos_tecnicos_obra(solicitud, lower(trim(no_tramite)))
   WHERE no_tramite IS NOT NULL AND trim(no_tramite) <> '';
 

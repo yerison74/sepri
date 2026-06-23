@@ -7,6 +7,20 @@ export const TIPOS_ADENDA = [
 
 export type TipoAdenda = (typeof TIPOS_ADENDA)[number];
 
+/** Estatus de un movimiento — Gestión técnica de documento. */
+export const ESTATUS_MOVIMIENTO_DOCUMENTO = [
+  'En Proceso',
+  'Detenida',
+  'Certificada',
+] as const;
+
+export type EstatusMovimientoDocumento = (typeof ESTATUS_MOVIMIENTO_DOCUMENTO)[number];
+
+export function esEstatusMovimientoValido(value: string): boolean {
+  if (!value.trim()) return true;
+  return ESTATUS_MOVIMIENTO_DOCUMENTO.includes(value.trim() as EstatusMovimientoDocumento);
+}
+
 /** Formato de montos en pesos dominicanos para visualización. */
 export function formatMontoDOP(value?: number | null): string {
   if (value == null || Number.isNaN(value)) return '—';

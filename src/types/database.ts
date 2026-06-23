@@ -111,8 +111,11 @@ export interface MovimientoDocumentoTecnicoObra {
   fecha_solicitud?: string | null;
   fecha_entrada?: string | null;
   no_tramite?: string | null;
+  oficio?: string | null;
+  estatus?: string | null;
   departamento?: string | null;
   fecha_salida?: string | null;
+  observaciones?: string | null;
   created_at?: string | null;
   area?: Area | null;
 }
@@ -144,7 +147,7 @@ export interface Tramite {
   archivo_pdf?: string | null;
   nombre_archivo?: string | null;
   /** Tipo de trámite para distinguir origen del flujo. */
-  tipo_tramite?: 'tipo_interno' | 'tipo_contratista' | string | null;
+  tipo_tramite?: 'tipo_interno' | 'tipo_contratista' | 'tipo_gestion_tecnica' | string | null;
   fecha_creacion?: string | null;
   created_at?: string | null;
   updated_at?: string | null;
@@ -162,7 +165,7 @@ export interface MovimientoTramite {
   /** Estado que quedó el trámite tras este movimiento (ej. 'detenido', 'completado'). Para indicadores en historial. */
   estado_resultante?: string | null;
   /** Tipo de trámite ligado al movimiento (interno / contratista). */
-  tipo_tramite?: 'tipo_interno' | 'tipo_contratista' | string | null;
+  tipo_tramite?: 'tipo_interno' | 'tipo_contratista' | 'tipo_gestion_tecnica' | string | null;
 }
 
 /** Registro de tiempo que un trámite permanece en un área (para procesos con medición). */
