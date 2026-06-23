@@ -37,8 +37,9 @@ import ModuloPageHeader from './ui/ModuloPageHeader';
 import SepriListCard from './ui/SepriListCard';
 import {
   GT_PAGE,
-  GT_WORKSPACE,
-  GT_WORKSPACE_SHELL,
+  GT_STACK,
+  GT_SECTION,
+  GT_LIST_SCROLL,
   GT_ALERTA_INFO,
   GT_ALERTA_OK,
   GT_ALERTA_ERROR,
@@ -71,10 +72,10 @@ interface GestionTecnicaDocumentoProps {
 }
 
 const inputClass =
-  `w-full px-3 py-2.5 rounded-xl text-sm text-stone-700 placeholder:text-stone-400 bg-white transition-all duration-150 outline-none ${SEPRI_FIELD_SHADOW}`;
+  `w-full px-3 py-2.5 rounded-xl text-sm text-stone-700 placeholder:text-stone-400 bg-white border-0 transition-all duration-150 outline-none ${SEPRI_FIELD_SHADOW}`;
 
 const selectTriggerClass =
-  `w-full px-3 py-2.5 rounded-xl text-sm bg-white transition-all duration-150 outline-none flex items-center justify-between gap-2 text-left appearance-none ${SEPRI_FIELD_SHADOW}`;
+  `w-full px-3 py-2.5 rounded-xl text-sm bg-white border-0 transition-all duration-150 outline-none flex items-center justify-between gap-2 text-left appearance-none ${SEPRI_FIELD_SHADOW}`;
 
 const labelClass = 'text-xs font-medium text-stone-400';
 
@@ -1080,14 +1081,16 @@ const GestionTecnicaDocumento: React.FC<GestionTecnicaDocumentoProps> = ({ soloL
         </div>
       )}
 
-      {!soloLectura && (
+      <div className={GT_STACK}>
+        {/* Fila 2: Formulario documento */}
+        {!soloLectura && (
         <SeccionColapsable
           titulo={editandoId ? `Editar documento${seleccionado ? ` — ${seleccionado.solicitud}` : ''}` : 'Nuevo documento'}
           descripcion="Datos de solicitud, SIGEDE, montos, adendas y contratista."
           abierto={secFormDoc}
           onToggle={() => setSecFormDoc((v) => !v)}
           icon={<NoteAdd sx={{ fontSize: 16 }} />}
-          className="shrink-0"
+          className={GT_SECTION}
           contenidoClassName="!p-0"
         >
         <form
@@ -1357,17 +1360,11 @@ const GestionTecnicaDocumento: React.FC<GestionTecnicaDocumentoProps> = ({ soloL
           </div>
         </form>
         </SeccionColapsable>
-      )}
+        )}
 
-      <div className="flex-1 min-h-0 flex flex-col gap-2">
-        <p className="text-[10px] font-semibold text-stone-300 uppercase tracking-[0.14em] px-1 shrink-0">
-          Área de trabajo
-        </p>
-        <div className={GT_WORKSPACE_SHELL}>
-          <div className={GT_WORKSPACE}>
-        {/* Documentos */}
+        {/* Fila 3: Documentos registrados */}
         <SeccionColapsable
-          className={`order-1 lg:col-start-1 lg:row-start-1 ${secDocumentos ? 'min-h-[11rem] lg:min-h-0 h-full' : 'h-auto'}`}
+          className={GT_SECTION}
           titulo="Documentos registrados"
           descripcion="Seleccione un documento para ver el detalle y los movimientos."
           abierto={secDocumentos}
@@ -1394,7 +1391,7 @@ const GestionTecnicaDocumento: React.FC<GestionTecnicaDocumentoProps> = ({ soloL
             ) : documentos.length === 0 ? (
               <EstadoVacio>No hay documentos registrados.</EstadoVacio>
             ) : (
-              <div className="flex-1 min-h-0 overflow-y-auto sepri-dropdown-scroll space-y-2 pr-0.5">
+              <div className={GT_LIST_SCROLL}>
                 {documentos.map((doc) => {
                   const activo = seleccionado?.id === doc.id;
                   return (
@@ -1460,9 +1457,9 @@ const GestionTecnicaDocumento: React.FC<GestionTecnicaDocumentoProps> = ({ soloL
             )}
         </SeccionColapsable>
 
-        {/* Detalle del documento */}
+        {/* Fila 4: Detalle del documento */}
         <SeccionColapsable
-          className={`order-2 lg:col-start-2 lg:row-start-1 lg:row-span-2 ${secDetalle ? 'min-h-[12rem] lg:min-h-0 h-full' : 'h-auto'}`}
+          className={GT_SECTION}
           titulo="Detalle del documento"
           descripcion={seleccionado ? seleccionado.solicitud : 'Seleccione un documento de la lista.'}
           abierto={secDetalle}
@@ -1515,7 +1512,7 @@ const GestionTecnicaDocumento: React.FC<GestionTecnicaDocumentoProps> = ({ soloL
                   <button
                     type="button"
                     onClick={() => setSecDetalleSigede((v) => !v)}
-                    className="w-full flex items-center justify-between px-4 py-2.5 bg-slate-50/50 text-left shadow-[0_1px_0_rgba(15,23,42,0.04)]"
+                    className="w-full flex items-center justify-between px-4 py-2.5 bg-warm-50/60 text-left border-0 shadow-none outline-none cursor-pointer"
                   >
                     <span className={GT_BLOQUE_TITULO}>Obras (SIGEDE)</span>
                     {secDetalleSigede ? <ExpandLess fontSize="small" className="text-slate-400" /> : <ExpandMore fontSize="small" className="text-slate-400" />}
@@ -1544,9 +1541,9 @@ const GestionTecnicaDocumento: React.FC<GestionTecnicaDocumentoProps> = ({ soloL
             )}
         </SeccionColapsable>
 
-        {/* Movimientos */}
+        {/* Fila 5: Movimientos u oficios */}
         <SeccionColapsable
-          className={`order-3 lg:col-start-1 lg:row-start-2 ${secMovimientos ? 'min-h-[14rem] lg:min-h-0 h-full' : 'h-auto'}`}
+          className={GT_SECTION}
           titulo="Movimientos u oficios"
           descripcion={seleccionado ? seleccionado.solicitud : 'Seleccione un documento para ver movimientos.'}
           abierto={secMovimientos}
@@ -1707,15 +1704,14 @@ const GestionTecnicaDocumento: React.FC<GestionTecnicaDocumentoProps> = ({ soloL
                 </form>
               )}
 
-              <div className="flex-1 min-h-0 flex flex-col">
               {loadingMov ? (
-                <div className="flex-1 flex items-center justify-center min-h-[5rem]">
+                <div className="flex items-center justify-center min-h-[5rem]">
                   <div className="animate-spin rounded-full h-7 w-7 border-2 border-slate-200 border-t-[#42A5F5]" />
                 </div>
               ) : movimientos.length === 0 ? (
                 <EstadoVacio>Sin movimientos registrados.</EstadoVacio>
               ) : (
-                <div className="flex-1 min-h-0 overflow-y-auto sepri-dropdown-scroll space-y-2 pr-0.5">
+                <div className={GT_LIST_SCROLL}>
                   {movimientos.map((mov) => {
                     const activo = editandoMovId === mov.id;
                     return (
@@ -1769,12 +1765,9 @@ const GestionTecnicaDocumento: React.FC<GestionTecnicaDocumentoProps> = ({ soloL
                   })}
                 </div>
               )}
-              </div>
               </>
             )}
         </SeccionColapsable>
-          </div>
-        </div>
       </div>
     </div>
   );

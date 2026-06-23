@@ -17,13 +17,20 @@ export {
 } from './sepriSurfaces';
 
 export const GT_PAGE =
-  'flex flex-col gap-4 min-h-[calc(100dvh-5.5rem)] sm:min-h-[calc(100dvh-6rem)]';
+  'flex flex-col gap-4 w-full';
 
-export const GT_WORKSPACE =
-  'flex-1 min-h-0 grid grid-cols-1 lg:grid-cols-2 gap-4 lg:grid-rows-[minmax(0,2fr)_minmax(0,3fr)]';
+/** Columna única — 5 bloques apilados verticalmente */
+export const GT_STACK =
+  'flex flex-col gap-4 w-full';
 
-export const GT_WORKSPACE_SHELL =
-  `flex-1 min-h-0 rounded-2xl bg-warm-50/50 p-3 sm:p-4 ${SEPRI_CARD}`;
+/** @deprecated usar GT_STACK */
+export const GT_WORKSPACE = GT_STACK;
+
+export const GT_SECTION =
+  'shrink-0 w-full';
+
+export const GT_LIST_SCROLL =
+  'max-h-[min(40vh,420px)] overflow-y-auto sepri-dropdown-scroll space-y-2 pr-0.5';
 
 export const GT_ALERTA =
   'flex items-start gap-2.5 px-3.5 py-2.5 rounded-xl text-sm shrink-0 shadow-soft';
