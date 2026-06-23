@@ -18,6 +18,8 @@ import {
 import { AttachFile, PictureAsPdf } from '@mui/icons-material';
 import type { Area } from '../../services/api';
 import { PROCESOS } from '../../constants/procesos';
+import TramiteObrasBuscador from './TramiteObrasBuscador';
+import type { ObraSigedeResumen } from '../../types/database';
 
 export interface NuevoTramiteForm {
   titulo: string;
@@ -27,6 +29,7 @@ export interface NuevoTramiteForm {
   area_destino_final: string;
   proceso: string;
   archivo_pdf: File | null;
+  id_sigede: string[];
 }
 
 interface NuevoTramiteDialogProps {
@@ -40,6 +43,8 @@ interface NuevoTramiteDialogProps {
   onCreate: () => void;
   onFileChange: (e: React.ChangeEvent<HTMLInputElement>) => void;
   fileInputRef: React.RefObject<HTMLInputElement | null>;
+  obrasResumen: ObraSigedeResumen[];
+  setObrasResumen: React.Dispatch<React.SetStateAction<ObraSigedeResumen[]>>;
 }
 
 const NuevoTramiteDialog: React.FC<NuevoTramiteDialogProps> = ({
@@ -53,6 +58,8 @@ const NuevoTramiteDialog: React.FC<NuevoTramiteDialogProps> = ({
   onCreate,
   onFileChange,
   fileInputRef,
+  obrasResumen,
+  setObrasResumen,
 }) => {
   const handleClose = () => {
     onClose();
@@ -64,7 +71,9 @@ const NuevoTramiteDialog: React.FC<NuevoTramiteDialogProps> = ({
       area_destino_final: '',
       proceso: '',
       archivo_pdf: null,
+      id_sigede: [],
     }));
+    setObrasResumen([]);
     if (fileInputRef.current) {
       fileInputRef.current.value = '';
     }
@@ -122,14 +131,23 @@ const NuevoTramiteDialog: React.FC<NuevoTramiteDialogProps> = ({
             </Select>
           </FormControl>
           <FormControl fullWidth>
-            <InputLabel>Proceso (opcional)</InputLabel>
+            <InputLabel id="tramite-proceso-label" shrink>
+              Proceso (opcional)
+            </InputLabel>
             <Select
+              labelId="tramite-proceso-label"
               value={nuevoTramite.proceso}
               label="Proceso (opcional)"
               onChange={(e) =>
                 setNuevoTramite((prev) => ({ ...prev, proceso: e.target.value }))
               }
               displayEmpty
+              renderValue={(selected) => {
+                if (!selected) {
+                  return <em style={{ opacity: 0.6 }}>Ninguno</em>;
+                }
+                return PROCESOS.find((p) => p.id === selected)?.nombre ?? selected;
+              }}
             >
               <MenuItem value="">
                 <em>Ninguno</em>
@@ -141,6 +159,12 @@ const NuevoTramiteDialog: React.FC<NuevoTramiteDialogProps> = ({
               ))}
             </Select>
           </FormControl>
+          <TramiteObrasBuscador
+            idSigede={nuevoTramite.id_sigede}
+            onChange={(ids) => setNuevoTramite((prev) => ({ ...prev, id_sigede: ids }))}
+            obrasResumen={obrasResumen}
+            onResumenChange={setObrasResumen}
+          />
           <Box>
             <Typography variant="body2" sx={{ mb: 1, fontWeight: 500 }}>
               Archivo PDF (opcional)

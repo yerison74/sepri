@@ -57,6 +57,7 @@ import {
   ViewModule
 } from '@mui/icons-material';
 import { tramitesAPI, Tramite, MovimientoTramite, Area } from '../services/api';
+import type { ObraSigedeResumen } from '../types/database';
 import { PROCESOS, getDiasMaximosPorArea } from '../constants/procesos';
 import { useAuth } from '../context/AuthContext';
 import JsBarcode from 'jsbarcode';
@@ -265,8 +266,10 @@ const TramiteHistory: React.FC<TramiteHistoryProps> = ({ soloLectura = false }) 
     area_destinatario: '',
     area_destino_final: '',
     proceso: '' as string,
-    archivo_pdf: null as File | null
+    archivo_pdf: null as File | null,
+    id_sigede: [] as string[],
   });
+  const [obrasResumenTramite, setObrasResumenTramite] = useState<ObraSigedeResumen[]>([]);
   const [uploadingPdf, setUploadingPdf] = useState(false);
   const [openPdfDialog, setOpenPdfDialog] = useState(false);
   const [pdfUrl, setPdfUrl] = useState<string | null>(null);
@@ -580,6 +583,9 @@ const TramiteHistory: React.FC<TramiteHistoryProps> = ({ soloLectura = false }) 
         if (nuevoTramite.proceso) formData.append('proceso', nuevoTramite.proceso);
         formData.append('codigo_area', getCodigoArea(user?.area || ''));
         formData.append('archivo_pdf', nuevoTramite.archivo_pdf);
+        if (nuevoTramite.id_sigede.length > 0) {
+          formData.append('id_sigede', JSON.stringify(nuevoTramite.id_sigede));
+        }
 
         const response = await tramitesAPI.crearTramiteConArchivo(formData);
         nuevoTramiteData = response.data.data;
@@ -597,6 +603,7 @@ const TramiteHistory: React.FC<TramiteHistoryProps> = ({ soloLectura = false }) 
           area_destino_final: areaDestinoFinal,
           proceso: nuevoTramite.proceso || undefined,
           codigo_area: getCodigoArea(user?.area || ''),
+          id_sigede: nuevoTramite.id_sigede,
         });
         nuevoTramiteData = response.data.data;
       }
@@ -626,8 +633,10 @@ const TramiteHistory: React.FC<TramiteHistoryProps> = ({ soloLectura = false }) 
         area_destinatario: '',
         area_destino_final: '',
         proceso: '',
-        archivo_pdf: null
+        archivo_pdf: null,
+        id_sigede: [],
       });
+      setObrasResumenTramite([]);
       if (fileInputRef.current) {
         fileInputRef.current.value = '';
       }
@@ -825,6 +834,17 @@ const TramiteHistory: React.FC<TramiteHistoryProps> = ({ soloLectura = false }) 
     } catch (error: any) {
       console.error('Error al descargar PDF:', error);
       setError(`Error al descargar el PDF: ${error.message || 'Error desconocido'}`);
+    }
+  };
+
+  const handleOpenDetalle = async (tramite: Tramite) => {
+    setSelectedTramite(tramite);
+    setOpenDetalleDialog(true);
+    try {
+      const res = await tramitesAPI.obtenerTramitePorId(tramite.id);
+      setSelectedTramite(res.data.data);
+    } catch {
+      // Mantener datos de la fila si falla la carga completa
     }
   };
 
@@ -1033,10 +1053,7 @@ const TramiteHistory: React.FC<TramiteHistoryProps> = ({ soloLectura = false }) 
                   {paginatedTramites.map((tramite) => (
                     <TableRow
                       key={tramite.id}
-                      onClick={() => {
-                        setSelectedTramite(tramite);
-                        setOpenDetalleDialog(true);
-                      }}
+                      onClick={() => handleOpenDetalle(tramite)}
                       sx={{
                         cursor: 'pointer',
                         '&:hover': { backgroundColor: 'action.hover' },
@@ -1160,10 +1177,7 @@ const TramiteHistory: React.FC<TramiteHistoryProps> = ({ soloLectura = false }) 
                 <Box key={tramite.id}>
                   <Card 
                     elevation={3}
-                    onClick={() => {
-                      setSelectedTramite(tramite);
-                      setOpenDetalleDialog(true);
-                    }}
+                    onClick={() => handleOpenDetalle(tramite)}
                     sx={{
                       height: '100%',
                       display: 'flex',
@@ -1395,6 +1409,8 @@ const TramiteHistory: React.FC<TramiteHistoryProps> = ({ soloLectura = false }) 
         onCreate={handleCreateTramite}
         onFileChange={handleFileChange}
         fileInputRef={fileInputRef}
+        obrasResumen={obrasResumenTramite}
+        setObrasResumen={setObrasResumenTramite}
       />
 
       {/* Estilos de impresión - solo muestra la etiqueta */}

@@ -11,6 +11,7 @@ import {
 } from '@mui/material';
 import { FollowTheSigns, Person } from '@mui/icons-material';
 import type { Tramite } from '../../services/api';
+import type { ObraSigedeResumen } from '../../types/database';
 import { getEstadoColor, getEstadoLabel } from '../../utils/estadoTramite';
 
 interface DetalleTramiteDialogProps {
@@ -29,6 +30,11 @@ const DetalleTramiteDialog: React.FC<DetalleTramiteDialogProps> = ({
   if (!tramite) {
     return null;
   }
+
+  const filasObras: ObraSigedeResumen[] =
+    tramite.obras_sigede?.length
+      ? tramite.obras_sigede
+      : (tramite.id_sigede || []).map((id) => ({ id_sigede: id, encontrada: false }));
 
   return (
     <Dialog open={open} onClose={onClose} maxWidth="md" fullWidth>
@@ -141,6 +147,62 @@ const DetalleTramiteDialog: React.FC<DetalleTramiteDialogProps> = ({
             </Typography>
           </Box>
         </Box>
+
+        {(tramite.obras_sigede?.length || tramite.id_sigede?.length) ? (
+          <Box sx={{ mt: 1 }}>
+            <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 1 }}>
+              Obras relacionadas ({filasObras.length})
+            </Typography>
+            <Box
+              component="table"
+              sx={{
+                width: '100%',
+                borderCollapse: 'collapse',
+                fontSize: '0.8rem',
+                border: '1px solid',
+                borderColor: 'divider',
+                borderRadius: 1,
+                overflow: 'hidden',
+              }}
+            >
+              <Box component="thead" sx={{ bgcolor: 'grey.50' }}>
+                <Box component="tr">
+                  {['SIGEDE', 'Contrato', 'Plantel', 'Provincia'].map((h) => (
+                    <Box
+                      key={h}
+                      component="th"
+                      sx={{ px: 1.5, py: 1, textAlign: 'left', fontWeight: 600, color: 'text.secondary' }}
+                    >
+                      {h}
+                    </Box>
+                  ))}
+                </Box>
+              </Box>
+              <Box component="tbody">
+                {filasObras.map((fila) => (
+                  <Box
+                    component="tr"
+                    key={fila.id_sigede}
+                    sx={{ borderTop: '1px solid', borderColor: 'divider' }}
+                  >
+                    <Box component="td" sx={{ px: 1.5, py: 1, fontFamily: 'monospace' }}>
+                      {fila.id_sigede}
+                    </Box>
+                    <Box component="td" sx={{ px: 1.5, py: 1 }}>
+                      {fila.encontrada ? fila.contrato || '—' : '—'}
+                    </Box>
+                    <Box component="td" sx={{ px: 1.5, py: 1 }}>
+                      {fila.encontrada ? fila.plantel || '—' : '—'}
+                    </Box>
+                    <Box component="td" sx={{ px: 1.5, py: 1 }}>
+                      {fila.encontrada ? fila.provincia || '—' : '—'}
+                    </Box>
+                  </Box>
+                ))}
+              </Box>
+            </Box>
+          </Box>
+        ) : null}
       </DialogContent>
       <DialogActions sx={{ px: 3, py: 2, borderTop: '1px solid', borderColor: 'divider' }}>
         <Button onClick={onClose} variant="outlined" sx={{ minWidth: 100 }}>

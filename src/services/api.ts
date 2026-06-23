@@ -737,19 +737,22 @@ export const tramitesAPI = {
     proceso?: string | null;
     codigo_area?: string;
     id_fijo?: string;
+    id_sigede?: string[];
   }) => {
     try {
       const prefijo = tramite.codigo_area || 'TR';
       // Si se pasa id_fijo (desde contratista), usarlo directamente
       const sufijo = (Date.now() % 1000000).toString().padStart(6, '0');
       const id = tramite.id_fijo || `${prefijo}-${sufijo}`;
-      const { codigo_area: _, id_fijo: __, ...resto } = tramite;
+      const { codigo_area: _, id_fijo: __, id_sigede, ...resto } = tramite;
+      const sigedes = (id_sigede || []).map((s) => s.trim()).filter(Boolean);
       const data = await tramitesService.crearTramite({
         ...resto,
         id,
         estado: 'en_transito',
         codigo_barras: `${Date.now()}`,
         proceso: tramite.proceso ?? undefined,
+        id_sigede: sigedes,
       });
       return { data: { data } } as AxiosResponse<{ data: Tramite }>;
     } catch (error: any) {
@@ -772,6 +775,18 @@ export const tramitesAPI = {
       const codigo_area = (formData.get('codigo_area') as string) || 'TR';
       const proceso = (formData.get('proceso') as string) || null;
       const archivoPdf = formData.get('archivo_pdf') as File | null;
+      const idSigedeRaw = formData.get('id_sigede') as string | null;
+      let id_sigede: string[] = [];
+      if (idSigedeRaw) {
+        try {
+          const parsed = JSON.parse(idSigedeRaw);
+          if (Array.isArray(parsed)) {
+            id_sigede = parsed.map(String).map((s) => s.trim()).filter(Boolean);
+          }
+        } catch {
+          id_sigede = [];
+        }
+      }
 
       if (!titulo || !nombre_destinatario || !area_destinatario || !area_destino_final) {
         throw new Error('Faltan campos requeridos del trámite');
@@ -809,6 +824,7 @@ export const tramitesAPI = {
         codigo_barras: codigoBarras,
         archivo_pdf: archivoPdfUrl,
         nombre_archivo: archivoPdf.name,
+        id_sigede,
       });
 
       return { data: { data } } as AxiosResponse<{ data: Tramite }>;
@@ -879,6 +895,22 @@ export const tramitesAPI = {
       return { data: { data } } as AxiosResponse<{ data: import('../types/database').TiempoEnArea[] }>;
     } catch (error: any) {
       return { data: { data: [] } } as unknown as AxiosResponse<{ data: import('../types/database').TiempoEnArea[] }>;
+    }
+  },
+
+  buscarObrasParaTramite: async (search: string, limit = 12) => {
+    try {
+      const data = await obrasService.buscarObrasParaTramite(search, limit);
+      return { data: { data } } as AxiosResponse<{
+        data: import('../types/database').BuscarObrasTramiteResult;
+      }>;
+    } catch (error: any) {
+      throw {
+        response: {
+          data: { error: error.message || 'Error al buscar obras' },
+          status: 500,
+        },
+      };
     }
   },
 

@@ -1490,6 +1490,131 @@ export const obrasService = {
     return data || [];
   },
 
+  /** Búsqueda de obras para vincular a trámites (SIGEDE, contrato, nombre, responsable). */
+  buscarObrasParaTramite: async (
+    search: string,
+    limit = 12,
+  ): Promise<import('../types/database').BuscarObrasTramiteResult> => {
+    const term = (search || '').trim();
+    if (term.length < 1) {
+      return { obras: [], loteContrato: null };
+    }
+
+    const cols =
+      'codigo, nombre, contrato, provincia, municipio, distrito_minerd_sigede, contratista_id';
+    const pattern = `%${term.replace(/'/g, "''")}%`;
+    const esc = term.replace(/'/g, "''");
+
+    const searchConditions = [
+      `codigo.ilike.${pattern}`,
+      `nombre.ilike.${pattern}`,
+      `distrito_minerd_sigede.ilike.${pattern}`,
+      `contrato.ilike.${pattern}`,
+    ];
+
+    let contratistaIds: string[] = [];
+    try {
+      contratistaIds = await buscarContratistaIdsPorResponsable(term);
+    } catch {
+      contratistaIds = [];
+    }
+
+    const [resGeneral, resPorContratista, resContratoExacto] = await Promise.all([
+      supabase
+        .from('obras')
+        .select(cols)
+        .or(searchConditions.join(','))
+        .order('codigo', { ascending: true })
+        .limit(limit),
+      contratistaIds.length > 0
+        ? supabase
+            .from('obras')
+            .select(cols)
+            .in('contratista_id', contratistaIds)
+            .order('codigo', { ascending: true })
+            .limit(limit)
+        : Promise.resolve({ data: [] as Record<string, unknown>[], error: null }),
+      supabase
+        .from('obras')
+        .select(cols)
+        .eq('contrato', esc)
+        .order('codigo', { ascending: true })
+        .limit(500),
+    ]);
+
+    if (resGeneral.error) throw resGeneral.error;
+    if (resPorContratista.error) throw resPorContratista.error;
+    if (resContratoExacto.error) throw resContratoExacto.error;
+
+    const filasCombinadas = [
+      ...((resGeneral.data || []) as Record<string, unknown>[]),
+      ...((resPorContratista.data || []) as Record<string, unknown>[]),
+    ];
+    const loteFilas = (resContratoExacto.data || []) as Record<string, unknown>[];
+
+    const idsContratista = Array.from(
+      new Set(
+        [...filasCombinadas, ...loteFilas]
+          .map((row) => row.contratista_id)
+          .filter((id): id is string => typeof id === 'string' && id.length > 0),
+      ),
+    );
+
+    const responsablePorContratista = new Map<string, string>();
+    if (idsContratista.length > 0) {
+      const { data: contratistasData, error: contratistasError } = await supabase
+        .from('contratistas')
+        .select('id, responsable')
+        .in('id', idsContratista);
+      if (!contratistasError) {
+        for (const c of contratistasData || []) {
+          if (c.id) responsablePorContratista.set(String(c.id), String(c.responsable || ''));
+        }
+      }
+    }
+
+    const mapRow = (row: Record<string, unknown>): import('../types/database').ObraTramiteOpcion | null => {
+      const sigede = String(row.codigo || row.distrito_minerd_sigede || '').trim();
+      if (!sigede) return null;
+      const contratistaId =
+        typeof row.contratista_id === 'string' ? row.contratista_id : null;
+      return {
+        sigede,
+        nombre: String(row.nombre || ''),
+        contrato: row.contrato != null ? String(row.contrato) : null,
+        responsable: contratistaId
+          ? responsablePorContratista.get(contratistaId) ?? null
+          : null,
+        provincia: row.provincia != null ? String(row.provincia) : null,
+        municipio: row.municipio != null ? String(row.municipio) : null,
+      };
+    };
+
+    const mergeUnicas = (
+      filas: Record<string, unknown>[],
+    ): import('../types/database').ObraTramiteOpcion[] => {
+      const vistos = new Set<string>();
+      const out: import('../types/database').ObraTramiteOpcion[] = [];
+      for (const row of filas) {
+        const m = mapRow(row);
+        if (!m || vistos.has(m.sigede)) continue;
+        vistos.add(m.sigede);
+        out.push(m);
+      }
+      return out;
+    };
+
+    const obras = mergeUnicas(filasCombinadas).slice(0, limit);
+
+    const loteObras = mergeUnicas(loteFilas);
+    const loteContrato =
+      loteObras.length > 0
+        ? { contrato: term, obras: loteObras }
+        : null;
+
+    return { obras, loteContrato };
+  },
+
   /** Resumen de obra (contrato, plantel, tipo, ubicación) por cada id_sigede. */
   obtenerResumenesPorSigede: async (ids: string[]): Promise<ObraSigedeResumen[]> => {
     const uniq = Array.from(new Set(ids.map((id) => id.trim()).filter(Boolean)));
@@ -1607,7 +1732,15 @@ export const tramitesService = {
       if (error) throw error;
       if (!data) throw new Error('Trámite no encontrado');
 
-      return data;
+      const ids = Array.isArray(data.id_sigede)
+        ? (data.id_sigede as string[]).map((s) => String(s).trim()).filter(Boolean)
+        : [];
+
+      return {
+        ...data,
+        id_sigede: ids,
+        obras_sigede: ids.length > 0 ? await obrasService.obtenerResumenesPorSigede(ids) : [],
+      };
     } catch (error: any) {
       console.error('Error al obtener trámite:', error);
       throw new Error(error.message || 'Error al obtener trámite');

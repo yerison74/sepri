@@ -104,6 +104,22 @@ export interface ObraSigedeResumen {
   encontrada: boolean;
 }
 
+/** Resultado de búsqueda de obra para vincular a un trámite. */
+export interface ObraTramiteOpcion {
+  sigede: string;
+  nombre: string;
+  contrato?: string | null;
+  responsable?: string | null;
+  provincia?: string | null;
+  municipio?: string | null;
+}
+
+export interface BuscarObrasTramiteResult {
+  obras: ObraTramiteOpcion[];
+  /** Todas las obras de un contrato cuando la búsqueda coincide con el número de contrato. */
+  loteContrato: { contrato: string; obras: ObraTramiteOpcion[] } | null;
+}
+
 /** Movimiento u oficio de un documento técnico. */
 export interface MovimientoDocumentoTecnicoObra {
   id: string;
@@ -151,6 +167,9 @@ export interface Tramite {
   fecha_creacion?: string | null;
   created_at?: string | null;
   updated_at?: string | null;
+  /** Obras SIGEDE vinculadas al trámite. */
+  id_sigede?: string[];
+  obras_sigede?: ObraSigedeResumen[];
 }
 
 export interface MovimientoTramite {

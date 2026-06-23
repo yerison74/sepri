@@ -20,6 +20,7 @@ import {
   Stack
 } from '@mui/material';
 import { CARGOS } from '../../constants/cargos';
+import { MODULO_REPORTE_HABILITADO } from '../../constants/featureFlags';
 import { useAreas } from '../../hooks/useAreas';
 import { 
   Person as PersonIcon,
@@ -38,6 +39,10 @@ const MODULOS_PERMISOS = [
   { id: 'reporte', label: 'Reporte', icon: '📊', verKey: 'ver_reporte', editarKey: 'editar_reporte' },
   { id: 'configuracion', label: 'Configuración', icon: '⚙️', verKey: 'ver_configuracion', editarKey: 'editar_configuracion' },
 ] as const;
+
+const MODULOS_PERMISOS_VISIBLES = MODULOS_PERMISOS.filter(
+  (m) => MODULO_REPORTE_HABILITADO || m.id !== 'reporte',
+);
 
 interface UsuarioModalProps {
   open: boolean;
@@ -85,7 +90,7 @@ export default function UsuarioModal({
   };
 
   const seleccionarTodosPermisos = () => {
-    const allKeys = MODULOS_PERMISOS.flatMap((m) => [m.verKey, m.editarKey]);
+    const allKeys = MODULOS_PERMISOS_VISIBLES.flatMap((m) => [m.verKey, m.editarKey]);
     const todosSeleccionados = allKeys.every((key) => form.permisos?.[key]);
     const nuevosPermisos: any = {};
     allKeys.forEach((key) => {
@@ -94,8 +99,8 @@ export default function UsuarioModal({
     setForm({ ...form, permisos: nuevosPermisos });
   };
 
-  const totalPermisos = MODULOS_PERMISOS.length * 2;
-  const permisosSeleccionados = MODULOS_PERMISOS.flatMap((m) => [m.verKey, m.editarKey]).filter(
+  const totalPermisos = MODULOS_PERMISOS_VISIBLES.length * 2;
+  const permisosSeleccionados = MODULOS_PERMISOS_VISIBLES.flatMap((m) => [m.verKey, m.editarKey]).filter(
     (key) => form.permisos?.[key]
   ).length;
 
@@ -252,7 +257,7 @@ export default function UsuarioModal({
                     const updates = { ...form, rol: newRol };
                     if (newRol === 'admin') {
                       const todosPermisos: Record<string, boolean> = {};
-                      MODULOS_PERMISOS.forEach((m) => {
+                      MODULOS_PERMISOS_VISIBLES.forEach((m) => {
                         todosPermisos[m.verKey] = true;
                         todosPermisos[m.editarKey] = true;
                       });
@@ -317,7 +322,7 @@ export default function UsuarioModal({
           </Box>
 
           <Stack spacing={1.25}>
-            {MODULOS_PERMISOS.map((m) => {
+            {MODULOS_PERMISOS_VISIBLES.map((m) => {
               const canView = !!form.permisos?.[m.verKey];
               const canEdit = !!form.permisos?.[m.editarKey];
               return (

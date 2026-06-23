@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, Suspense } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import {
   Dashboard,
@@ -18,14 +18,18 @@ import FileUpload from './components/FileUpload';
 import StatsDashboard from './components/StatsDashboard';
 import ObrasTable from './components/ObrasTable';
 import TramiteHistory from './components/UploadHistory';
-import ReporteObras from './components/ReporteObras';
 import GestionTecnicaDocumento from './components/GestionTecnicaDocumento';
 import Login from './components/Login';
 import NotificacionesTiempo from './components/NotificacionesTiempo';
 import { useAuth } from './context/AuthContext';
 import { TAB_PERMISOS } from './constants/permisos';
+import { MODULO_REPORTE_HABILITADO } from './constants/featureFlags';
 import GestionUsuarios from './components/GestionUsuarios';
 import AtencionContratista from './components/AtencionContratista';
+
+const ReporteObras = MODULO_REPORTE_HABILITADO
+  ? React.lazy(() => import('./components/ReporteObras'))
+  : null;
 
 interface TabPanelProps {
   children?: React.ReactNode;
@@ -77,7 +81,9 @@ function App() {
     { icon: <FollowTheSigns />, label: 'Seguimiento de Trámites', index: 3 },
     { icon: <SupportAgent />, label: 'Atención al contratista', index: 4 },
     { icon: <Description />, label: 'Gestión técnica de documento', index: 5 },
-    { icon: <Assessment />, label: 'Reporte', index: 6 },
+    ...(MODULO_REPORTE_HABILITADO
+      ? [{ icon: <Assessment />, label: 'Reporte', index: 6 as const }]
+      : []),
     { icon: <Settings />, label: 'Configuración', index: 7 },
   ];
 
@@ -281,12 +287,20 @@ function App() {
                 </TabPanel>
               )}
 
-              {hasPermission('ver_reporte') && (
+              {MODULO_REPORTE_HABILITADO && hasPermission('ver_reporte') && ReporteObras && (
                 <TabPanel value={tabValue} index={6}>
-                  <ReporteObras
-                    refreshTrigger={refreshTrigger}
-                    soloLectura={!hasPermission('editar_reporte')}
-                  />
+                  <Suspense
+                    fallback={
+                      <div className="flex items-center justify-center min-h-[12rem]">
+                        <div className="animate-spin rounded-full h-10 w-10 border-2 border-primary-light border-t-primary" />
+                      </div>
+                    }
+                  >
+                    <ReporteObras
+                      refreshTrigger={refreshTrigger}
+                      soloLectura={!hasPermission('editar_reporte')}
+                    />
+                  </Suspense>
                 </TabPanel>
               )}
 
