@@ -1615,6 +1615,42 @@ export const obrasService = {
     return { obras, loteContrato };
   },
 
+  /** Trámites y documentos técnicos vinculados a uno o más SIGEDE. */
+  obtenerRelacionesPorSigede: async (
+    sigedes: string[],
+  ): Promise<import('../types/database').ObraRelacionesSigede> => {
+    const ids = Array.from(new Set(sigedes.map((s) => s.trim()).filter(Boolean)));
+    if (ids.length === 0) {
+      return { sigedes: [], tramites: [], documentos: [] };
+    }
+
+    const [resTramites, resDocumentos] = await Promise.all([
+      supabase
+        .from('tramites')
+        .select('id, titulo, estado, oficio, area_destinatario, proceso, fecha_creacion')
+        .overlaps('id_sigede', ids)
+        .order('fecha_creacion', { ascending: false })
+        .limit(100),
+      supabase
+        .from('documentos_tecnicos_obra')
+        .select(
+          'id, solicitud, tipo_adenda, no_adenda_solicituda, numero_adenda_actual, monto_total, created_at',
+        )
+        .overlaps('id_sigede', ids)
+        .order('created_at', { ascending: false })
+        .limit(100),
+    ]);
+
+    if (resTramites.error) throw resTramites.error;
+    if (resDocumentos.error) throw resDocumentos.error;
+
+    return {
+      sigedes: ids,
+      tramites: (resTramites.data || []) as import('../types/database').TramiteObraResumen[],
+      documentos: (resDocumentos.data || []) as import('../types/database').DocumentoObraResumen[],
+    };
+  },
+
   /** Resumen de obra (contrato, plantel, tipo, ubicación) por cada id_sigede. */
   obtenerResumenesPorSigede: async (ids: string[]): Promise<ObraSigedeResumen[]> => {
     const uniq = Array.from(new Set(ids.map((id) => id.trim()).filter(Boolean)));

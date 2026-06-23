@@ -5,10 +5,12 @@ import {
   Delete,
   Tune,
   NavigateBefore,
-  NavigateNext
+  NavigateNext,
+  OpenInNew,
 } from '@mui/icons-material';
 import { mantenimientosAPI, statsAPI, Obra } from '../services/api';
 import ObraMap from './ObraMap';
+import ObraMasDetallesDialog from './ObraMasDetallesDialog';
 import {
   BTN_PRIMARY,
   BTN_SECONDARY,
@@ -32,6 +34,7 @@ const ObrasTable: React.FC<ObrasTableProps> = ({ refreshTrigger, soloLectura = f
   const [totalCount, setTotalCount] = useState(0);
   const [selectedObra, setSelectedObra] = useState<Obra | null>(null);
   const [showDetails, setShowDetails] = useState(false);
+  const [showMasDetalles, setShowMasDetalles] = useState(false);
   const [estadosDisponibles, setEstadosDisponibles] = useState<string[]>([]);
 
   const loadObrasWithFilters = useCallback(async (overrides?: { estado?: string }) => {
@@ -346,7 +349,10 @@ const ObrasTable: React.FC<ObrasTableProps> = ({ refreshTrigger, soloLectura = f
       {showDetails && selectedObra && (
         <div 
           className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4"
-          onClick={() => setShowDetails(false)}
+          onClick={() => {
+            setShowDetails(false);
+            setShowMasDetalles(false);
+          }}
         >
           <div 
             className="bg-white rounded-lg shadow-xl max-w-4xl w-full max-h-[90vh] overflow-y-auto"
@@ -538,7 +544,16 @@ const ObrasTable: React.FC<ObrasTableProps> = ({ refreshTrigger, soloLectura = f
                 </div>
               </div>
             </div>
-            <div className="p-6 border-t border-gray-200 flex justify-end gap-3">
+            <div className="p-6 border-t border-gray-200 flex justify-between gap-3">
+              <button
+                type="button"
+                onClick={() => setShowMasDetalles(true)}
+                className={`${BTN_SECONDARY} flex items-center gap-2`}
+              >
+                <OpenInNew fontSize="small" />
+                Más detalles
+              </button>
+              <div className="flex gap-3">
               {!soloLectura && (
                 <button
                   onClick={async () => {
@@ -559,15 +574,25 @@ const ObrasTable: React.FC<ObrasTableProps> = ({ refreshTrigger, soloLectura = f
                 </button>
               )}
               <button
-                onClick={() => setShowDetails(false)}
+                onClick={() => {
+                  setShowDetails(false);
+                  setShowMasDetalles(false);
+                }}
                 className={BTN_PRIMARY}
               >
                 Cerrar
               </button>
+              </div>
             </div>
           </div>
         </div>
       )}
+
+      <ObraMasDetallesDialog
+        open={showMasDetalles}
+        onClose={() => setShowMasDetalles(false)}
+        obra={selectedObra}
+      />
     </div>
   );
 };

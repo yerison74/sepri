@@ -93,6 +93,22 @@ export const mantenimientosAPI = {
       };
     }
   },
+
+  obtenerRelacionesObraPorSigede: async (sigedes: string[]) => {
+    try {
+      const data = await obrasService.obtenerRelacionesPorSigede(sigedes);
+      return { data: { data } } as AxiosResponse<{
+        data: import('../types/database').ObraRelacionesSigede;
+      }>;
+    } catch (error: any) {
+      throw {
+        response: {
+          data: { error: error.message || 'Error al cargar relaciones de la obra' },
+          status: 500,
+        },
+      };
+    }
+  },
 };
 
 // API de Estadísticas usando Supabase

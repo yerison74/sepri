@@ -16,6 +16,7 @@ import {
   Button,
 } from '@mui/material';
 import type { Area, Tramite } from '../../services/api';
+import { getEstadoLabel } from '../../utils/estadoTramite';
 import { Send } from '@mui/icons-material';
 
 export interface SeguimientoData {
@@ -97,8 +98,11 @@ const SeguimientoDialog: React.FC<SeguimientoDialogProps> = ({
             placeholder="Se rellena con el usuario logueado"
           />
           <FormControl fullWidth>
-            <InputLabel>Actualizar Estado</InputLabel>
+            <InputLabel id="seguimiento-estado-label" shrink>
+              Actualizar Estado
+            </InputLabel>
             <Select
+              labelId="seguimiento-estado-label"
               value={
                 isDetenido || isCompletado ? '' : seguimientoData.actualizar_estado
               }
@@ -110,6 +114,12 @@ const SeguimientoDialog: React.FC<SeguimientoDialogProps> = ({
                 }))
               }
               displayEmpty
+              renderValue={(selected) => {
+                if (!selected) {
+                  return <em style={{ opacity: 0.6 }}>Sin cambio</em>;
+                }
+                return getEstadoLabel(selected);
+              }}
             >
               <MenuItem value="">
                 <em>Sin cambio</em>

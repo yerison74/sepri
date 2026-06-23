@@ -120,6 +120,34 @@ export interface BuscarObrasTramiteResult {
   loteContrato: { contrato: string; obras: ObraTramiteOpcion[] } | null;
 }
 
+/** Trámite vinculado a un SIGEDE (resumen para detalle de obra). */
+export interface TramiteObraResumen {
+  id: string;
+  titulo: string;
+  estado: string;
+  oficio?: string | null;
+  area_destinatario?: string | null;
+  proceso?: string | null;
+  fecha_creacion?: string | null;
+}
+
+/** Documento técnico vinculado a un SIGEDE (resumen para detalle de obra). */
+export interface DocumentoObraResumen {
+  id: string;
+  solicitud: string;
+  tipo_adenda?: string | null;
+  no_adenda_solicituda?: number | null;
+  numero_adenda_actual?: string | null;
+  monto_total?: number | null;
+  created_at?: string | null;
+}
+
+export interface ObraRelacionesSigede {
+  sigedes: string[];
+  tramites: TramiteObraResumen[];
+  documentos: DocumentoObraResumen[];
+}
+
 /** Movimiento u oficio de un documento técnico. */
 export interface MovimientoDocumentoTecnicoObra {
   id: string;
