@@ -45,6 +45,25 @@ export const CA_DROPZONE =
 
 export const CA_GRID_FILTROS = 'grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3';
 
+/** Panel desplegable de sugerencias (buscadores obra / SIGEDE) */
+export const CA_SUGERENCIAS_PANEL =
+  'absolute z-50 mt-2 w-full overflow-hidden rounded-2xl bg-warm-50/95 p-1.5 shadow-[0_12px_32px_-8px_rgba(15,23,42,0.14),0_4px_12px_-6px_rgba(15,23,42,0.08)] backdrop-blur-sm';
+
+export const CA_SUGERENCIAS_LIST =
+  'sepri-dropdown-scroll max-h-72 overflow-y-auto overscroll-contain space-y-0.5';
+
+export const CA_SUGERENCIAS_ITEM =
+  'w-full text-left px-3.5 py-3 mx-0.5 rounded-xl text-sm text-stone-800 bg-white/80 cursor-pointer select-none transition-all duration-150 hover:bg-white hover:shadow-soft active:bg-primary-light/30 outline-none border-0 appearance-none';
+
+export const CA_SUGERENCIAS_EMPTY =
+  'px-3.5 py-4 mx-0.5 rounded-xl text-sm text-stone-500 text-center bg-white/60';
+
+export const CA_SUGERENCIAS_BADGE_SIGEDE =
+  'inline-flex font-mono text-xs font-semibold text-[#1565C0] bg-primary-light/60 px-2 py-0.5 rounded-lg';
+
+export const CA_SUGERENCIAS_BADGE_DIST =
+  'inline-flex text-[11px] font-medium text-stone-600 bg-warm-100/90 px-2 py-0.5 rounded-lg';
+
 export const CA_MODAL_OVERLAY =
   'fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4';
 

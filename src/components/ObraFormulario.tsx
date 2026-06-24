@@ -13,6 +13,8 @@ interface ObraFormularioProps {
   responsableSugerencias?: string[];
   loadingResponsableSugerencias?: boolean;
   readOnly?: boolean;
+  /** Si se define, solo muestra estas áreas (ids de OBRAS_FORM_AREAS). */
+  areasIds?: string[];
 }
 
 const ObraFormulario: React.FC<ObraFormularioProps> = ({
@@ -22,6 +24,7 @@ const ObraFormulario: React.FC<ObraFormularioProps> = ({
   responsableSugerencias = [],
   loadingResponsableSugerencias = false,
   readOnly = false,
+  areasIds,
 }) => {
   const setObraField = (key: string, value: string | number | undefined) => {
     onChange({
@@ -48,7 +51,7 @@ const ObraFormulario: React.FC<ObraFormularioProps> = ({
 
   return (
     <div className="space-y-4">
-      {OBRAS_FORM_AREAS.map((area) => (
+      {OBRAS_FORM_AREAS.filter((area) => !areasIds || areasIds.includes(area.id)).map((area) => (
         <div key={area.id} className={`rounded-xl overflow-hidden p-4 sm:p-5 ${SEPRI_CARD}`}>
           <h5 className={`${CA_BLOQUE_TITULO} mb-4 pb-2 border-b border-stone-100`}>
             {area.label}

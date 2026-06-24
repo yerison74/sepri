@@ -22,6 +22,13 @@ import type {
 import { aplicarFiltrosObrasEnQuery } from '../utils/aplicarFiltrosObrasQuery';
 import { ordenarMovimientosDocumento, validarMovimientoDocumento } from '../utils/validarMovimientoDocumento';
 import { esEstatusMovimientoValido } from '../constants/gestionTecnicaDocumento';
+import {
+  OBRAS_SELECT_COMPLETO,
+  OBRAS_SELECT_DASHBOARD_PROXIMAS,
+  resolverObrasSelect,
+  resolverObrasSelectSinJoin,
+} from '../constants/obrasSelect';
+import { propagarEstadoObraAMatriz } from './obraTechadoSync';
 
 // ── Generador de token seguro (Web Crypto API) ──────────────────────────────
 function generarToken(longitud = 32): string {
@@ -522,9 +529,6 @@ const OBRA_CAMPO_STRING_MAX: Record<string, number> = {
   fecha_detenida: 32,
 };
 
-const OBRAS_SELECT_CON_CONTRATISTA = '*, contratistas(*)';
-const OBRAS_SELECT_INNER_CONTRATISTA = '*, contratistas!inner(*)';
-
 function mapObraRow(row: Record<string, unknown>): Obra {
   const contratistaRaw = row.contratistas;
   const contratista = (
@@ -767,21 +771,43 @@ export const obrasService = {
     return limpio || 'NO ESPECIFICADO';
   },
 
+  /** Estados distintos en obras (toda la tabla), normalizados para filtros y etiquetas. */
+  obtenerEstadosDistintos: async (): Promise<string[]> => {
+    const filas = await obtenerFilasObrasPaginadas('estado');
+    const vistos = new Map<string, string>();
+    for (const fila of filas) {
+      const norm = obrasService.normalizarEstadoDashboard(String(fila.estado ?? ''));
+      if (norm === 'NO ESPECIFICADO') continue;
+      if (!vistos.has(norm)) vistos.set(norm, norm);
+    }
+    return Array.from(vistos.values()).sort((a, b) => a.localeCompare(b, 'es'));
+  },
+
   /**
    * Obtener obras con filtros y paginación
    */
   obtenerObras: async (filtros: ObrasFilters = {}): Promise<ApiResponse<Obra[]>> => {
     try {
       const filtroResponsable = filtros.responsable?.trim() || '';
-      const selectCols = filtroResponsable
-        ? OBRAS_SELECT_INNER_CONTRATISTA
-        : OBRAS_SELECT_CON_CONTRATISTA;
+      const proyeccion = filtros.proyeccion ?? 'listado';
+      const selectCols = resolverObrasSelect(proyeccion, !!filtroResponsable);
+      const selectFallback = resolverObrasSelectSinJoin(proyeccion);
 
       let query = supabase
         .from('obras')
         .select(selectCols, { count: 'exact' });
 
       query = aplicarFiltrosObrasEnQuery(query, filtros);
+
+      if (filtros.moduloBusquedaOr?.termino?.trim()) {
+        const termino = filtros.moduloBusquedaOr.termino.trim();
+        const pattern = `%${termino}%`;
+        const columnas = filtros.moduloBusquedaOr.columnas?.length
+          ? filtros.moduloBusquedaOr.columnas
+          : ['descripcion', 'nombre'];
+        const condiciones = columnas.map((col) => `${col}.ilike.${pattern}`);
+        query = query.or(condiciones.join(','));
+      }
 
       if (filtroResponsable) {
         query = query.ilike('contratistas.responsable', `%${filtroResponsable}%`);
@@ -833,8 +859,17 @@ export const obrasService = {
       let { data, error, count } = await query;
 
       if (error?.message?.includes('contratistas') || error?.code === 'PGRST200') {
-        let fallback = supabase.from('obras').select('*', { count: 'exact' });
+        let fallback = supabase.from('obras').select(selectFallback, { count: 'exact' });
         fallback = aplicarFiltrosObrasEnQuery(fallback, filtros);
+        if (filtros.moduloBusquedaOr?.termino?.trim()) {
+          const termino = filtros.moduloBusquedaOr.termino.trim();
+          const pattern = `%${termino}%`;
+          const columnas = filtros.moduloBusquedaOr.columnas?.length
+            ? filtros.moduloBusquedaOr.columnas
+            : ['descripcion', 'nombre'];
+          const condiciones = columnas.map((col) => `${col}.ilike.${pattern}`);
+          fallback = fallback.or(condiciones.join(','));
+        }
         if (filtroResponsable) {
           const ids = await buscarContratistaIdsPorResponsable(filtroResponsable);
           if (ids.length > 0) fallback = fallback.in('contratista_id', ids);
@@ -856,7 +891,7 @@ export const obrasService = {
       if (error) throw error;
 
       return {
-        data: mapObrasRows((data || []) as Record<string, unknown>[]),
+        data: mapObrasRows((data || []) as unknown as Record<string, unknown>[]),
         count: count || 0,
       };
     } catch (error: any) {
@@ -983,7 +1018,7 @@ export const obrasService = {
 
       let { data, error } = await supabase
         .from('obras')
-        .select(OBRAS_SELECT_CON_CONTRATISTA)
+        .select(OBRAS_SELECT_COMPLETO)
         .eq('id', idObraNormalizado)
         .maybeSingle();
 
@@ -992,7 +1027,7 @@ export const obrasService = {
       if (isNotFound(error)) {
         const res = await supabase
           .from('obras')
-          .select(OBRAS_SELECT_CON_CONTRATISTA)
+          .select(OBRAS_SELECT_COMPLETO)
           .eq('codigo', idObraNormalizado)
           .maybeSingle();
         if (!res.error && res.data) return mapResult(res.data as Record<string, unknown>);
@@ -1016,7 +1051,7 @@ export const obrasService = {
 
         const { data: searchData, error: searchError } = await supabase
           .from('obras')
-          .select(OBRAS_SELECT_CON_CONTRATISTA)
+          .select(OBRAS_SELECT_COMPLETO)
           .or(orParts.join(','))
           .limit(1);
 
@@ -1028,7 +1063,7 @@ export const obrasService = {
       if (error && !isNotFound(error)) {
         const fallback = await supabase
           .from('obras')
-          .select('*')
+          .select(OBRAS_SELECT_COMPLETO)
           .eq('id', idObraNormalizado)
           .maybeSingle();
         if (!fallback.error && fallback.data) {
@@ -1051,7 +1086,7 @@ export const obrasService = {
     try {
       const { data, error } = await supabase
         .from('obras')
-        .select(OBRAS_SELECT_CON_CONTRATISTA)
+        .select(OBRAS_SELECT_COMPLETO)
         .eq('id', id)
         .single();
 
@@ -1082,7 +1117,7 @@ export const obrasService = {
       const { data, error } = await supabase
         .from('obras')
         .insert([payload])
-        .select(OBRAS_SELECT_CON_CONTRATISTA)
+        .select(OBRAS_SELECT_COMPLETO)
         .single();
 
       if (error) throw error;
@@ -1114,7 +1149,7 @@ export const obrasService = {
         const { data, error } = await supabase
           .from('obras')
           .insert(payloads)
-          .select(OBRAS_SELECT_CON_CONTRATISTA);
+          .select(OBRAS_SELECT_COMPLETO);
         if (error) throw error;
         todas.push(...mapObrasRows((data || []) as Record<string, unknown>[]));
       }
@@ -1137,13 +1172,17 @@ export const obrasService = {
         .from('obras')
         .update(payload)
         .eq('id', id)
-        .select(OBRAS_SELECT_CON_CONTRATISTA)
+        .select(OBRAS_SELECT_COMPLETO)
         .single();
 
       if (error) throw error;
       if (!data) throw new Error('Obra no encontrada');
 
-      return mapObraRow(data as Record<string, unknown>);
+      const obra = mapObraRow(data as Record<string, unknown>);
+      if (updates.estado !== undefined && updates.estado?.trim()) {
+        await propagarEstadoObraAMatriz(String(id), updates.estado);
+      }
+      return obra;
     } catch (error: any) {
       console.error('Error al actualizar obra:', error);
       throw new Error(error.message || 'Error al actualizar obra');
@@ -1161,13 +1200,17 @@ export const obrasService = {
         .from('obras')
         .update(payload)
         .eq('codigo', codigo)
-        .select(OBRAS_SELECT_CON_CONTRATISTA)
+        .select(OBRAS_SELECT_COMPLETO)
         .maybeSingle();
 
       if (error) throw error;
       if (!data) throw new Error('Obra no encontrada para el código especificado');
 
-      return mapObraRow(data as Record<string, unknown>);
+      const obra = mapObraRow(data as Record<string, unknown>);
+      if (updates.estado !== undefined && updates.estado?.trim()) {
+        await propagarEstadoObraAMatriz(obra.id, updates.estado);
+      }
+      return obra;
     } catch (error: any) {
       console.error('Error al actualizar obra por código:', error);
       throw new Error(error.message || 'Error al actualizar obra por código');
@@ -1203,6 +1246,7 @@ export const obrasService = {
       while (true) {
         const lote = await obrasService.obtenerObras({
           ...filtros,
+          proyeccion: filtros.proyeccion ?? 'reporte',
           limit: PAGE_SIZE,
           offset,
         });
@@ -1353,7 +1397,7 @@ export const obrasService = {
       // Obtener total de obras
       const { count: totalObras } = await supabase
         .from('obras')
-        .select('*', { count: 'exact', head: true });
+        .select('id', { count: 'exact', head: true });
 
       // Obtener obras por estado: solo estados que existen en la base de datos
       const todasLasObras = await obtenerTodasLasObras('estado');
@@ -1378,7 +1422,7 @@ export const obrasService = {
 
       const { data: obrasProximasRaw, error: proximasError } = await supabase
         .from('obras')
-        .select(OBRAS_SELECT_CON_CONTRATISTA)
+        .select(OBRAS_SELECT_DASHBOARD_PROXIMAS)
         .not('fecha_inauguracion', 'is', null)
         .gte('fecha_inauguracion', fechaHoy)
         .lte('fecha_inauguracion', fechaLimiteStr)
@@ -1391,7 +1435,7 @@ export const obrasService = {
       } else {
         const fb = await supabase
           .from('obras')
-          .select('*')
+          .select('id, codigo, nombre, estado, fecha_inauguracion, contratista_id')
           .not('fecha_inauguracion', 'is', null)
           .gte('fecha_inauguracion', fechaHoy)
           .lte('fecha_inauguracion', fechaLimiteStr)
@@ -1651,10 +1695,13 @@ export const obrasService = {
       const id = String(row.id || '').trim();
       if (!id || vistos.has(id)) continue;
       vistos.add(id);
-      const sigede = String(row.codigo || row.distrito_minerd_sigede || '').trim();
+      const codigo = String(row.codigo || '').trim();
+      const distrito = String(row.distrito_minerd_sigede || '').trim();
       out.push({
         id,
-        sigede: sigede || id,
+        sigede: codigo || id,
+        codigo: codigo || null,
+        distrito_minerd_sigede: distrito || null,
         nombre: String(row.nombre || ''),
         contrato: row.contrato != null ? String(row.contrato) : null,
         provincia: row.provincia != null ? String(row.provincia) : null,
@@ -2246,7 +2293,7 @@ export const historialUploadsService = {
         if (error.message?.includes('Could not find the table') || 
             error.message?.includes('relation') ||
             error.message?.includes('does not exist')) {
-          const tableError = new Error('Tabla historial_uploads no encontrada. Ejecuta el script supabase-historial-uploads.sql en Supabase.');
+          const tableError = new Error('Tabla historial_uploads no encontrada. Ejecuta supabase-schema-completo.sql en Supabase.');
           (tableError as any).isTableNotFound = true;
           throw tableError;
         }
@@ -2702,7 +2749,7 @@ export const documentosTecnicosService = {
       const msg = error.message || '';
       if (/fecha_entrada|oficio|estatus|observaciones/i.test(msg) && (error.code === 'PGRST204' || /column/i.test(msg))) {
         throw new Error(
-          'Faltan columnas en movimiento_documentos_tecnicos_obra. Ejecute supabase-documentos-tecnicos-alter.sql en Supabase y recargue la página.',
+          'Faltan columnas en movimiento_documentos_tecnicos_obra. Ejecute supabase-schema-completo.sql en Supabase y recargue la página.',
         );
       }
       throw error;

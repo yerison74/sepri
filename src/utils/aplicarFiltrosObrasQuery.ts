@@ -64,7 +64,7 @@ function parseNumeroFiltro(valor: string): number | null {
 
 /**
  * Aplica filtros de obras a una consulta Supabase (tabla obras).
- * `estado` usa igualdad exacta; el resto de textos usa ILIKE parcial.
+ * `estado` usa ILIKE sin comodines (coincidencia sin distinguir mayúsculas).
  */
 export function aplicarFiltrosObrasEnQuery<T extends FiltroQuery>(
   query: T,
@@ -73,7 +73,7 @@ export function aplicarFiltrosObrasEnQuery<T extends FiltroQuery>(
   let q = query;
 
   if (filtros.estado?.trim()) {
-    q = q.eq('estado', filtros.estado.trim()) as T;
+    q = q.ilike('estado', filtros.estado.trim()) as T;
   }
 
   for (const key of CAMPOS_TEXTO_ILIKE) {

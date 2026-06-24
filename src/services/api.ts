@@ -1,14 +1,22 @@
 import axios, { AxiosInstance, AxiosResponse } from 'axios';
 import { obrasService, historialUploadsService, storageService, tramitesService, notificacionesTiempoService, areasService, formularioContratistaService, documentosTecnicosService, contratistasService } from './supabaseService';
+import { techadoService } from './techadoService';
 import { getDiasMaximosPorArea } from '../constants/procesos';
 import { mensajeNotificacionTiempo } from '../utils/notificacionesTiempo';
 import type {
   Obra,
+  ObrasFilters,
   Tramite,
   MovimientoTramite,
   Area,
   FormularioContratista,
   MovimientoSolicitudContratista,
+  ImportTechadoResult,
+  MatrizGeneralDetalle,
+  MatrizGeneralFilters,
+  MatrizGeneralTechado,
+  MatrizGeneralVista,
+  ContratoTechado,
   DocumentoTecnicoObra,
   MovimientoDocumentoTecnicoObra,
 } from '../types/database';
@@ -54,20 +62,27 @@ const apiClient: AxiosInstance = axios.create({
 
 // API de Mantenimientos usando Supabase
 export const mantenimientosAPI = {
-  obtenerObras: async (params: { limit?: number; offset?: number; search?: string; estado?: string; responsable?: string; provincia?: string }) => {
+  obtenerObras: async (params: ObrasFilters = {}) => {
     try {
-      const response = await obrasService.obtenerObras({
-        limit: params.limit,
-        offset: params.offset,
-        search: params.search,
-        estado: params.estado,
-        responsable: params.responsable,
-        provincia: params.provincia,
-      });
+      const response = await obrasService.obtenerObras(params);
       // Simular respuesta de Axios para compatibilidad
       return {
         data: response,
       } as AxiosResponse<{ data: Obra[]; count: number }>;
+    } catch (error: any) {
+      throw {
+        response: {
+          data: { error: error.message },
+          status: 500,
+        },
+      };
+    }
+  },
+
+  obtenerEstadosDistintos: async () => {
+    try {
+      const data = await obrasService.obtenerEstadosDistintos();
+      return { data: { data } } as AxiosResponse<{ data: string[] }>;
     } catch (error: any) {
       throw {
         response: {
@@ -94,16 +109,37 @@ export const mantenimientosAPI = {
     }
   },
 
-  obtenerRelacionesObraPorSigede: async (sigedes: string[]) => {
+  obtenerRelacionesObraPorSigede: async (sigedes: string[], obraId?: string) => {
     try {
-      const data = await obrasService.obtenerRelacionesPorSigede(sigedes);
-      return { data: { data } } as AxiosResponse<{
+      const [relaciones, techado] = await Promise.all([
+        obrasService.obtenerRelacionesPorSigede(sigedes),
+        obraId?.trim()
+          ? techadoService.obtenerResumenPorObraId(obraId.trim())
+          : Promise.resolve([]),
+      ]);
+      return {
+        data: { data: { ...relaciones, techado } },
+      } as AxiosResponse<{
         data: import('../types/database').ObraRelacionesSigede;
       }>;
     } catch (error: any) {
       throw {
         response: {
           data: { error: error.message || 'Error al cargar relaciones de la obra' },
+          status: 500,
+        },
+      };
+    }
+  },
+
+  obtenerObraPorId: async (id: string) => {
+    try {
+      const data = await obrasService.obtenerObraPorIdObra(id);
+      return { data: { data } } as AxiosResponse<{ data: Obra | null }>;
+    } catch (error: any) {
+      throw {
+        response: {
+          data: { error: error.message },
           status: 500,
         },
       };
@@ -425,6 +461,7 @@ export const uploadAPI = {
     try {
       // Obtener obras con filtros desde Supabase
       const response = await obrasService.obtenerObras({
+        proyeccion: 'completo',
         estado: params.estado,
         responsable: params.responsable,
         search: params.search,
@@ -1238,6 +1275,71 @@ export const formularioContratistaAPI = {
           status: 500,
         },
       };
+    }
+  },
+};
+
+export const techadoAPI = {
+  obtenerMatriz: async (params: MatrizGeneralFilters = {}) => {
+    try {
+      const response = await techadoService.obtenerMatrizGeneral(params);
+      return { data: response } as AxiosResponse<typeof response>;
+    } catch (error: any) {
+      throw { response: { data: { error: error.message }, status: 500 } };
+    }
+  },
+
+  obtenerDetalle: async (matrizId: string) => {
+    try {
+      const data = await techadoService.obtenerDetalleMatriz(matrizId);
+      return { data: { data } } as AxiosResponse<{ data: MatrizGeneralDetalle }>;
+    } catch (error: any) {
+      throw { response: { data: { error: error.message }, status: 500 } };
+    }
+  },
+
+  actualizarMatriz: async (id: string, updates: Partial<MatrizGeneralTechado>) => {
+    try {
+      const data = await techadoService.actualizarMatriz(id, updates);
+      return { data: { data } } as AxiosResponse<{ data: MatrizGeneralTechado }>;
+    } catch (error: any) {
+      throw { response: { data: { error: error.message }, status: 500 } };
+    }
+  },
+
+  actualizarContrato: async (id: string, updates: Partial<ContratoTechado>) => {
+    try {
+      const data = await techadoService.actualizarContrato(id, updates);
+      return { data: { data } } as AxiosResponse<{ data: ContratoTechado }>;
+    } catch (error: any) {
+      throw { response: { data: { error: error.message }, status: 500 } };
+    }
+  },
+
+  importarExcel: async (filas: import('../utils/parsearMatrizTechadoExcel').FilaMatrizTechadoParseada[]) => {
+    try {
+      const data = await techadoService.importarMatrizDesdeFilas(filas);
+      return { data: { data } } as AxiosResponse<{ data: ImportTechadoResult }>;
+    } catch (error: any) {
+      throw { response: { data: { error: error.message }, status: 500 } };
+    }
+  },
+
+  vincularObras: async () => {
+    try {
+      const data = await techadoService.vincularObrasEnMatriz();
+      return { data: { data } } as AxiosResponse<{ data: typeof data }>;
+    } catch (error: any) {
+      throw { response: { data: { error: error.message }, status: 500 } };
+    }
+  },
+
+  obtenerEstatusDistintos: async () => {
+    try {
+      const data = await techadoService.obtenerEstatusDistintos();
+      return { data: { data } } as AxiosResponse<{ data: string[] }>;
+    } catch (error: any) {
+      throw { response: { data: { error: error.message }, status: 500 } };
     }
   },
 };

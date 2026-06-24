@@ -14,7 +14,7 @@ export async function loginUsuario(usuario: string, password: string) {
   if (error) {
     if (error.message?.includes('does not exist')) {
       throw new Error(
-        'La tabla usuarios_app no existe. Ejecuta supabase-usuario-admin.sql en Supabase.',
+        'La tabla usuarios_app no existe. Ejecuta supabase-schema-completo.sql en Supabase.',
       );
     }
     throw new Error(`Error de base de datos: ${error.message}`);
@@ -23,7 +23,7 @@ export async function loginUsuario(usuario: string, password: string) {
   const lista = rows || [];
   if (lista.length === 0) {
     throw new Error(
-      'No se pudo leer usuarios_app desde la app (RLS o usuario inexistente). Ejecuta supabase-usuario-admin.sql en Supabase.',
+      'No se pudo leer usuarios_app desde la app (RLS o usuario inexistente). Ejecuta supabase-schema-completo.sql en Supabase.',
     );
   }
 

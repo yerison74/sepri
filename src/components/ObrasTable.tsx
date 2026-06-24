@@ -8,22 +8,43 @@ import {
   NavigateNext,
   OpenInNew,
 } from '@mui/icons-material';
-import { mantenimientosAPI, statsAPI, Obra } from '../services/api';
+import { mantenimientosAPI, Obra } from '../services/api';
 import ObraMap from './ObraMap';
 import ObraMasDetallesDialog from './ObraMasDetallesDialog';
+import ObraTechadoResumenSection from './ObraTechadoResumenSection';
 import {
   BTN_PRIMARY,
   BTN_SECONDARY,
   BTN_SECONDARY_SM,
   BTN_DANGER,
 } from '../constants/buttonStyles';
+import {
+  TECHADO_MODULO,
+  filtrosTechadoModulo,
+  formatearValorCampoObra,
+} from '../constants/techadoModulo';
+import { SEPRI_INSET } from '../constants/sepriSurfaces';
+import { techadoService } from '../services/techadoService';
+import { esTipoObraTechados } from '../constants/tipoObra';
+import EstadoObraBadge from './EstadoObraBadge';
+import type { ObraMatrizTechadoResumen } from '../types/database';
 
 interface ObrasTableProps {
   refreshTrigger?: number;
   soloLectura?: boolean;
+  modoTechado?: boolean;
+  ocultarTitulo?: boolean;
+  /** Si se define, el clic en una fila abre edición en lugar del diálogo de detalles. */
+  onObraClick?: (obra: Obra) => void;
 }
 
-const ObrasTable: React.FC<ObrasTableProps> = ({ refreshTrigger, soloLectura = false }) => {
+const ObrasTable: React.FC<ObrasTableProps> = ({
+  refreshTrigger,
+  soloLectura = false,
+  modoTechado = false,
+  ocultarTitulo = false,
+  onObraClick,
+}) => {
   const [obras, setObras] = useState<Obra[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -36,17 +57,29 @@ const ObrasTable: React.FC<ObrasTableProps> = ({ refreshTrigger, soloLectura = f
   const [showDetails, setShowDetails] = useState(false);
   const [showMasDetalles, setShowMasDetalles] = useState(false);
   const [estadosDisponibles, setEstadosDisponibles] = useState<string[]>([]);
+  const [loadingDetalle, setLoadingDetalle] = useState(false);
+  const [techadoResumen, setTechadoResumen] = useState<ObraMatrizTechadoResumen[]>([]);
 
   const loadObrasWithFilters = useCallback(async (overrides?: { estado?: string }) => {
     const estado = overrides?.estado !== undefined ? overrides.estado : estadoFilter;
+    const filtrosModulo = modoTechado ? filtrosTechadoModulo() : {};
     try {
       setLoading(true);
       setError(null);
+      if (!modoTechado) {
+        try {
+          await techadoService.sincronizarTiposObraTechados();
+          await techadoService.sincronizarEstadosObraMatriz();
+        } catch {
+          /* no bloquear listado si falla la sincronización */
+        }
+      }
       const response = await mantenimientosAPI.obtenerObras({
         limit: rowsPerPage,
         offset: page * rowsPerPage,
         search: searchQuery || undefined,
         estado: estado || undefined,
+        ...filtrosModulo,
       });
       setObras(response.data.data);
       setTotalCount(response.data.count ?? 0);
@@ -55,7 +88,7 @@ const ObrasTable: React.FC<ObrasTableProps> = ({ refreshTrigger, soloLectura = f
     } finally {
       setLoading(false);
     }
-  }, [estadoFilter, rowsPerPage, page, searchQuery]);
+  }, [estadoFilter, rowsPerPage, page, searchQuery, modoTechado]);
 
   // Al cambiar filtros, volver a la primera página
   useEffect(() => {
@@ -72,14 +105,14 @@ const ObrasTable: React.FC<ObrasTableProps> = ({ refreshTrigger, soloLectura = f
     return () => clearTimeout(debounce);
   }, [searchQuery, estadoFilter, page, rowsPerPage, loadObrasWithFilters, refreshTrigger]);
 
-  // Cargar lista de estados desde la base de datos (para filtros)
+  // Cargar lista de estados desde toda la tabla obras (para filtros)
   useEffect(() => {
     const loadEstados = async () => {
       try {
-        const res = await statsAPI.obtenerResumenDashboard();
-        const porEstado = res?.data?.data?.estadisticas?.porEstado;
-        if (Array.isArray(porEstado)) {
-          setEstadosDisponibles(porEstado.map((e: { estado: string }) => e.estado));
+        const res = await mantenimientosAPI.obtenerEstadosDistintos();
+        const lista = res?.data?.data;
+        if (Array.isArray(lista)) {
+          setEstadosDisponibles(lista);
         }
       } catch {
         setEstadosDisponibles([]);
@@ -87,6 +120,41 @@ const ObrasTable: React.FC<ObrasTableProps> = ({ refreshTrigger, soloLectura = f
     };
     loadEstados();
   }, [refreshTrigger]);
+
+  // Si otro módulo actualizó datos, refrescar el detalle abierto
+  useEffect(() => {
+    if (!showDetails || !selectedObra) return;
+    let activo = true;
+    (async () => {
+      try {
+        const res = await mantenimientosAPI.obtenerObraPorId(selectedObra.id);
+        if (!activo || !res.data.data) return;
+        let obraDetalle = res.data.data;
+        if (!modoTechado) {
+          try {
+            const tipo = await techadoService.resolverTipoObraParaDetalle(obraDetalle);
+            obraDetalle = tipo ? { ...obraDetalle, tipo_obra: tipo } : obraDetalle;
+          } catch {
+            /* mantener obra cargada */
+          }
+        }
+        setSelectedObra(obraDetalle);
+        if (!modoTechado) {
+          try {
+            const techado = await techadoService.obtenerResumenPorObraId(obraDetalle.id);
+            setTechadoResumen(techado);
+          } catch {
+            setTechadoResumen([]);
+          }
+        }
+      } catch {
+        /* mantener detalle actual */
+      }
+    })();
+    return () => {
+      activo = false;
+    };
+  }, [refreshTrigger, showDetails, selectedObra?.id, modoTechado]);
 
   // Escuchar eventos desde el Dashboard para aplicar filtros y cargar
   useEffect(() => {
@@ -115,25 +183,36 @@ const ObrasTable: React.FC<ObrasTableProps> = ({ refreshTrigger, soloLectura = f
     setPage(0);
   };
 
-  const handleViewDetails = (obra: Obra) => {
-    setSelectedObra(obra);
-    setShowDetails(true);
-  };
-
-  const getEstadoColor = (estado: string) => {
-    const colores: { [key: string]: { bg: string; text: string } } = {
-      'INAUGURADA': { bg: '#2196F3', text: '#FFFFFF' },
-      'TERMINADA': { bg: '#4CAF50', text: '#FFFFFF' },
-      'DETENIDA': { bg: '#FFC107', text: '#000000' },
-      'NO INICIADA': { bg: '#F44336', text: '#FFFFFF' },
-      'ACTIVA': { bg: '#00BCD4', text: '#FFFFFF' },
-      'PRELIMINARES': { bg: '#FF9800', text: '#FFFFFF' },
-      'INTERVENIDA MANTENIMIENTO': { bg: '#9C27B0', text: '#FFFFFF' },
-      'NO ESPECIFICADO': { bg: '#9E9E9E', text: '#FFFFFF' }
-    };
-    
-    const estadoConfig = colores[estado.toUpperCase()] || { bg: '#757575', text: '#FFFFFF' };
-    return estadoConfig;
+  const handleViewDetails = async (obra: Obra) => {
+    if (onObraClick) {
+      onObraClick(obra);
+      return;
+    }
+    setLoadingDetalle(true);
+    setTechadoResumen([]);
+    try {
+      let obraDetalle = obra;
+      try {
+        const res = await mantenimientosAPI.obtenerObraPorId(obra.id);
+        if (res.data.data) obraDetalle = res.data.data;
+      } catch {
+        obraDetalle = obra;
+      }
+      if (!modoTechado) {
+        try {
+          const tipo = await techadoService.resolverTipoObraParaDetalle(obraDetalle);
+          obraDetalle = tipo ? { ...obraDetalle, tipo_obra: tipo } : obraDetalle;
+          const techado = await techadoService.obtenerResumenPorObraId(obraDetalle.id);
+          setTechadoResumen(techado);
+        } catch {
+          /* mantener obra cargada */
+        }
+      }
+      setSelectedObra(obraDetalle);
+      setShowDetails(true);
+    } finally {
+      setLoadingDetalle(false);
+    }
   };
 
   if (loading && obras.length === 0) {
@@ -151,12 +230,30 @@ const ObrasTable: React.FC<ObrasTableProps> = ({ refreshTrigger, soloLectura = f
 
   return (
     <div className="p-0">
-      <h2 className="text-2xl sm:text-3xl font-semibold mb-4 sm:mb-6 text-[#42A5F5]">
-        Gestión de Obras
-      </h2>
+      {!ocultarTitulo && (
+        <h2 className="text-2xl sm:text-3xl font-semibold mb-4 sm:mb-6 text-[#42A5F5] px-4 sm:px-6">
+          Gestión de Obras
+        </h2>
+      )}
+
+      {modoTechado && onObraClick && (
+        <p className="mx-4 sm:mx-6 mb-3 text-xs text-stone-400">
+          Clic en una obra para abrir el formulario de edición.
+        </p>
+      )}
+
+      {modoTechado && (
+        <div className={`mx-4 sm:mx-6 mb-4 ${SEPRI_INSET} px-4 py-3 text-sm text-stone-600`}>
+          Mostrando obras del programa <strong className="text-stone-800">{TECHADO_MODULO.label}</strong>.
+          <span className="text-stone-400">
+            {' '}
+            (coinciden con «{TECHADO_MODULO.filtroOr.termino}» en descripción, nombre, nivel, sorteo o área)
+          </span>
+        </div>
+      )}
 
       {/* Barra de búsqueda */}
-      <div className="bg-white border border-slate-200 rounded-2xl shadow-sm p-4 sm:p-5 mb-4 sm:mb-6">
+      <div className="bg-white border border-slate-200 rounded-2xl shadow-sm p-4 sm:p-5 mb-4 sm:mb-6 mx-4 sm:mx-6">
         <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-8 gap-3">
           <div className="relative md:col-span-2 xl:col-span-5">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" sx={{ fontSize: 20 }} />
@@ -201,14 +298,21 @@ const ObrasTable: React.FC<ObrasTableProps> = ({ refreshTrigger, soloLectura = f
 
       {/* Listado de obras */}
       {obras.length === 0 && !loading ? (
-        <div className="bg-white rounded-lg shadow-lg p-8 text-center">
-          <p className="text-gray-500">No se encontraron obras</p>
+        <div className="bg-white rounded-lg shadow-lg p-8 text-center mx-4 sm:mx-6">
+          <p className="text-gray-500">
+            {modoTechado
+              ? `No se encontraron obras para ${TECHADO_MODULO.label}`
+              : 'No se encontraron obras'}
+          </p>
         </div>
       ) : (
-        <div className="space-y-3 mb-4">
-          {obras.map((obra) => {
-            const estadoConfig = getEstadoColor(obra.estado);
-            return (
+        <div className="space-y-3 mb-4 mx-4 sm:mx-6 relative">
+          {loadingDetalle && (
+            <div className="absolute inset-0 z-10 flex items-center justify-center bg-white/60 rounded-lg">
+              <div className="animate-spin rounded-full h-10 w-10 border-2 border-primary-light border-t-primary" />
+            </div>
+          )}
+          {obras.map((obra) => (
               <div
                 key={obra.id}
                 onClick={() => handleViewDetails(obra)}
@@ -236,14 +340,14 @@ const ObrasTable: React.FC<ObrasTableProps> = ({ refreshTrigger, soloLectura = f
                           {obra.nivel && (
                             <span className="text-gray-500">• {obra.nivel}</span>
                           )}
+                          {!modoTechado && esTipoObraTechados(obra.tipo_obra) && (
+                            <span className="px-2 py-0.5 text-xs font-semibold rounded-full bg-amber-100 text-amber-900">
+                              Programa Techado
+                            </span>
+                          )}
                         </div>
                       </div>
-                      <span
-                        className="px-3 py-1 text-xs font-semibold rounded-full text-white whitespace-nowrap flex-shrink-0"
-                        style={{ backgroundColor: estadoConfig.bg, color: estadoConfig.text }}
-                      >
-                        {obra.estado}
-                      </span>
+                      <EstadoObraBadge estado={obra.estado} />
                     </div>
 
                     {/* Información secundaria */}
@@ -288,16 +392,30 @@ const ObrasTable: React.FC<ObrasTableProps> = ({ refreshTrigger, soloLectura = f
                         </div>
                       )}
                     </div>
+
+                    {modoTechado && TECHADO_MODULO.camposLista.length > 0 && (
+                      <div className="flex flex-wrap gap-x-4 gap-y-1 mt-2 pt-2 border-t border-stone-100 text-sm">
+                        {TECHADO_MODULO.camposLista.map((campo) => {
+                          const valor = formatearValorCampoObra(obra, campo);
+                          if (!valor) return null;
+                          return (
+                            <div key={campo.key} className="flex items-center gap-1 text-stone-600">
+                              <span className="font-medium text-stone-500">{campo.label}:</span>
+                              <span>{valor}</span>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
                   </div>
                 </div>
               </div>
-            );
-          })}
+          ))}
         </div>
       )}
 
       {loading && obras.length === 0 && (
-        <div className="bg-white rounded-lg shadow-lg p-8 text-center">
+        <div className="bg-white rounded-lg shadow-lg p-8 text-center mx-4 sm:mx-6">
           <div className="flex justify-center">
             <div className="animate-spin rounded-full h-8 w-8 border-t-2 border-b-2 border-[#42A5F5]"></div>
           </div>
@@ -305,7 +423,7 @@ const ObrasTable: React.FC<ObrasTableProps> = ({ refreshTrigger, soloLectura = f
       )}
 
       {/* Paginación */}
-      <div className="bg-white border border-slate-200 rounded-2xl shadow-sm p-4 sm:p-5 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+      <div className="bg-white border border-slate-200 rounded-2xl shadow-sm p-4 sm:p-5 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mx-4 sm:mx-6 mb-4">
         <div className="flex flex-wrap items-center gap-3 sm:gap-4">
           <span className="text-sm text-slate-700 font-medium">Filas por página:</span>
           <select
@@ -359,10 +477,32 @@ const ObrasTable: React.FC<ObrasTableProps> = ({ refreshTrigger, soloLectura = f
             onClick={(e) => e.stopPropagation()}
           >
             <div className="p-6 border-b border-gray-200">
-              <h3 className="text-2xl font-semibold text-gray-800">Detalles de la Obra</h3>
+              <h3 className="text-2xl font-semibold text-gray-800">
+                {modoTechado ? `Detalles — ${TECHADO_MODULO.label}` : 'Detalles de la Obra'}
+              </h3>
             </div>
             <div className="p-6">
               <h4 className="text-xl font-semibold mb-4 text-gray-800">{selectedObra.nombre}</h4>
+
+              {modoTechado && TECHADO_MODULO.camposDetalle.length > 0 && (
+                <div className="mb-6 p-4 bg-primary-light/30 rounded-xl border border-primary-light">
+                  <div className="text-sm font-semibold mb-3 text-primary">
+                    Especificaciones {TECHADO_MODULO.label}
+                  </div>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    {TECHADO_MODULO.camposDetalle.map((campo) => {
+                      const valor = formatearValorCampoObra(selectedObra, campo);
+                      if (!valor) return null;
+                      return (
+                        <div key={campo.key}>
+                          <div className="text-xs text-stone-500 mb-0.5">{campo.label}</div>
+                          <div className="text-base font-medium text-stone-800">{valor}</div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
               
               <div className="grid grid-cols-2 gap-4 mb-6">
                 {selectedObra.id_obra && (
@@ -384,17 +524,22 @@ const ObrasTable: React.FC<ObrasTableProps> = ({ refreshTrigger, soloLectura = f
                 <div>
                   <div className="text-xs text-gray-500 mb-1">Estado</div>
                   <div className="mt-1">
-                    <span
-                      className="px-3 py-1 text-xs font-semibold rounded-full text-white"
-                      style={{ 
-                        backgroundColor: getEstadoColor(selectedObra.estado).bg,
-                        color: getEstadoColor(selectedObra.estado).text
-                      }}
-                    >
-                      {selectedObra.estado}
-                    </span>
+                    <EstadoObraBadge estado={selectedObra.estado} />
                   </div>
                 </div>
+                {!modoTechado && (
+                  <div>
+                    <div className="text-xs text-gray-500 mb-1">Tipo de obra</div>
+                    <div className="text-base font-medium">
+                      {selectedObra.tipo_obra || '-'}
+                      {esTipoObraTechados(selectedObra.tipo_obra) && (
+                        <span className="ml-2 px-2 py-0.5 text-xs font-semibold rounded-full bg-amber-100 text-amber-900">
+                          Programa Techado
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                )}
                 {selectedObra.responsable && (
                   <div>
                     <div className="text-xs text-gray-500 mb-1">Contratista / Responsable</div>
@@ -490,6 +635,16 @@ const ObrasTable: React.FC<ObrasTableProps> = ({ refreshTrigger, soloLectura = f
                 </div>
               )}
 
+              {!modoTechado && techadoResumen.length > 0 && (
+                <div className="mt-6">
+                  <ObraTechadoResumenSection
+                    obra={selectedObra}
+                    entradas={techadoResumen}
+                    compacto
+                  />
+                </div>
+              )}
+
               {/* Mapa interactivo */}
               <div className="mt-6 mb-6">
                 <div className="text-sm font-semibold mb-3 text-gray-700">Ubicación en el Mapa</div>
@@ -551,7 +706,7 @@ const ObrasTable: React.FC<ObrasTableProps> = ({ refreshTrigger, soloLectura = f
                 className={`${BTN_SECONDARY} flex items-center gap-2`}
               >
                 <OpenInNew fontSize="small" />
-                Más detalles
+                Más detalles (trámites, documentos, Techado)
               </button>
               <div className="flex gap-3">
               {!soloLectura && (

@@ -10,7 +10,7 @@ import {
   Groups,
   Tune,
 } from '@mui/icons-material';
-import { statsAPI, uploadAPI } from '../services/api';
+import { mantenimientosAPI, statsAPI, uploadAPI } from '../services/api';
 import type { ReporteObrasStats } from '../types/database';
 import ReporteObrasMap from './ReporteObrasMap';
 import ReporteObrasTablaDetalle from './ReporteObrasTablaDetalle';
@@ -75,10 +75,10 @@ const ReporteObras: React.FC<ReporteObrasProps> = ({ refreshTrigger, soloLectura
   useEffect(() => {
     const load = async () => {
       try {
-        const resEstados = await statsAPI.obtenerResumenDashboard();
-        const porEstado = resEstados?.data?.data?.estadisticas?.porEstado;
-        if (Array.isArray(porEstado)) {
-          setEstadosDisponibles(porEstado.map((e: { estado: string }) => e.estado));
+        const resEstados = await mantenimientosAPI.obtenerEstadosDistintos();
+        const lista = resEstados?.data?.data;
+        if (Array.isArray(lista)) {
+          setEstadosDisponibles(lista);
         }
       } catch {
         setEstadosDisponibles([]);

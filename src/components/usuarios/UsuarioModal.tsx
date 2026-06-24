@@ -32,6 +32,7 @@ import {
 const MODULOS_PERMISOS = [
   { id: 'dashboard', label: 'Dashboard', icon: '📊', verKey: 'ver_dashboard', editarKey: 'editar_dashboard' },
   { id: 'obras', label: 'Obras', icon: '🏗️', verKey: 'ver_obras', editarKey: 'editar_obras' },
+  { id: 'techado', label: 'Techado', icon: '🏠', verKey: 'ver_techado', editarKey: 'editar_techado' },
   { id: 'carga_obras', label: 'Carga de Obras', icon: '📋', verKey: 'ver_carga_obras', editarKey: 'editar_carga_obras' },
   { id: 'tramites', label: 'Seguimiento de Trámite', icon: '📄', verKey: 'ver_tramites', editarKey: 'editar_tramites' },
   { id: 'atencion_contratista', label: 'Atención al contratista', icon: '🧑‍💼', verKey: 'ver_atencion_contratista', editarKey: 'editar_atencion_contratista' },

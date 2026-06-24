@@ -146,12 +146,16 @@ export interface ObraRelacionesSigede {
   sigedes: string[];
   tramites: TramiteObraResumen[];
   documentos: DocumentoObraResumen[];
+  techado?: ObraMatrizTechadoResumen[];
 }
 
 /** Opción de búsqueda para editar una obra en Carga de archivos. */
 export interface ObraEdicionOpcion {
   id: string;
+  /** Código SIGEDE del plantel (obras.codigo). */
   sigede: string;
+  codigo?: string | null;
+  distrito_minerd_sigede?: string | null;
   nombre: string;
   contrato?: string | null;
   provincia?: string | null;
@@ -354,6 +358,18 @@ export interface ObrasFilters {
   fechaDetenidaHasta?: string;
   fechaInauguracionDesde?: string;
   fechaInauguracionHasta?: string;
+  /** Filtro OR del submódulo de obras (ej. programa Techados). */
+  moduloBusquedaOr?: {
+    termino: string;
+    columnas: string[];
+  };
+  /**
+   * Columnas a traer de la BD.
+   * - listado (default): tarjetas y paginación
+   * - reporte: agrega latitud/longitud para mapas y estadísticas
+   * - completo: todos los campos (exportaciones, etc.)
+   */
+  proyeccion?: 'listado' | 'reporte' | 'completo';
 }
 
 /** Estadísticas agregadas del módulo Reporte (obras filtradas). */
@@ -403,4 +419,146 @@ export interface ApiResponse<T> {
   data: T;
   count?: number;
   error?: string;
+}
+
+// --- Módulo Techado (matriz_general + contrato) ---
+
+export interface ContratoTechado {
+  id: string;
+  lote: number;
+  no_contrato: string;
+  contratista_nombre?: string | null;
+  contratista_id?: string | null;
+  fecha_contrato?: string | null;
+  presupuesto_centro?: number | null;
+  estatus_contrato?: string | null;
+  proceso?: string | null;
+  certificacion?: string | null;
+  monto_total_inversion?: number | null;
+  monto_total_contrato?: number | null;
+  avance_20_porciento?: number | null;
+  cubicacion_enviada?: string | null;
+  libramiento?: string | null;
+  fecha_salida?: string | null;
+  observaciones?: string | null;
+  created_at?: string | null;
+  updated_at?: string | null;
+}
+
+export interface ContratoAdendaTechado {
+  id: string;
+  contrato_id: string;
+  tipo_adenda?: string | null;
+  certificacion?: string | null;
+  monto_adendado?: number | null;
+  fecha_adenda?: string | null;
+  observaciones?: string | null;
+  orden?: number;
+}
+
+export interface MatrizGeneralTechado {
+  id: string;
+  contrato_id: string;
+  lote: number;
+  plantel: string;
+  provincia?: string | null;
+  municipio?: string | null;
+  /** Equivale a obras.distrito_minerd_sigede (REG-DIST del Excel). */
+  reg_dist?: string | null;
+  obra_id?: string | null;
+  ejecucion_actual?: string | null;
+  observaciones?: string | null;
+  estatus?: string | null;
+  porcentaje_ejecucion?: number | null;
+  porcentaje_ejecucion_alt?: number | null;
+  fecha_inauguracion?: string | null;
+  anio_proceso?: number | null;
+  monto_contratado_centro?: number | null;
+  monto_cubicado_centro?: number | null;
+  porcentaje_cubicado_centro?: number | null;
+  monto_total_cubicado_sin_amort?: number | null;
+  porciento_cubicado?: number | null;
+  pendiente_a_cubicar?: number | null;
+  monto_total_pagado?: number | null;
+  monto_avance_centro?: number | null;
+  fecha_ultima_cubicacion?: string | null;
+  estatus_ultima_cubicacion?: string | null;
+  numero_ultima_cubicacion?: string | null;
+  monto_ultima_cubicacion?: number | null;
+  valor_cubicado_presupuesto_base?: number | null;
+  adicional_cubicacion?: number | null;
+  movimiento_tierra?: string | null;
+  obs_movimiento_tierra?: string | null;
+  obs_planos_arquitectonicos?: string | null;
+  obs_diseno?: string | null;
+  as_built?: string | null;
+  diseno_arquitectonico?: string | null;
+  diseno_estructural?: string | null;
+  diseno_sanitario?: string | null;
+  diseno_electrico?: string | null;
+  diseno_hidraulico?: string | null;
+  paisajismo?: string | null;
+  plano_terminacion?: string | null;
+  presupuesto_terminacion?: string | null;
+  monto_presupuesto_terminacion?: number | null;
+  created_at?: string | null;
+  updated_at?: string | null;
+}
+
+/** Fila de la vista v_matriz_general_techado */
+export interface MatrizGeneralVista extends Omit<MatrizGeneralTechado, 'id'> {
+  id?: string;
+  matriz_general_id?: string;
+  contratista_nombre?: string | null;
+  no_contrato?: string | null;
+  fecha_contrato?: string | null;
+  presupuesto?: number | null;
+  estatus_contrato?: string | null;
+  proceso?: string | null;
+  certificacion?: string | null;
+  tipo_adenda?: string | null;
+  monto_adendado?: number | null;
+  monto_total_inversion?: number | null;
+  monto_total_contrato?: number | null;
+  avance_20_porciento?: number | null;
+  cubicacion_enviada?: string | null;
+  libramiento?: string | null;
+  fecha_salida?: string | null;
+  observaciones_contrato?: string | null;
+}
+
+export interface MatrizGeneralDetalle {
+  matriz: MatrizGeneralTechado;
+  contrato: ContratoTechado;
+  adendas: ContratoAdendaTechado[];
+  obra: Obra | null;
+}
+
+/** Matriz Techado vinculada a una obra (resumen para Gestión de Obras). */
+export interface ObraMatrizTechadoResumen {
+  matriz: MatrizGeneralTechado;
+  contrato: ContratoTechado;
+  adendas: ContratoAdendaTechado[];
+}
+
+export interface ImportTechadoResult {
+  contratos: number;
+  contratosCreados?: number;
+  contratosActualizados?: number;
+  matriz: number;
+  matrizCreadas?: number;
+  matrizActualizadas?: number;
+  adendas: number;
+  adendasCreadas?: number;
+  adendasActualizadas?: number;
+  obrasVinculadas: number;
+  sinObra: number;
+  errores: string[];
+}
+
+export interface MatrizGeneralFilters {
+  search?: string;
+  estatus?: string;
+  limit?: number;
+  offset?: number;
 }

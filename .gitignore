@@ -19,6 +19,9 @@
 .env.test.local
 .env.production.local
 
+# backups de datos Supabase (pueden ser grandes)
+/data/supabase-export/
+
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*

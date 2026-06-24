@@ -1,4 +1,7 @@
 import type { ObrasFilters } from '../types/database';
+import { TIPO_OBRA_OPCIONES } from './tipoObra';
+
+export { TIPO_OBRA_OPCIONES };
 
 export type ObraFiltroInputTipo = 'text' | 'number' | 'dateRange' | 'select';
 
@@ -164,8 +167,6 @@ export const REPORTE_OBRAS_FILTRO_GRUPOS: ObraFiltroGrupoDef[] = [
     ],
   },
 ];
-
-export const TIPO_OBRA_OPCIONES = ['Construccion', 'Mantenimiento'];
 
 export const EMPTY_REPORTE_OBRAS_FILTERS: ReporteObrasFiltrosState = {
   search: '',

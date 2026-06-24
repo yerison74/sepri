@@ -1,4 +1,4 @@
-import React, { useState, useEffect, Suspense } from 'react';
+import React, { useState, useEffect, useCallback, Suspense } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import {
   Dashboard,
@@ -13,10 +13,12 @@ import {
   SupportAgent,
   Assessment,
   Description,
+  Roofing,
 } from '@mui/icons-material';
 import FileUpload from './components/FileUpload';
 import StatsDashboard from './components/StatsDashboard';
 import ObrasTable from './components/ObrasTable';
+import Techado from './components/Techado';
 import TramiteHistory from './components/UploadHistory';
 import GestionTecnicaDocumento from './components/GestionTecnicaDocumento';
 import Login from './components/Login';
@@ -47,11 +49,9 @@ function TabPanel(props: TabPanelProps) {
       id={`simple-tabpanel-${index}`}
       aria-labelledby={`simple-tab-${index}`}
     >
-      {value === index && (
-        <div className="p-2 sm:p-3 md:p-4 lg:p-6">
-          {children}
-        </div>
-      )}
+      <div className="p-2 sm:p-3 md:p-4 lg:p-6">
+        {children}
+      </div>
     </div>
   );
 }
@@ -65,31 +65,40 @@ function App() {
   const [refreshTrigger, setRefreshTrigger] = useState(0);
   const [sidebarOpen, setSidebarOpen] = useState(false);
 
+  /** Recarga Dashboard, Gestión de Obras, Techado y Reporte tras cambios en cualquier módulo. */
+  const handleDatosActualizados = useCallback(() => {
+    setRefreshTrigger((prev) => prev + 1);
+  }, []);
+
   const handleTabChange = (newValue: number) => {
     setTabValue(newValue);
+    if (newValue === 1) {
+      handleDatosActualizados();
+    }
   };
 
   const handleUploadComplete = () => {
-    setRefreshTrigger((prev) => prev + 1);
+    handleDatosActualizados();
     if (!tramitesOnly) setTabValue(1);
   };
 
   const allTabs = [
     { icon: <Dashboard />, label: 'Dashboard', index: 0 },
     { icon: <Assignment />, label: 'Obras', index: 1 },
-    { icon: <CloudUpload />, label: 'Cargar Obras', index: 2 },
-    { icon: <FollowTheSigns />, label: 'Seguimiento de Trámites', index: 3 },
-    { icon: <SupportAgent />, label: 'Atención al contratista', index: 4 },
-    { icon: <Description />, label: 'Gestión técnica de documento', index: 5 },
+    { icon: <Roofing />, label: 'Techado', index: 2 },
+    { icon: <CloudUpload />, label: 'Cargar Obras', index: 3 },
+    { icon: <FollowTheSigns />, label: 'Seguimiento de Trámites', index: 4 },
+    { icon: <SupportAgent />, label: 'Atención al contratista', index: 5 },
+    { icon: <Description />, label: 'Gestión técnica de documento', index: 6 },
     ...(MODULO_REPORTE_HABILITADO
-      ? [{ icon: <Assessment />, label: 'Reporte', index: 6 as const }]
+      ? [{ icon: <Assessment />, label: 'Reporte', index: 7 as const }]
       : []),
-    { icon: <Settings />, label: 'Configuración', index: 7 },
+    { icon: <Settings />, label: 'Configuración', index: 8 },
   ];
 
   // Solo mostrar pestañas para las que el usuario tiene permiso
   const tabs = tramitesOnly
-    ? allTabs.filter((tab) => tab.index === 3)
+    ? allTabs.filter((tab) => tab.index === 4)
     : allTabs.filter((tab) => hasPermission(TAB_PERMISOS[tab.index as keyof typeof TAB_PERMISOS]));
 
   // Al tener usuario, ir a la primera pestaña que tiene permiso (login o recarga)
@@ -263,8 +272,18 @@ function App() {
                 </TabPanel>
               )}
 
-              {hasPermission('ver_carga_obras') && (
+              {hasPermission('ver_techado') && (
                 <TabPanel value={tabValue} index={2}>
+                  <Techado
+                    refreshTrigger={refreshTrigger}
+                    soloLectura={!hasPermission('editar_techado')}
+                    onDatosActualizados={handleDatosActualizados}
+                  />
+                </TabPanel>
+              )}
+
+              {hasPermission('ver_carga_obras') && (
+                <TabPanel value={tabValue} index={3}>
                   <FileUpload
                     onUploadComplete={handleUploadComplete}
                     onError={(error: unknown) => console.error('Upload error:', error)}
@@ -274,13 +293,13 @@ function App() {
               )}
 
               {hasPermission('ver_atencion_contratista') && (
-                <TabPanel value={tabValue} index={4}>
+                <TabPanel value={tabValue} index={5}>
                   <AtencionContratista soloLectura={!hasPermission('editar_atencion_contratista')} />
                 </TabPanel>
               )}
 
               {hasPermission('ver_gestion_tecnica_documento') && (
-                <TabPanel value={tabValue} index={5}>
+                <TabPanel value={tabValue} index={6}>
                   <GestionTecnicaDocumento
                     soloLectura={!hasPermission('editar_gestion_tecnica_documento')}
                   />
@@ -288,7 +307,7 @@ function App() {
               )}
 
               {MODULO_REPORTE_HABILITADO && hasPermission('ver_reporte') && ReporteObras && (
-                <TabPanel value={tabValue} index={6}>
+                <TabPanel value={tabValue} index={7}>
                   <Suspense
                     fallback={
                       <div className="flex items-center justify-center min-h-[12rem]">
@@ -305,7 +324,7 @@ function App() {
               )}
 
               {hasPermission('ver_configuracion') && (
-                <TabPanel value={tabValue} index={7}>
+                <TabPanel value={tabValue} index={8}>
                   <div>
                     <h2 className="text-2xl font-semibold mb-4 text-stone-800">
                       Configuración del Sistema
@@ -318,7 +337,7 @@ function App() {
           )}
 
           {hasPermission('ver_tramites') && (
-            <TabPanel value={tabValue} index={3}>
+            <TabPanel value={tabValue} index={4}>
               <TramiteHistory soloLectura={!hasPermission('editar_tramites')} />
             </TabPanel>
           )}

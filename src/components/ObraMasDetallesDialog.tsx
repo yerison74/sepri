@@ -5,6 +5,7 @@ import type { ObraRelacionesSigede } from '../types/database';
 import { sigedesDeObra } from '../utils/obraSigede';
 import { getEstadoLabel } from '../utils/estadoTramite';
 import { BTN_PRIMARY, BTN_SECONDARY } from '../constants/buttonStyles';
+import ObraTechadoResumenSection from './ObraTechadoResumenSection';
 
 interface ObraMasDetallesDialogProps {
   open: boolean;
@@ -47,22 +48,18 @@ const ObraMasDetallesDialog: React.FC<ObraMasDetallesDialogProps> = ({ open, onC
     }
 
     const sigedes = sigedesDeObra(obra);
-    if (sigedes.length === 0) {
-      setRelaciones({ sigedes: [], tramites: [], documentos: [] });
-      return;
-    }
 
     let cancelado = false;
     (async () => {
       setLoading(true);
       setError(null);
       try {
-        const resp = await mantenimientosAPI.obtenerRelacionesObraPorSigede(sigedes);
+        const resp = await mantenimientosAPI.obtenerRelacionesObraPorSigede(sigedes, obra.id);
         if (!cancelado) setRelaciones(resp.data.data);
       } catch (err: any) {
         if (!cancelado) {
           setError(err.response?.data?.error || 'No se pudieron cargar las relaciones');
-          setRelaciones({ sigedes, tramites: [], documentos: [] });
+          setRelaciones({ sigedes, tramites: [], documentos: [], techado: [] });
         }
       } finally {
         if (!cancelado) setLoading(false);
@@ -90,7 +87,7 @@ const ObraMasDetallesDialog: React.FC<ObraMasDetallesDialogProps> = ({ open, onC
       >
         <div className="p-5 border-b border-gray-200 flex items-start justify-between gap-4">
           <div className="min-w-0">
-            <h3 className="text-xl font-semibold text-gray-800">Más detalles de la obra</h3>
+            <h3 className="text-xl font-semibold text-gray-800">Resumen por ID SIGEDE</h3>
             <p className="text-sm text-gray-500 mt-1 truncate">{obra.nombre}</p>
             {sigedes.length > 0 && (
               <p className="text-xs text-[#42A5F5] font-mono mt-1">
@@ -106,8 +103,8 @@ const ObraMasDetallesDialog: React.FC<ObraMasDetallesDialogProps> = ({ open, onC
         <div className="p-5 overflow-y-auto flex-1 space-y-6">
           {sigedes.length === 0 && (
             <div className="p-4 bg-amber-50 border border-amber-200 rounded-lg text-sm text-amber-900">
-              Esta obra no tiene código SIGEDE ni distrito MINERD registrado. No es posible buscar
-              trámites ni documentos vinculados.
+              Esta obra no tiene código SIGEDE ni distrito MINERD registrado. Aun así se muestra
+              información de Techado u otros módulos si existe vinculación por ID de obra.
             </div>
           )}
 
@@ -167,6 +164,10 @@ const ObraMasDetallesDialog: React.FC<ObraMasDetallesDialogProps> = ({ open, onC
             <div className="p-3 bg-red-50 border border-red-200 rounded-lg text-sm text-red-700">
               {error}
             </div>
+          )}
+
+          {!loading && relaciones?.techado && relaciones.techado.length > 0 && (
+            <ObraTechadoResumenSection obra={obra} entradas={relaciones.techado} />
           )}
 
           {!loading && relaciones && sigedes.length > 0 && (

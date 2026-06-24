@@ -1,4 +1,10 @@
 import React, { useEffect, useId, useRef, useState } from 'react';
+import {
+  CA_SUGERENCIAS_EMPTY,
+  CA_SUGERENCIAS_ITEM,
+  CA_SUGERENCIAS_LIST,
+  CA_SUGERENCIAS_PANEL,
+} from '../constants/cargaArchivosUi';
 
 interface AutocompleteInputProps {
   value: string;
@@ -84,30 +90,32 @@ const AutocompleteInput: React.FC<AutocompleteInputProps> = ({
         className={className || INPUT_CLASS}
       />
       {showSuggestions && (
-        <ul
-          id={listId}
-          role="listbox"
-          className="absolute z-20 mt-1 max-h-48 w-full overflow-auto rounded-xl bg-white py-1 shadow-soft-lg border border-stone-100/80"
-        >
-          {loading && options.length === 0 && (
-            <li className="px-3 py-2 text-sm text-gray-500">Buscando…</li>
-          )}
-          {options.map((option, index) => (
-            <li
-              key={`${option}-${index}`}
-              role="option"
-              aria-selected={index === highlighted}
-              className={`cursor-pointer px-3 py-2 text-sm ${
-                index === highlighted ? 'bg-[#42A5F5]/10 text-[#1565C0]' : 'text-gray-800 hover:bg-gray-50'
-              }`}
-              onMouseDown={(e) => e.preventDefault()}
-              onMouseEnter={() => setHighlighted(index)}
-              onClick={() => selectOption(option)}
-            >
-              {option}
-            </li>
-          ))}
-        </ul>
+        <div id={listId} className={CA_SUGERENCIAS_PANEL} role="listbox">
+          <ul className={CA_SUGERENCIAS_LIST}>
+            {loading && options.length === 0 && (
+              <li className={CA_SUGERENCIAS_EMPTY}>Buscando…</li>
+            )}
+            {options.map((option, index) => (
+              <li key={`${option}-${index}`}>
+                <button
+                  type="button"
+                  role="option"
+                  aria-selected={index === highlighted}
+                  className={`${CA_SUGERENCIAS_ITEM} ${
+                    index === highlighted
+                      ? '!bg-primary-light/50 !shadow-soft text-[#1565C0] font-medium'
+                      : ''
+                  }`}
+                  onMouseDown={(e) => e.preventDefault()}
+                  onMouseEnter={() => setHighlighted(index)}
+                  onClick={() => selectOption(option)}
+                >
+                  {option}
+                </button>
+              </li>
+            ))}
+          </ul>
+        </div>
       )}
     </div>
   );
