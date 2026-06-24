@@ -1,10 +1,10 @@
 import React from 'react';
 import type { ObraFormState } from '../utils/obraFormulario';
 import { OBRAS_FORM_AREAS } from '../constants/obraFormularioCampos';
+import { CA_BLOQUE_TITULO, CA_FIELD, CA_LABEL, SEPRI_CARD } from '../constants/cargaArchivosUi';
 import AutocompleteInput from './AutocompleteInput';
 
-const inputClassName =
-  'w-full px-4 py-2.5 border-2 border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-[#42A5F5] focus:border-[#42A5F5] transition-all';
+const inputClassName = CA_FIELD;
 
 interface ObraFormularioProps {
   form: ObraFormState;
@@ -47,16 +47,13 @@ const ObraFormulario: React.FC<ObraFormularioProps> = ({
   };
 
   return (
-    <div className="space-y-5">
+    <div className="space-y-4">
       {OBRAS_FORM_AREAS.map((area) => (
-        <div
-          key={area.id}
-          className="bg-white rounded-lg shadow-md border border-gray-200 overflow-hidden"
-        >
-          <div className="bg-emerald-600 px-4 py-2.5">
-            <h5 className="text-sm font-bold text-white uppercase tracking-wide">{area.label}</h5>
-          </div>
-          <div className="p-5 grid grid-cols-1 md:grid-cols-2 gap-5">
+        <div key={area.id} className={`rounded-xl overflow-hidden p-4 sm:p-5 ${SEPRI_CARD}`}>
+          <h5 className={`${CA_BLOQUE_TITULO} mb-4 pb-2 border-b border-stone-100`}>
+            {area.label}
+          </h5>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             {area.campos.map((campo) => {
               const colClass = campo.colSpan === 2 ? 'md:col-span-2' : '';
               const value = getValue(campo.source, campo.key);
@@ -64,7 +61,7 @@ const ObraFormulario: React.FC<ObraFormularioProps> = ({
               if (campo.source === 'contratista' && campo.key === 'responsable') {
                 return (
                   <div key={`${area.id}-${campo.key}`} className={colClass}>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                    <label className={CA_LABEL}>
                       {campo.label}
                     </label>
                     <AutocompleteInput
@@ -73,6 +70,7 @@ const ObraFormulario: React.FC<ObraFormularioProps> = ({
                       options={responsableSugerencias}
                       loading={loadingResponsableSugerencias}
                       placeholder="Nombre del contratista / responsable"
+                      className={inputClassName}
                     />
                   </div>
                 );
@@ -81,7 +79,7 @@ const ObraFormulario: React.FC<ObraFormularioProps> = ({
               if (campo.input === 'textarea') {
                 return (
                   <div key={`${area.id}-${campo.key}`} className={colClass}>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                    <label className={CA_LABEL}>
                       {campo.label}
                       {campo.required && <span className="text-red-500 ml-1">*</span>}
                     </label>
@@ -104,7 +102,7 @@ const ObraFormulario: React.FC<ObraFormularioProps> = ({
               if (campo.input === 'select' && campo.key === 'estado') {
                 return (
                   <div key={`${area.id}-${campo.key}`} className={colClass}>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                    <label className={CA_LABEL}>
                       {campo.label}
                       <span className="text-red-500 ml-1">*</span>
                     </label>
@@ -131,7 +129,7 @@ const ObraFormulario: React.FC<ObraFormularioProps> = ({
 
               return (
                 <div key={`${area.id}-${campo.key}`} className={colClass}>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                  <label className={CA_LABEL}>
                     {campo.label}
                     {campo.required && <span className="text-red-500 ml-1">*</span>}
                   </label>

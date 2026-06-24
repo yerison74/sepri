@@ -1615,6 +1615,56 @@ export const obrasService = {
     return { obras, loteContrato };
   },
 
+  /** Búsqueda de obras para edición (SIGEDE, contrato, nombre, provincia, municipio). */
+  buscarObrasParaEdicion: async (
+    search: string,
+    limit = 10,
+  ): Promise<import('../types/database').ObraEdicionOpcion[]> => {
+    const term = (search || '').trim();
+    if (term.length < 1) return [];
+
+    const cols = 'id, codigo, nombre, contrato, provincia, municipio, distrito_minerd_sigede';
+    const pattern = `%${term.replace(/'/g, "''")}%`;
+
+    const { data, error } = await supabase
+      .from('obras')
+      .select(cols)
+      .or(
+        [
+          `codigo.ilike.${pattern}`,
+          `distrito_minerd_sigede.ilike.${pattern}`,
+          `contrato.ilike.${pattern}`,
+          `nombre.ilike.${pattern}`,
+          `provincia.ilike.${pattern}`,
+          `municipio.ilike.${pattern}`,
+        ].join(','),
+      )
+      .order('codigo', { ascending: true })
+      .limit(limit);
+
+    if (error) throw error;
+
+    const vistos = new Set<string>();
+    const out: import('../types/database').ObraEdicionOpcion[] = [];
+
+    for (const row of data || []) {
+      const id = String(row.id || '').trim();
+      if (!id || vistos.has(id)) continue;
+      vistos.add(id);
+      const sigede = String(row.codigo || row.distrito_minerd_sigede || '').trim();
+      out.push({
+        id,
+        sigede: sigede || id,
+        nombre: String(row.nombre || ''),
+        contrato: row.contrato != null ? String(row.contrato) : null,
+        provincia: row.provincia != null ? String(row.provincia) : null,
+        municipio: row.municipio != null ? String(row.municipio) : null,
+      });
+    }
+
+    return out;
+  },
+
   /** Trámites y documentos técnicos vinculados a uno o más SIGEDE. */
   obtenerRelacionesPorSigede: async (
     sigedes: string[],

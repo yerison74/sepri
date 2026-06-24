@@ -11,7 +11,7 @@ interface AutocompleteInputProps {
 }
 
 const INPUT_CLASS =
-  'px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-[#42A5F5] focus:border-transparent w-full';
+  'sepri-field w-full px-3.5 py-2.5 text-sm text-stone-700 placeholder:text-stone-400';
 
 const AutocompleteInput: React.FC<AutocompleteInputProps> = ({
   value,
@@ -87,7 +87,7 @@ const AutocompleteInput: React.FC<AutocompleteInputProps> = ({
         <ul
           id={listId}
           role="listbox"
-          className="absolute z-20 mt-1 max-h-48 w-full overflow-auto rounded-md border border-gray-200 bg-white py-1 shadow-lg"
+          className="absolute z-20 mt-1 max-h-48 w-full overflow-auto rounded-xl bg-white py-1 shadow-soft-lg border border-stone-100/80"
         >
           {loading && options.length === 0 && (
             <li className="px-3 py-2 text-sm text-gray-500">Buscando…</li>

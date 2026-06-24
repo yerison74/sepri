@@ -148,6 +148,16 @@ export interface ObraRelacionesSigede {
   documentos: DocumentoObraResumen[];
 }
 
+/** Opción de búsqueda para editar una obra en Carga de archivos. */
+export interface ObraEdicionOpcion {
+  id: string;
+  sigede: string;
+  nombre: string;
+  contrato?: string | null;
+  provincia?: string | null;
+  municipio?: string | null;
+}
+
 /** Movimiento u oficio de un documento técnico. */
 export interface MovimientoDocumentoTecnicoObra {
   id: string;

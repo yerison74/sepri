@@ -488,6 +488,22 @@ export const uploadAPI = {
     }
   },
 
+  buscarObrasParaEdicion: async (search: string, limit = 10) => {
+    try {
+      const data = await obrasService.buscarObrasParaEdicion(search, limit);
+      return { data: { data } } as AxiosResponse<{
+        data: import('../types/database').ObraEdicionOpcion[];
+      }>;
+    } catch (error: any) {
+      throw {
+        response: {
+          data: { error: error.message || 'Error al buscar obras' },
+          status: 500,
+        },
+      };
+    }
+  },
+
   obtenerSugerenciasResponsable: async (search: string, limit = 8) => {
     try {
       const data = await obrasService.obtenerSugerenciasResponsable(search, limit);

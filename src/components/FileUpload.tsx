@@ -6,11 +6,17 @@ import SearchIcon from '@mui/icons-material/Search';
 import SaveIcon from '@mui/icons-material/Save';
 import EditIcon from '@mui/icons-material/Edit';
 import InfoIcon from '@mui/icons-material/Info';
+import CloseIcon from '@mui/icons-material/Close';
+import DescriptionIcon from '@mui/icons-material/Description';
 import { uploadAPI, statsAPI } from '../services/api';
 import type { ProgresoCargaObra } from '../services/api';
 import { obrasService, contratistasService } from '../services/supabaseService';
 import AutocompleteInput from './AutocompleteInput';
 import ObraFormulario from './ObraFormulario';
+import ObraEdicionBuscador from './ObraEdicionBuscador';
+import ModuloPageHeader from './ui/ModuloPageHeader';
+import type { ObraEdicionOpcion } from '../types/database';
+import type { Obra } from '../services/api';
 import {
   createEmptyObraFormState,
   obraToFormState,
@@ -24,6 +30,24 @@ import {
   BTN_ACCENT,
   BTN_GHOST,
 } from '../constants/buttonStyles';
+import {
+  CA_PAGE,
+  CA_HERO,
+  CA_HERO_HEADER,
+  CA_BLOQUE_BUSQUEDA,
+  CA_BLOQUE_TITULO,
+  CA_FIELD,
+  CA_LABEL,
+  CA_ALERTA_OK,
+  CA_ALERTA_ERROR,
+  CA_DROPZONE,
+  CA_GRID_FILTROS,
+  SEPRI_INSET,
+  CA_MODAL_OVERLAY,
+  CA_MODAL_PANEL,
+} from '../constants/cargaArchivosUi';
+
+type PanelCargaArchivos = 'plantilla' | 'importar' | 'exportar' | null;
 
 interface FileUploadProps {
   onUploadComplete?: () => void;
@@ -144,11 +168,12 @@ const FileUpload: React.FC<FileUploadProps> = ({ onUploadComplete, onError, solo
   const [obraFormState, setObraFormState] = useState<ObraFormState>(createEmptyObraFormState());
   const [obraFormResponsableSugerencias, setObraFormResponsableSugerencias] = useState<string[]>([]);
   const [loadingObraFormResponsable, setLoadingObraFormResponsable] = useState(false);
-  const [obraId, setObraId] = useState<string>('');
+  const [obraBusqueda, setObraBusqueda] = useState('');
   const [loadingObra, setLoadingObra] = useState(false);
   const [savingObra, setSavingObra] = useState(false);
   const [obraMessage, setObraMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
   const [obraActualId, setObraActualId] = useState<string | null>(null);
+  const [panelAbierto, setPanelAbierto] = useState<PanelCargaArchivos>(null);
 
   useEffect(() => {
     const term = obraFormState.contratista.responsable.trim();
@@ -369,35 +394,77 @@ const FileUpload: React.FC<FileUploadProps> = ({ onUploadComplete, onError, solo
     setDownloadFilters((prev) => ({ ...prev, [field]: value }));
   };
 
-  const selectClassName =
-    'px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-[#42A5F5] focus:border-transparent w-full';
+  const selectClassName = CA_FIELD;
 
-  // Buscar obra por ID
+  const aplicarObraEnFormulario = (obra: Obra) => {
+    setObraFormState(obraToFormState(obra));
+    setObraActualId(obra.id);
+    setObraMessage({ type: 'success', text: `Obra cargada: ${obra.nombre}` });
+  };
+
+  const cargarObraPorIdSistema = async (idSistema: string) => {
+    const obra = await obrasService.obtenerObraPorIdObra(idSistema.trim());
+    if (!obra) {
+      throw new Error(`No se encontró la obra con ID ${idSistema}`);
+    }
+    aplicarObraEnFormulario(obra);
+    return obra;
+  };
+
+  const handleSeleccionarObraEdicion = async (opcion: ObraEdicionOpcion) => {
+    const etiqueta = [opcion.sigede, opcion.nombre].filter(Boolean).join(' — ');
+    setObraBusqueda(etiqueta);
+    try {
+      setLoadingObra(true);
+      setObraMessage(null);
+      await cargarObraPorIdSistema(opcion.id);
+    } catch (err: any) {
+      setObraMessage({ type: 'error', text: err.message || 'Error al cargar la obra' });
+      setObraActualId(null);
+    } finally {
+      setLoadingObra(false);
+    }
+  };
+
   const handleBuscarObra = async () => {
-    if (!obraId.trim()) {
-      setObraMessage({ type: 'error', text: 'Por favor ingrese un ID de obra' });
+    const term = obraBusqueda.trim();
+    if (!term) {
+      setObraMessage({ type: 'error', text: 'Ingrese SIGEDE, contrato, nombre, provincia o municipio' });
       return;
     }
 
     try {
       setLoadingObra(true);
       setObraMessage(null);
-      
-      // Buscar por codigo o id (sin validación estricta de formato)
-      const idObraNormalizado = obraId.trim().toUpperCase();
 
-      const obra = await obrasService.obtenerObraPorIdObra(idObraNormalizado);
-      
-      if (!obra) {
-        setObraMessage({ type: 'error', text: `No se encontró una obra con el ID: ${idObraNormalizado}` });
+      try {
+        await cargarObraPorIdSistema(term);
+        return;
+      } catch {
+        /* continuar con búsqueda amplia */
+      }
+
+      const resp = await uploadAPI.buscarObrasParaEdicion(term, 10);
+      const resultados = resp.data.data || [];
+
+      if (resultados.length === 0) {
+        setObraMessage({ type: 'error', text: `No se encontró ninguna obra para: ${term}` });
         setObraFormState(createEmptyObraFormState());
         setObraActualId(null);
         return;
       }
 
-      setObraFormState(obraToFormState(obra));
-      setObraActualId(obra.id);
-      setObraMessage({ type: 'success', text: `Obra encontrada: ${obra.nombre}` });
+      if (resultados.length === 1) {
+        const op = resultados[0];
+        setObraBusqueda([op.sigede, op.nombre].filter(Boolean).join(' — '));
+        await cargarObraPorIdSistema(op.id);
+        return;
+      }
+
+      setObraMessage({
+        type: 'error',
+        text: `${resultados.length} obras coinciden. Elija una de las sugerencias de la lista.`,
+      });
     } catch (err: any) {
       setObraMessage({ type: 'error', text: err.message || 'Error al buscar la obra' });
       setObraActualId(null);
@@ -448,346 +515,414 @@ const FileUpload: React.FC<FileUploadProps> = ({ onUploadComplete, onError, solo
   };
 
   return (
-    <div className="bg-white rounded-lg shadow-lg">
-      <div className="space-y-3 sm:space-y-4 p-4 sm:p-6">
-        <h3 className="text-lg sm:text-xl font-semibold">Carga de archivo</h3>
-
+    <div className={CA_PAGE}>
+      <ModuloPageHeader
+        icon={<CloudUploadIcon fontSize="small" />}
+        title="Carga de obras"
+        description="Busque y edite obras individuales. Use los botones de la derecha para plantillas, importación o exportación."
+      >
         {!soloLectura && (
           <>
-            <div className="flex flex-col sm:flex-row gap-4 items-start sm:items-center">
-              <label className="inline-flex items-center px-4 py-2 border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 cursor-pointer">
-                <CloudUploadIcon className="mr-2" />
-                Seleccionar archivo (XML/Excel)
-                <input 
-                  ref={inputRef} 
-                  hidden 
-                  type="file" 
-                  accept=".xml,.xlsx,.xls,application/xml,text/xml,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel" 
-                  onChange={onChooseFile} 
-                />
-              </label>
-              <span className="text-sm text-gray-600">
-                {file ? `${file.name} (${(file.size / 1024).toFixed(1)} KB)` : 'Ningún archivo seleccionado'}
-              </span>
-            </div>
-
-            <div className="flex flex-col sm:flex-row gap-3">
-              <button
-                onClick={handleValidate}
-                disabled={!file || uploading || downloading}
-                className={BTN_SECONDARY}
-              >
-                <CheckCircleIcon className="mr-2" />
-                Validar archivo
-              </button>
-              <button
-                onClick={handleUpload}
-                disabled={!file || uploading || downloading}
-                className={BTN_PRIMARY}
-              >
-                <CloudUploadIcon className="mr-2" />
-                Subir y procesar
-              </button>
-            </div>
-          </>
-        )}
-        {soloLectura && (
-          <p className="text-sm text-gray-600">Solo visualización: no tienes permiso para cargar o editar obras.</p>
-        )}
-
-        <hr className="my-4 border-gray-200" />
-
-        <div className="space-y-2">
-          <h4 className="text-lg font-medium">Descarga de datos</h4>
-          <p className="text-sm text-gray-600">
-            Selecciona los filtros para exportar las obras en formato Excel.
-          </p>
-        </div>
-
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          <AutocompleteInput
-            value={downloadFilters.search}
-            onChange={handleFilterValueChange('search')}
-            options={searchSugerencias}
-            loading={loadingSearchSugerencias}
-            placeholder="Buscar (nombre, código, estado, responsable)"
-          />
-          <select
-            value={downloadFilters.estado}
-            onChange={handleFilterChange('estado')}
-            className={selectClassName}
-          >
-            <option value="">Todos</option>
-            {estadosParaDescarga.map((estado: string) => (
-              <option key={estado} value={estado}>
-                {estado}
-              </option>
-            ))}
-          </select>
-          <AutocompleteInput
-            value={downloadFilters.responsable}
-            onChange={handleFilterValueChange('responsable')}
-            options={responsableSugerencias}
-            loading={loadingResponsableSugerencias}
-            placeholder="Responsable / Contratista"
-          />
-        </div>
-
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          <select
-            value={downloadFilters.provincia}
-            onChange={handleFilterChange('provincia')}
-            className={selectClassName}
-          >
-            <option value="">Todas las provincias</option>
-            {opcionesDescarga.provincias.map((provincia) => (
-              <option key={provincia} value={provincia}>
-                {provincia}
-              </option>
-            ))}
-          </select>
-          <select
-            value={downloadFilters.municipio}
-            onChange={handleFilterChange('municipio')}
-            className={selectClassName}
-          >
-            <option value="">Todos los municipios</option>
-            {municipiosDisponibles.map((municipio) => (
-              <option key={municipio} value={municipio}>
-                {municipio}
-              </option>
-            ))}
-          </select>
-          <select
-            value={downloadFilters.nivel}
-            onChange={handleFilterChange('nivel')}
-            className={selectClassName}
-          >
-            <option value="">Todos los niveles</option>
-            {opcionesDescarga.niveles.map((nivel) => (
-              <option key={nivel} value={nivel}>
-                {nivel}
-              </option>
-            ))}
-          </select>
-        </div>
-
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          <input
-            type="date"
-            value={downloadFilters.fechaInauguracionDesde}
-            onChange={handleFilterChange('fechaInauguracionDesde')}
-            className="px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-[#42A5F5] focus:border-transparent"
-          />
-          <input
-            type="date"
-            value={downloadFilters.fechaInauguracionHasta}
-            onChange={handleFilterChange('fechaInauguracionHasta')}
-            className="px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-[#42A5F5] focus:border-transparent"
-          />
-          {!soloLectura && (
             <button
-              onClick={handleDownloadData}
-              disabled={downloading}
+              type="button"
+              onClick={() => setPanelAbierto('plantilla')}
+              className={BTN_GHOST}
+            >
+              <DescriptionIcon fontSize="small" className="mr-1.5" />
+              Plantilla
+            </button>
+            <button
+              type="button"
+              onClick={() => setPanelAbierto('importar')}
+              className={BTN_SECONDARY}
+            >
+              <CloudUploadIcon fontSize="small" className="mr-1.5" />
+              Importar
+            </button>
+            <button
+              type="button"
+              onClick={() => setPanelAbierto('exportar')}
               className={BTN_ACCENT}
             >
-              <DownloadIcon className="mr-2" />
-              {downloading ? 'Generando archivo...' : 'Descargar obras'}
+              <DownloadIcon fontSize="small" className="mr-1.5" />
+              Exportar
             </button>
-          )}
-        </div>
+          </>
+        )}
+      </ModuloPageHeader>
 
-        {(uploading || downloading) && (
-          <div className="space-y-2">
-            {uploading && (
+      {(error || validMessage || uploading || downloading) && (
+        <div className="space-y-2 shrink-0">
+          {uploading && (
+            <div
+              className={`${SEPRI_INSET} px-3 py-2.5`}
+              role="status"
+              aria-live="polite"
+            >
+              <div className="flex items-start justify-between gap-3 text-xs text-stone-600 mb-1.5">
+                <span className="truncate min-w-0 flex-1 leading-snug">
+                  {uploadProgress?.mensaje ?? 'Iniciando…'}
+                </span>
+                <span className="tabular-nums text-stone-500 font-medium shrink-0">
+                  {uploadProgress?.porcentaje ?? 0}%
+                </span>
+              </div>
               <div
-                className="rounded-lg border border-stone-200/80 bg-stone-50/90 px-3 py-2.5 shadow-sm"
-                role="status"
-                aria-live="polite"
+                className="h-1 w-full overflow-hidden rounded-full bg-stone-200/90"
+                role="progressbar"
+                aria-valuemin={0}
+                aria-valuemax={100}
+                aria-valuenow={uploadProgress?.porcentaje ?? 0}
+                aria-label="Progreso de carga"
               >
-                <div className="flex items-start justify-between gap-3 text-xs text-stone-600 mb-1.5">
-                  <span className="truncate min-w-0 flex-1 leading-snug">
-                    {uploadProgress?.mensaje ?? 'Iniciando…'}
-                  </span>
-                  <span className="tabular-nums text-stone-500 font-medium shrink-0 pt-px">
-                    {uploadProgress?.porcentaje ?? 0}%
-                  </span>
-                </div>
                 <div
-                  className="h-1 w-full overflow-hidden rounded-full bg-stone-200/90"
-                  role="progressbar"
-                  aria-valuemin={0}
-                  aria-valuemax={100}
-                  aria-valuenow={uploadProgress?.porcentaje ?? 0}
-                  aria-label="Progreso de carga"
-                >
-                  <div
-                    className="h-full rounded-full bg-[#42A5F5]/88 transition-[width] duration-200 ease-out"
-                    style={{ width: `${Math.min(100, Math.max(0, uploadProgress?.porcentaje ?? 0))}%` }}
-                  />
-                </div>
+                  className="h-full rounded-full bg-primary/80 transition-[width] duration-200 ease-out"
+                  style={{ width: `${Math.min(100, Math.max(0, uploadProgress?.porcentaje ?? 0))}%` }}
+                />
               </div>
-            )}
-            {downloading && !uploading && (
-              <div className="w-full bg-gray-200 rounded-full h-2">
-                <div className="bg-[#42A5F5] h-2 rounded-full animate-pulse" style={{ width: '100%' }} />
-              </div>
-            )}
-          </div>
-        )}
-
-        {error && (
-          <div className="bg-red-50 border border-red-200 text-red-800 px-4 py-3 rounded whitespace-pre-line">
-            {error}
-          </div>
-        )}
-        {validMessage && (
-          <div className="bg-green-50 border border-green-200 text-green-800 px-4 py-3 rounded">
-            {validMessage}
-          </div>
-        )}
-
-        <p className="text-sm text-gray-600">
-          Archivos permitidos: .xml, .xlsx, .xls. Tamaño máximo: 10MB.
-        </p>
-
-        <hr className="my-4 border-gray-200" />
-
-        <div className="space-y-2">
-          <p className="text-sm text-gray-600">
-            <strong>Plantillas vacías:</strong> Descarga archivos con el formato correcto para crear nuevas obras desde cero. 
-            Útil si necesitas preparar un archivo manualmente con la estructura adecuada.
-          </p>
-          {!soloLectura && (
-            <div className="flex flex-col sm:flex-row gap-2">
-              <button
-                onClick={handleDownloadTemplate}
-                className={BTN_GHOST}
-              >
-                <DownloadIcon className="mr-1 text-sm" />
-                Plantilla XML
-              </button>
-              <button
-                onClick={handleDownloadTemplateExcel}
-                className={BTN_GHOST}
-              >
-                <DownloadIcon className="mr-1 text-sm" />
-                Plantilla Excel
-              </button>
             </div>
           )}
+          {downloading && !uploading && (
+            <div className={`${SEPRI_INSET} px-3 py-2`}>
+              <div className="h-1 w-full overflow-hidden rounded-full bg-stone-200/90">
+                <div className="h-full w-full rounded-full bg-primary/60 animate-pulse" />
+              </div>
+              <p className="text-xs text-stone-500 mt-2">Generando archivo de exportación…</p>
+            </div>
+          )}
+          {error && (
+            <div className={`${CA_ALERTA_ERROR} whitespace-pre-line`}>{error}</div>
+          )}
+          {validMessage && (
+            <div className={CA_ALERTA_OK}>{validMessage}</div>
+          )}
         </div>
+      )}
 
-        <hr className="my-6 border-gray-200" />
+      {soloLectura && (
+        <p className="text-sm text-stone-500 px-1">
+          Solo visualización: no tienes permiso para cargar o editar obras.
+        </p>
+      )}
 
-        {/* Formulario de edición de obra - oculto en solo lectura */}
-        {!soloLectura && (
-        <div className="space-y-6">
-          {/* Encabezado de la sección */}
-          <div className="bg-gradient-to-r from-[#42A5F5] to-blue-600 rounded-lg shadow-md p-6 text-white">
-            <div className="flex items-center gap-3 mb-2">
-              <EditIcon className="text-2xl" />
-              <h4 className="text-xl font-semibold">Editar Obra</h4>
+      {/* Prioridad visual: buscar y editar obra */}
+      {!soloLectura && (
+        <section className={CA_HERO} aria-labelledby="carga-editar-obra-titulo">
+          <div className={CA_HERO_HEADER}>
+            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary shadow-soft">
+              <EditIcon fontSize="small" />
             </div>
-            <p className="text-blue-50 text-sm">
-              Busque una obra por su ID (OB-0000 o MT-0000) para cargar y editar su información.
-            </p>
+            <div className="min-w-0">
+              <h2
+                id="carga-editar-obra-titulo"
+                className="text-base sm:text-lg font-semibold text-stone-800 tracking-tight"
+              >
+                Buscar y editar obra
+              </h2>
+              <p className="text-xs text-stone-400 mt-0.5 leading-relaxed">
+                Busque por SIGEDE, contrato, nombre del plantel, provincia o municipio y edite la obra
+                seleccionada.
+              </p>
+            </div>
           </div>
 
-          {/* Búsqueda de obra - Card destacado */}
-          <div className="bg-white border-2 border-[#42A5F5] rounded-lg shadow-lg p-6">
-            <div className="flex items-center gap-2 mb-4">
-              <SearchIcon className="text-[#42A5F5] text-xl" />
-              <h5 className="text-lg font-semibold text-gray-800">Buscar Obra</h5>
-            </div>
-            <div className="space-y-2">
-              <label className="block text-sm font-medium text-gray-700">
-                ID de Obra (OB-0000, MT-0000)
-              </label>
-              <div className="flex flex-col sm:flex-row gap-3 items-start">
-                <div className="flex-1 w-full">
-                  <input
-                    type="text"
-                    placeholder="Ej: OB-0000 o MT-0000"
-                    value={obraId}
-                    onChange={(e) => setObraId(e.target.value.toUpperCase())}
-                    onKeyPress={(e) => {
-                      if (e.key === 'Enter') {
-                        handleBuscarObra();
-                      }
-                    }}
-                    pattern="^(OB|MT)-\d{4}$"
-                    className="w-full px-4 py-3 border-2 border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-[#42A5F5] focus:border-[#42A5F5] transition-all text-base font-mono"
-                  />
-                </div>
-                <button
-                  onClick={handleBuscarObra}
-                  disabled={loadingObra || !obraId.trim()}
-                  className={BTN_PRIMARY}
-                >
-                  <SearchIcon className="mr-2" />
-                  {loadingObra ? 'Buscando...' : 'Buscar Obra'}
-                </button>
-              </div>
-              <p className="text-xs text-gray-500">Formato: OB-0000 o MT-0000 (4 dígitos)</p>
-            </div>
-
-            {obraMessage && (
-              <div className={`mt-4 px-4 py-3 rounded-lg border-2 ${
-                obraMessage.type === 'success' 
-                  ? 'bg-green-50 border-green-300 text-green-800' 
-                  : 'bg-red-50 border-red-300 text-red-800'
-              }`}>
-                <div className="flex items-center gap-2">
-                  {obraMessage.type === 'success' ? (
-                    <CheckCircleIcon className="text-green-600" />
-                  ) : (
-                    <InfoIcon className="text-red-600" />
-                  )}
-                  <span className="font-medium">{obraMessage.text}</span>
-                </div>
-              </div>
-            )}
-          </div>
-
-          {/* Formulario de obra - Solo se muestra si hay una obra cargada */}
-          {obraActualId && (
-            <div className="space-y-6">
-              <ObraFormulario
-                form={obraFormState}
-                onChange={setObraFormState}
-                estadosDisponibles={estadosParaDescarga}
-                responsableSugerencias={obraFormResponsableSugerencias}
-                loadingResponsableSugerencias={loadingObraFormResponsable}
-                readOnly={soloLectura}
+          <div className="p-4 sm:p-5 space-y-5">
+            <div className={CA_BLOQUE_BUSQUEDA}>
+              <p className={CA_BLOQUE_TITULO}>Búsqueda</p>
+              <ObraEdicionBuscador
+                busqueda={obraBusqueda}
+                onBusquedaChange={setObraBusqueda}
+                onSeleccionar={handleSeleccionarObraEdicion}
+                onBuscar={handleBuscarObra}
+                loading={loadingObra}
               />
 
-              {!soloLectura && (
-              <div className="bg-gradient-to-r from-green-500 to-green-600 rounded-lg shadow-lg p-6">
-                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-                  <div className="text-white">
-                    <p className="font-semibold text-lg mb-1">¿Listo para guardar los cambios?</p>
-                    <p className="text-sm text-green-50">
-                      Revisa todas las áreas antes de actualizar.
+              {obraMessage && (
+                <div
+                  className={
+                    obraMessage.type === 'success' ? CA_ALERTA_OK : CA_ALERTA_ERROR
+                  }
+                >
+                  {obraMessage.type === 'success' ? (
+                    <CheckCircleIcon className="shrink-0" fontSize="small" />
+                  ) : (
+                    <InfoIcon className="shrink-0" fontSize="small" />
+                  )}
+                  <span>{obraMessage.text}</span>
+                </div>
+              )}
+            </div>
+
+            {obraActualId && (
+              <div className="space-y-5">
+                <ObraFormulario
+                  form={obraFormState}
+                  onChange={setObraFormState}
+                  estadosDisponibles={estadosParaDescarga}
+                  responsableSugerencias={obraFormResponsableSugerencias}
+                  loadingResponsableSugerencias={loadingObraFormResponsable}
+                  readOnly={soloLectura}
+                />
+
+                <div
+                  className={`${SEPRI_INSET} flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 p-4`}
+                >
+                  <div>
+                    <p className="text-sm font-semibold text-stone-700">Guardar cambios</p>
+                    <p className="text-xs text-stone-400 mt-0.5">
+                      Revise todas las áreas del formulario antes de actualizar.
                     </p>
                   </div>
                   <button
                     type="button"
                     onClick={handleActualizarObra}
                     disabled={savingObra}
-                    className={`${BTN_PRIMARY} !bg-white/20 !text-white border border-white/40 hover:!bg-white/30`}
+                    className={BTN_PRIMARY}
                   >
-                    <SaveIcon className="mr-2" />
-                    {savingObra ? 'Guardando...' : 'Guardar Cambios'}
+                    <SaveIcon className="mr-2" fontSize="small" />
+                    {savingObra ? 'Guardando…' : 'Guardar cambios'}
                   </button>
                 </div>
               </div>
+            )}
+
+            {!obraActualId && !loadingObra && (
+              <div className={`${SEPRI_INSET} flex flex-col items-center justify-center text-center px-6 py-10`}>
+                <SearchIcon className="text-stone-300 mb-2" sx={{ fontSize: 40 }} />
+                <p className="text-sm text-stone-500">Busque una obra para ver y editar su información.</p>
+              </div>
+            )}
+          </div>
+        </section>
+      )}
+
+      {panelAbierto && !soloLectura && (
+        <div
+          className={CA_MODAL_OVERLAY}
+          onClick={() => setPanelAbierto(null)}
+          role="presentation"
+        >
+          <div
+            className={`${CA_MODAL_PANEL} ${panelAbierto === 'exportar' ? 'max-w-3xl' : 'max-w-lg'}`}
+            onClick={(e) => e.stopPropagation()}
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="carga-panel-titulo"
+          >
+            <div className="flex items-start justify-between gap-3 p-5 border-b border-stone-100">
+              <div>
+                <h3
+                  id="carga-panel-titulo"
+                  className="text-base font-semibold text-stone-800"
+                >
+                  {panelAbierto === 'plantilla' && 'Plantillas vacías'}
+                  {panelAbierto === 'importar' && 'Importar obras'}
+                  {panelAbierto === 'exportar' && 'Exportar obras'}
+                </h3>
+                <p className="text-xs text-stone-400 mt-1">
+                  {panelAbierto === 'plantilla' &&
+                    'Descargue el formato correcto para preparar archivos de carga manual.'}
+                  {panelAbierto === 'importar' &&
+                    'Suba un archivo Excel o XML con múltiples obras (máx. 10 MB).'}
+                  {panelAbierto === 'exportar' &&
+                    'Filtre el listado y descargue un Excel con las obras que coincidan.'}
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setPanelAbierto(null)}
+                className="text-stone-400 hover:text-stone-600 p-1 rounded-lg"
+                aria-label="Cerrar"
+              >
+                <CloseIcon fontSize="small" />
+              </button>
+            </div>
+
+            <div className="p-5 space-y-4">
+              {panelAbierto === 'plantilla' && (
+                <div className="flex flex-col sm:flex-row gap-2">
+                  <button type="button" onClick={handleDownloadTemplate} className={BTN_GHOST}>
+                    <DownloadIcon className="mr-1" fontSize="small" />
+                    Plantilla XML
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleDownloadTemplateExcel}
+                    className={BTN_GHOST}
+                  >
+                    <DownloadIcon className="mr-1" fontSize="small" />
+                    Plantilla Excel
+                  </button>
+                </div>
+              )}
+
+              {panelAbierto === 'importar' && (
+                <>
+                  <label className={CA_DROPZONE}>
+                    <CloudUploadIcon className="text-primary/70" />
+                    <span className="text-sm font-medium text-stone-600">
+                      {file ? file.name : 'Seleccionar archivo XML o Excel'}
+                    </span>
+                    <span className="text-xs text-stone-400">
+                      {file
+                        ? `${(file.size / 1024).toFixed(1)} KB`
+                        : 'Arrastre aquí o haga clic para elegir'}
+                    </span>
+                    <input
+                      ref={inputRef}
+                      hidden
+                      type="file"
+                      accept=".xml,.xlsx,.xls,application/xml,text/xml,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel"
+                      onChange={onChooseFile}
+                    />
+                  </label>
+                  <div className="flex flex-col sm:flex-row gap-2">
+                    <button
+                      type="button"
+                      onClick={handleValidate}
+                      disabled={!file || uploading || downloading}
+                      className={BTN_SECONDARY}
+                    >
+                      <CheckCircleIcon className="mr-2" fontSize="small" />
+                      Validar archivo
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleUpload}
+                      disabled={!file || uploading || downloading}
+                      className={BTN_PRIMARY}
+                    >
+                      <CloudUploadIcon className="mr-2" fontSize="small" />
+                      Subir y procesar
+                    </button>
+                  </div>
+                  <p className="text-xs text-stone-400">
+                    Formatos: .xml, .xlsx, .xls · Tamaño máximo 10 MB
+                  </p>
+                </>
+              )}
+
+              {panelAbierto === 'exportar' && (
+                <>
+                  <div className={CA_GRID_FILTROS}>
+                    <div>
+                      <label className={CA_LABEL}>Búsqueda general</label>
+                      <AutocompleteInput
+                        value={downloadFilters.search}
+                        onChange={handleFilterValueChange('search')}
+                        options={searchSugerencias}
+                        loading={loadingSearchSugerencias}
+                        placeholder="Nombre, código, estado…"
+                        className={CA_FIELD}
+                      />
+                    </div>
+                    <div>
+                      <label className={CA_LABEL}>Estado</label>
+                      <select
+                        value={downloadFilters.estado}
+                        onChange={handleFilterChange('estado')}
+                        className={selectClassName}
+                      >
+                        <option value="">Todos</option>
+                        {estadosParaDescarga.map((estado: string) => (
+                          <option key={estado} value={estado}>
+                            {estado}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                    <div>
+                      <label className={CA_LABEL}>Responsable</label>
+                      <AutocompleteInput
+                        value={downloadFilters.responsable}
+                        onChange={handleFilterValueChange('responsable')}
+                        options={responsableSugerencias}
+                        loading={loadingResponsableSugerencias}
+                        placeholder="Contratista / responsable"
+                        className={CA_FIELD}
+                      />
+                    </div>
+                    <div>
+                      <label className={CA_LABEL}>Provincia</label>
+                      <select
+                        value={downloadFilters.provincia}
+                        onChange={handleFilterChange('provincia')}
+                        className={selectClassName}
+                      >
+                        <option value="">Todas</option>
+                        {opcionesDescarga.provincias.map((provincia) => (
+                          <option key={provincia} value={provincia}>
+                            {provincia}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                    <div>
+                      <label className={CA_LABEL}>Municipio</label>
+                      <select
+                        value={downloadFilters.municipio}
+                        onChange={handleFilterChange('municipio')}
+                        className={selectClassName}
+                      >
+                        <option value="">Todos</option>
+                        {municipiosDisponibles.map((municipio) => (
+                          <option key={municipio} value={municipio}>
+                            {municipio}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                    <div>
+                      <label className={CA_LABEL}>Nivel</label>
+                      <select
+                        value={downloadFilters.nivel}
+                        onChange={handleFilterChange('nivel')}
+                        className={selectClassName}
+                      >
+                        <option value="">Todos</option>
+                        {opcionesDescarga.niveles.map((nivel) => (
+                          <option key={nivel} value={nivel}>
+                            {nivel}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                    <div>
+                      <label className={CA_LABEL}>Inauguración desde</label>
+                      <input
+                        type="date"
+                        value={downloadFilters.fechaInauguracionDesde}
+                        onChange={handleFilterChange('fechaInauguracionDesde')}
+                        className={CA_FIELD}
+                      />
+                    </div>
+                    <div>
+                      <label className={CA_LABEL}>Inauguración hasta</label>
+                      <input
+                        type="date"
+                        value={downloadFilters.fechaInauguracionHasta}
+                        onChange={handleFilterChange('fechaInauguracionHasta')}
+                        className={CA_FIELD}
+                      />
+                    </div>
+                  </div>
+                  <div className="flex justify-end pt-2">
+                    <button
+                      type="button"
+                      onClick={handleDownloadData}
+                      disabled={downloading}
+                      className={BTN_ACCENT}
+                    >
+                      <DownloadIcon className="mr-1.5" fontSize="small" />
+                      {downloading ? 'Generando…' : 'Descargar Excel'}
+                    </button>
+                  </div>
+                </>
               )}
             </div>
-          )}
+          </div>
         </div>
-        )}
-      </div>
+      )}
     </div>
   );
 };
