@@ -1,14 +1,15 @@
 import React, { useRef, useState } from 'react';
-import { Roofing, Upload, Link as LinkIcon } from '@mui/icons-material';
+import { Roofing, Upload, Link as LinkIcon, Add } from '@mui/icons-material';
 import type { MatrizGeneralVista } from '../types/database';
 import { techadoAPI } from '../services/api';
 import { parsearMatrizTechadoDesdeFile } from '../utils/parsearMatrizTechadoExcel';
 import MatrizGeneralTable from './MatrizGeneralTable';
 import TechadoMatrizEditor from './TechadoMatrizEditor';
 import TechadoObraEditor from './TechadoObraEditor';
+import NuevoTechadoDialog from './NuevoTechadoDialog';
 import ModuloPageHeader from './ui/ModuloPageHeader';
 import { TECHADO_MODULO } from '../constants/techadoModulo';
-import { BTN_SECONDARY, BTN_GHOST } from '../constants/buttonStyles';
+import { BTN_PRIMARY, BTN_SECONDARY, BTN_GHOST } from '../constants/buttonStyles';
 import { CA_ALERTA_OK, CA_ALERTA_ERROR } from '../constants/cargaArchivosUi';
 
 interface TechadoProps {
@@ -32,6 +33,7 @@ const Techado: React.FC<TechadoProps> = ({
   const [listRefresh, setListRefresh] = useState(0);
   const [importando, setImportando] = useState(false);
   const [vinculando, setVinculando] = useState(false);
+  const [nuevoDialogOpen, setNuevoDialogOpen] = useState(false);
   const [statusMsg, setStatusMsg] = useState<{ type: 'ok' | 'err'; text: string } | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
 
@@ -97,6 +99,16 @@ const Techado: React.FC<TechadoProps> = ({
     }
   };
 
+  const handleTechadoCreado = (matrizId: string, info: { obraVinculada: boolean }) => {
+    const extra = info.obraVinculada
+      ? ' Obra SIGEDE vinculada automáticamente.'
+      : ' Puede vincular la obra después con «Vincular obras» o en el editor.';
+    setStatusMsg({ type: 'ok', text: `Techado creado correctamente.${extra}` });
+    bumpList();
+    setMatrizId(matrizId);
+    setVista('matriz');
+  };
+
   if (vista === 'obra' && obraId) {
     return (
       <TechadoObraEditor
@@ -134,6 +146,14 @@ const Techado: React.FC<TechadoProps> = ({
       >
         {!soloLectura && (
           <>
+            <button
+              type="button"
+              onClick={() => setNuevoDialogOpen(true)}
+              className={BTN_PRIMARY}
+            >
+              <Add fontSize="small" className="mr-1.5" />
+              Nuevo techado
+            </button>
             <input
               ref={fileRef}
               type="file"
@@ -176,6 +196,12 @@ const Techado: React.FC<TechadoProps> = ({
         key={listRefresh}
         refreshTrigger={refreshTrigger}
         onFilaClick={handleFilaClick}
+      />
+
+      <NuevoTechadoDialog
+        open={nuevoDialogOpen}
+        onClose={() => setNuevoDialogOpen(false)}
+        onCreado={handleTechadoCreado}
       />
     </div>
   );

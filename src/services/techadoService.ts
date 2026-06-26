@@ -447,6 +447,89 @@ export const techadoService = {
     return data as ContratoTechado;
   },
 
+  crearTechado: async (input: import('../types/database').CrearTechadoInput) => {
+    const lote = Number(input.lote);
+    if (!Number.isFinite(lote) || lote < 1) {
+      throw new Error('Indique un número de lote válido (entero mayor que 0).');
+    }
+
+    const noContrato = normalizarNoContrato(input.no_contrato);
+    if (!noContrato) {
+      throw new Error('El número de contrato es obligatorio (formato xxxx-xxxx).');
+    }
+
+    const plantel = (input.plantel || '').trim();
+    if (!plantel) {
+      throw new Error('El nombre del plantel es obligatorio.');
+    }
+
+    const { data: upsertedContrato, error: cErr } = await supabase
+      .from('contrato')
+      .upsert(
+        {
+          lote,
+          no_contrato: noContrato,
+          contratista_nombre: input.contratista_nombre?.trim() || null,
+        },
+        { onConflict: 'lote,no_contrato' },
+      )
+      .select('id')
+      .single();
+    if (cErr) throw cErr;
+
+    const contratoId = upsertedContrato.id as string;
+    const matrizExistente = await obtenerMatrizExistente(contratoId, plantel);
+    if (matrizExistente) {
+      throw new Error(
+        `Ya existe un techado para «${plantel}» en el contrato ${noContrato} (lote ${lote}).`,
+      );
+    }
+
+    let obraId = input.obra_id?.trim() || null;
+    const regDist = normalizarRegDist(input.reg_dist) || null;
+    if (!obraId) {
+      obraId = await buscarObraIdParaMatrizEnBd({
+        no_contrato: noContrato,
+        reg_dist: regDist,
+        plantel,
+        provincia: input.provincia,
+        municipio: input.municipio,
+      });
+    }
+
+    const estatus = input.estatus?.trim() || null;
+    const matrizPayload = {
+      contrato_id: contratoId,
+      lote,
+      plantel,
+      provincia: input.provincia?.trim() || null,
+      municipio: input.municipio?.trim() || null,
+      reg_dist: regDist,
+      estatus,
+      ...(obraId ? { obra_id: obraId } : {}),
+    };
+
+    const { data: matriz, error: mErr } = await supabase
+      .from('matriz_general')
+      .insert(matrizPayload)
+      .select('id')
+      .single();
+    if (mErr) throw mErr;
+
+    const matrizId = matriz.id as string;
+
+    if (obraId) {
+      await marcarObraComoTechados(obraId);
+      await reconciliarEstadoAlVincular(obraId, estatus);
+    }
+
+    return {
+      matrizId,
+      contratoId,
+      obraVinculada: !!obraId,
+    };
+  },
+
   vincularObrasEnMatriz: async (): Promise<{ vinculadas: number; sinObra: number }> => {
     const { data: filas, error } = await supabase
       .from('matriz_general')

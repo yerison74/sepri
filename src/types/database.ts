@@ -562,3 +562,22 @@ export interface MatrizGeneralFilters {
   limit?: number;
   offset?: number;
 }
+
+/** Datos mínimos para crear un registro Techado (contrato + plantel en matriz). */
+export interface CrearTechadoInput {
+  lote: number;
+  no_contrato: string;
+  plantel: string;
+  provincia?: string | null;
+  municipio?: string | null;
+  reg_dist?: string | null;
+  contratista_nombre?: string | null;
+  estatus?: string | null;
+  obra_id?: string | null;
+}
+
+export interface CrearTechadoResult {
+  matrizId: string;
+  contratoId: string;
+  obraVinculada: boolean;
+}

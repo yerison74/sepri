@@ -12,6 +12,8 @@ import type {
   FormularioContratista,
   MovimientoSolicitudContratista,
   ImportTechadoResult,
+  CrearTechadoInput,
+  CrearTechadoResult,
   MatrizGeneralDetalle,
   MatrizGeneralFilters,
   MatrizGeneralTechado,
@@ -1329,6 +1331,15 @@ export const techadoAPI = {
     try {
       const data = await techadoService.vincularObrasEnMatriz();
       return { data: { data } } as AxiosResponse<{ data: typeof data }>;
+    } catch (error: any) {
+      throw { response: { data: { error: error.message }, status: 500 } };
+    }
+  },
+
+  crearTechado: async (payload: CrearTechadoInput) => {
+    try {
+      const data = await techadoService.crearTechado(payload);
+      return { data: { data } } as AxiosResponse<{ data: CrearTechadoResult }>;
     } catch (error: any) {
       throw { response: { data: { error: error.message }, status: 500 } };
     }
