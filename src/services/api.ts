@@ -30,18 +30,18 @@ import {
 } from './fileProcessor';
 import type { ProgresoCargaCallback } from './fileProcessor';
 import * as XLSX from 'xlsx';
-import {
-  PLANTILLA_OBRAS_HEADERS,
-  PLANTILLA_OBRAS_EJEMPLO,
-  PLANTILLA_OBRAS_COL_WIDTHS,
-  generarXmlPlantillaObras,
-} from '../constants/obraPlantillaCarga';
+import { generarXmlPlantillaObras } from '../constants/obraPlantillaCarga';
 import {
   construirWorkbookExport,
   construirWorkbookPlantilla,
   parsearArchivoExcel,
   workbookABlob,
 } from '../utils/gestionTecnicaDocumentoExcel';
+import {
+  construirWorkbookPlantillaObras,
+  construirWorkbookExportObras,
+  workbookObrasABlob,
+} from '../utils/obraPlantillaExcel';
 
 export type { ProgresoCargaObra, ProgresoCargaCallback } from './fileProcessor';
 
@@ -450,41 +450,26 @@ export const gestionTecnicaDocumentoAPI = {
 
 // Upload API - Usando Supabase
 export const uploadAPI = {
-  descargarDatos: async (params: {
-    estado?: string;
-    responsable?: string;
-    search?: string;
-    provincia?: string;
-    municipio?: string;
-    nivel?: string;
-    fechaInauguracionDesde?: string;
-    fechaInauguracionHasta?: string;
-  }) => {
+  descargarDatos: async (filtros: ObrasFilters = {}) => {
     try {
-      // Obtener obras con filtros desde Supabase
-      const response = await obrasService.obtenerObras({
-        proyeccion: 'completo',
-        estado: params.estado,
-        responsable: params.responsable,
-        search: params.search,
-        provincia: params.provincia,
-        municipio: params.municipio,
-        nivel: params.nivel,
-        fechaInauguracionDesde: params.fechaInauguracionDesde,
-        fechaInauguracionHasta: params.fechaInauguracionHasta,
-      });
+      const PAGE = 1000;
+      const obras: Obra[] = [];
+      let offset = 0;
 
-      // Convertir a Excel
-      const obras = response.data;
-      const worksheet = XLSX.utils.json_to_sheet(obras);
-      const workbook = XLSX.utils.book_new();
-      XLSX.utils.book_append_sheet(workbook, worksheet, 'Obras');
-      
-      // Generar blob
-      const excelBuffer = XLSX.write(workbook, { type: 'array', bookType: 'xlsx' });
-      const blob = new Blob([excelBuffer], { 
-        type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' 
-      });
+      for (;;) {
+        const response = await obrasService.obtenerObras({
+          ...filtros,
+          proyeccion: 'completo',
+          limit: PAGE,
+          offset,
+        });
+        obras.push(...response.data);
+        if (response.data.length < PAGE) break;
+        offset += PAGE;
+      }
+
+      const wb = construirWorkbookExportObras(obras);
+      const blob = workbookObrasABlob(wb);
 
       return {
         data: blob,
@@ -646,20 +631,18 @@ export const uploadAPI = {
   },
 
   descargarPlantillaExcel: () => {
-    const worksheet = XLSX.utils.aoa_to_sheet([PLANTILLA_OBRAS_HEADERS, PLANTILLA_OBRAS_EJEMPLO]);
-    worksheet['!cols'] = PLANTILLA_OBRAS_COL_WIDTHS;
-
-    const workbook = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(workbook, worksheet, 'Obras');
-
-    const excelBuffer = XLSX.write(workbook, { type: 'array', bookType: 'xlsx' });
-    const blob = new Blob([excelBuffer], {
-      type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-    });
-
-    return Promise.resolve({
-      data: blob,
-    } as AxiosResponse<Blob>);
+    try {
+      const wb = construirWorkbookPlantillaObras();
+      const blob = workbookObrasABlob(wb);
+      return Promise.resolve({ data: blob } as AxiosResponse<Blob>);
+    } catch (error: any) {
+      throw {
+        response: {
+          data: { error: error.message || 'Error al generar plantilla' },
+          status: 500,
+        },
+      };
+    }
   },
 
   subirExcel: async (file: File, onProgreso?: ProgresoCargaCallback) => {

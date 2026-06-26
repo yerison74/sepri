@@ -1,4 +1,4 @@
-import React, { useState, useRef, useMemo, useEffect } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import CloudUploadIcon from '@mui/icons-material/CloudUpload';
 import CheckCircleIcon from '@mui/icons-material/CheckCircle';
 import DownloadIcon from '@mui/icons-material/Download';
@@ -8,15 +8,22 @@ import EditIcon from '@mui/icons-material/Edit';
 import InfoIcon from '@mui/icons-material/Info';
 import CloseIcon from '@mui/icons-material/Close';
 import DescriptionIcon from '@mui/icons-material/Description';
-import { uploadAPI, statsAPI } from '../services/api';
+import { uploadAPI, mantenimientosAPI } from '../services/api';
 import type { ProgresoCargaObra } from '../services/api';
 import { obrasService, contratistasService } from '../services/supabaseService';
 import AutocompleteInput from './AutocompleteInput';
 import ObraFormulario from './ObraFormulario';
 import ObraEdicionBuscador from './ObraEdicionBuscador';
+import ReporteObrasFiltros from './ReporteObrasFiltros';
 import ModuloPageHeader from './ui/ModuloPageHeader';
 import type { ObraEdicionOpcion } from '../types/database';
 import type { Obra } from '../services/api';
+import {
+  EMPTY_REPORTE_OBRAS_FILTERS,
+  reporteFiltrosToObrasFilters,
+  contarFiltrosActivos,
+  type ReporteObrasFiltrosState,
+} from '../constants/obraFiltrosReporte';
 import {
   createEmptyObraFormState,
   obraToFormState,
@@ -41,7 +48,6 @@ import {
   CA_ALERTA_OK,
   CA_ALERTA_ERROR,
   CA_DROPZONE,
-  CA_GRID_FILTROS,
   SEPRI_INSET,
   CA_MODAL_OVERLAY,
   CA_MODAL_PANEL,
@@ -67,64 +73,30 @@ const FileUpload: React.FC<FileUploadProps> = ({ onUploadComplete, onError, solo
   const [uploadProgress, setUploadProgress] = useState<ProgresoCargaObra | null>(null);
   const [downloading, setDownloading] = useState(false);
   const [estadosParaDescarga, setEstadosParaDescarga] = useState<string[]>([]);
-  const [opcionesDescarga, setOpcionesDescarga] = useState<{
-    provincias: string[];
-    municipios: { provincia: string; municipio: string }[];
-    niveles: string[];
-  }>({ provincias: [], municipios: [], niveles: [] });
   const [searchSugerencias, setSearchSugerencias] = useState<string[]>([]);
   const [responsableSugerencias, setResponsableSugerencias] = useState<string[]>([]);
   const [loadingSearchSugerencias, setLoadingSearchSugerencias] = useState(false);
   const [loadingResponsableSugerencias, setLoadingResponsableSugerencias] = useState(false);
-  const [downloadFilters, setDownloadFilters] = useState({
-    search: '',
-    estado: '',
-    responsable: '',
-    provincia: '',
-    municipio: '',
-    nivel: '',
-    fechaInauguracionDesde: '',
-    fechaInauguracionHasta: ''
+  const [exportFilters, setExportFilters] = useState<ReporteObrasFiltrosState>({
+    ...EMPTY_REPORTE_OBRAS_FILTERS,
   });
   const inputRef = useRef<HTMLInputElement | null>(null);
 
-  // Cargar estados y opciones de filtro desde la BD para la descarga
   useEffect(() => {
     const load = async () => {
       try {
-        const [resEstados, resOpciones] = await Promise.all([
-          statsAPI.obtenerResumenDashboard(),
-          uploadAPI.obtenerOpcionesFiltroDescarga(),
-        ]);
-        const porEstado = resEstados?.data?.data?.estadisticas?.porEstado;
-        if (Array.isArray(porEstado)) {
-          setEstadosParaDescarga(porEstado.map((e: { estado: string }) => e.estado));
-        }
-        const opciones = resOpciones?.data?.data;
-        if (opciones) {
-          setOpcionesDescarga(opciones);
-        }
+        const resEstados = await mantenimientosAPI.obtenerEstadosDistintos();
+        const lista = resEstados?.data?.data;
+        if (Array.isArray(lista)) setEstadosParaDescarga(lista);
       } catch {
         setEstadosParaDescarga([]);
-        setOpcionesDescarga({ provincias: [], municipios: [], niveles: [] });
       }
     };
     load();
   }, []);
 
-  const municipiosDisponibles = useMemo(() => {
-    const { municipios } = opcionesDescarga;
-    if (downloadFilters.provincia) {
-      return municipios
-        .filter((m) => m.provincia === downloadFilters.provincia)
-        .map((m) => m.municipio);
-    }
-    const unicos = new Set(municipios.map((m) => m.municipio));
-    return Array.from(unicos).sort((a, b) => a.localeCompare(b, 'es'));
-  }, [opcionesDescarga, downloadFilters.provincia]);
-
   useEffect(() => {
-    const term = downloadFilters.search.trim();
+    const term = exportFilters.search.trim();
     if (term.length < 2) {
       setSearchSugerencias([]);
       setLoadingSearchSugerencias(false);
@@ -142,10 +114,10 @@ const FileUpload: React.FC<FileUploadProps> = ({ onUploadComplete, onError, solo
       }
     }, 300);
     return () => window.clearTimeout(timer);
-  }, [downloadFilters.search]);
+  }, [exportFilters.search]);
 
   useEffect(() => {
-    const term = downloadFilters.responsable.trim();
+    const term = exportFilters.responsable.trim();
     if (term.length < 2) {
       setResponsableSugerencias([]);
       setLoadingResponsableSugerencias(false);
@@ -163,7 +135,7 @@ const FileUpload: React.FC<FileUploadProps> = ({ onUploadComplete, onError, solo
       }
     }, 300);
     return () => window.clearTimeout(timer);
-  }, [downloadFilters.responsable]);
+  }, [exportFilters.responsable]);
 
   const [obraFormState, setObraFormState] = useState<ObraFormState>(createEmptyObraFormState());
   const [obraFormResponsableSugerencias, setObraFormResponsableSugerencias] = useState<string[]>([]);
@@ -348,11 +320,8 @@ const FileUpload: React.FC<FileUploadProps> = ({ onUploadComplete, onError, solo
       resetMessages();
       setDownloading(true);
 
-      const params = Object.fromEntries(
-        Object.entries(downloadFilters).filter(([, value]) => value && value !== '')
-      );
-
-      const response = await uploadAPI.descargarDatos(params);
+      const filtros = reporteFiltrosToObrasFilters(exportFilters);
+      const response = await uploadAPI.descargarDatos(filtros);
       const blob = new Blob([response.data], {
         type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
       });
@@ -374,27 +343,7 @@ const FileUpload: React.FC<FileUploadProps> = ({ onUploadComplete, onError, solo
     }
   };
 
-  const handleFilterChange = (field: keyof typeof downloadFilters) => (event: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => {
-    const value = event.target.value;
-    setDownloadFilters((prev) => {
-      const next = { ...prev, [field]: value };
-      if (field === 'provincia') {
-        const municipiosValidos = opcionesDescarga.municipios
-          .filter((m) => m.provincia === value)
-          .map((m) => m.municipio);
-        if (prev.municipio && value && !municipiosValidos.includes(prev.municipio)) {
-          next.municipio = '';
-        }
-      }
-      return next;
-    });
-  };
-
-  const handleFilterValueChange = (field: keyof typeof downloadFilters) => (value: string) => {
-    setDownloadFilters((prev) => ({ ...prev, [field]: value }));
-  };
-
-  const selectClassName = CA_FIELD;
+  const filtrosExportActivos = contarFiltrosActivos(exportFilters);
 
   const aplicarObraEnFormulario = (obra: Obra) => {
     setObraFormState(obraToFormState(obra));
@@ -703,7 +652,7 @@ const FileUpload: React.FC<FileUploadProps> = ({ onUploadComplete, onError, solo
           role="presentation"
         >
           <div
-            className={`${CA_MODAL_PANEL} ${panelAbierto === 'exportar' ? 'max-w-3xl' : 'max-w-lg'}`}
+            className={`${CA_MODAL_PANEL} ${panelAbierto === 'exportar' ? 'max-w-5xl' : 'max-w-lg'}`}
             onClick={(e) => e.stopPropagation()}
             role="dialog"
             aria-modal="true"
@@ -721,11 +670,11 @@ const FileUpload: React.FC<FileUploadProps> = ({ onUploadComplete, onError, solo
                 </h3>
                 <p className="text-xs text-stone-400 mt-1">
                   {panelAbierto === 'plantilla' &&
-                    'Descargue el formato correcto para preparar archivos de carga manual.'}
+                    'Descargue el formato correcto (hoja Obras + referencia de columnas).'}
                   {panelAbierto === 'importar' &&
                     'Suba un archivo Excel o XML con múltiples obras (máx. 10 MB).'}
                   {panelAbierto === 'exportar' &&
-                    'Filtre el listado y descargue un Excel con las obras que coincidan.'}
+                    'Filtre por cualquier campo del reporte y descargue un Excel con el mismo formato que la plantilla de carga.'}
                 </p>
               </div>
               <button
@@ -804,109 +753,27 @@ const FileUpload: React.FC<FileUploadProps> = ({ onUploadComplete, onError, solo
 
               {panelAbierto === 'exportar' && (
                 <>
-                  <div className={CA_GRID_FILTROS}>
-                    <div>
-                      <label className={CA_LABEL}>Búsqueda general</label>
-                      <AutocompleteInput
-                        value={downloadFilters.search}
-                        onChange={handleFilterValueChange('search')}
-                        options={searchSugerencias}
-                        loading={loadingSearchSugerencias}
-                        placeholder="Nombre, código, estado…"
-                        className={CA_FIELD}
-                      />
-                    </div>
-                    <div>
-                      <label className={CA_LABEL}>Estado</label>
-                      <select
-                        value={downloadFilters.estado}
-                        onChange={handleFilterChange('estado')}
-                        className={selectClassName}
-                      >
-                        <option value="">Todos</option>
-                        {estadosParaDescarga.map((estado: string) => (
-                          <option key={estado} value={estado}>
-                            {estado}
-                          </option>
-                        ))}
-                      </select>
-                    </div>
-                    <div>
-                      <label className={CA_LABEL}>Responsable</label>
-                      <AutocompleteInput
-                        value={downloadFilters.responsable}
-                        onChange={handleFilterValueChange('responsable')}
-                        options={responsableSugerencias}
-                        loading={loadingResponsableSugerencias}
-                        placeholder="Contratista / responsable"
-                        className={CA_FIELD}
-                      />
-                    </div>
-                    <div>
-                      <label className={CA_LABEL}>Provincia</label>
-                      <select
-                        value={downloadFilters.provincia}
-                        onChange={handleFilterChange('provincia')}
-                        className={selectClassName}
-                      >
-                        <option value="">Todas</option>
-                        {opcionesDescarga.provincias.map((provincia) => (
-                          <option key={provincia} value={provincia}>
-                            {provincia}
-                          </option>
-                        ))}
-                      </select>
-                    </div>
-                    <div>
-                      <label className={CA_LABEL}>Municipio</label>
-                      <select
-                        value={downloadFilters.municipio}
-                        onChange={handleFilterChange('municipio')}
-                        className={selectClassName}
-                      >
-                        <option value="">Todos</option>
-                        {municipiosDisponibles.map((municipio) => (
-                          <option key={municipio} value={municipio}>
-                            {municipio}
-                          </option>
-                        ))}
-                      </select>
-                    </div>
-                    <div>
-                      <label className={CA_LABEL}>Nivel</label>
-                      <select
-                        value={downloadFilters.nivel}
-                        onChange={handleFilterChange('nivel')}
-                        className={selectClassName}
-                      >
-                        <option value="">Todos</option>
-                        {opcionesDescarga.niveles.map((nivel) => (
-                          <option key={nivel} value={nivel}>
-                            {nivel}
-                          </option>
-                        ))}
-                      </select>
-                    </div>
-                    <div>
-                      <label className={CA_LABEL}>Inauguración desde</label>
-                      <input
-                        type="date"
-                        value={downloadFilters.fechaInauguracionDesde}
-                        onChange={handleFilterChange('fechaInauguracionDesde')}
-                        className={CA_FIELD}
-                      />
-                    </div>
-                    <div>
-                      <label className={CA_LABEL}>Inauguración hasta</label>
-                      <input
-                        type="date"
-                        value={downloadFilters.fechaInauguracionHasta}
-                        onChange={handleFilterChange('fechaInauguracionHasta')}
-                        className={CA_FIELD}
-                      />
-                    </div>
+                  <div className="max-h-[min(60vh,520px)] overflow-y-auto rounded-2xl bg-warm-50/50 shadow-soft">
+                    <ReporteObrasFiltros
+                      embebido
+                      filters={exportFilters}
+                      onChange={setExportFilters}
+                      estadosDisponibles={estadosParaDescarga}
+                      searchSugerencias={searchSugerencias}
+                      responsableSugerencias={responsableSugerencias}
+                      loadingSearchSugerencias={loadingSearchSugerencias}
+                      loadingResponsableSugerencias={loadingResponsableSugerencias}
+                    />
                   </div>
-                  <div className="flex justify-end pt-2">
+                  <div className="flex flex-wrap items-center justify-between gap-2 pt-2">
+                    <button
+                      type="button"
+                      onClick={() => setExportFilters({ ...EMPTY_REPORTE_OBRAS_FILTERS })}
+                      className={BTN_GHOST}
+                      disabled={filtrosExportActivos === 0}
+                    >
+                      Limpiar filtros
+                    </button>
                     <button
                       type="button"
                       onClick={handleDownloadData}
@@ -915,6 +782,7 @@ const FileUpload: React.FC<FileUploadProps> = ({ onUploadComplete, onError, solo
                     >
                       <DownloadIcon className="mr-1.5" fontSize="small" />
                       {downloading ? 'Generando…' : 'Descargar Excel'}
+                      {filtrosExportActivos > 0 ? ` (${filtrosExportActivos} filtro(s))` : ''}
                     </button>
                   </div>
                 </>

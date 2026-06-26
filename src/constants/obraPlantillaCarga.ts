@@ -2,6 +2,9 @@
  * Columnas de la plantilla Excel/XML para carga masiva de obras.
  * Alineado con tabla obras + datos de contratista (responsable en tabla contratistas).
  */
+import { TIPO_OBRA_OPCIONES } from './tipoObra';
+
+export const PLANTILLA_TIPO_OBRA_VALORES = [...TIPO_OBRA_OPCIONES];
 
 export interface PlantillaColumnaDef {
   key: string;
@@ -17,7 +20,7 @@ export const PLANTILLA_OBRAS_COLUMNAS: PlantillaColumnaDef[] = [
   { grupo: 'PLANTEL', key: 'contrato', label: 'Contrato', ejemplo: '1234-5678', ancho: 12 },
   { grupo: 'PLANTEL', key: 'nombre', label: 'Nombre', ejemplo: 'Nombre de la obra', ancho: 32 },
   { grupo: 'PLANTEL', key: 'nombre_inaugurado', label: 'Nombre inaugurado', ejemplo: 'Nombre tras inauguración', ancho: 32 },
-  { grupo: 'PLANTEL', key: 'tipo_obra', label: 'Tipo obra', ejemplo: 'Construccion', ancho: 14 },
+  { grupo: 'PLANTEL', key: 'tipo_obra', label: 'Tipo obra', ejemplo: 'Techados', ancho: 14 },
   { grupo: 'PLANTEL', key: 'nivel', label: 'Nivel', ejemplo: 'Primario', ancho: 16 },
   { grupo: 'PLANTEL', key: 'descripcion', label: 'Descripción', ejemplo: 'Descripción detallada de la obra', ancho: 40 },
   { grupo: 'PLANTEL', key: 'no_aula', label: 'No. aula', ejemplo: 1, ancho: 10 },
@@ -33,7 +36,7 @@ export const PLANTILLA_OBRAS_COLUMNAS: PlantillaColumnaDef[] = [
   { grupo: 'UBICACIÓN', key: 'municipio', label: 'Municipio', ejemplo: 'Distrito Nacional', ancho: 22 },
   { grupo: 'UBICACIÓN', key: 'latitud', label: 'Latitud', ejemplo: '18.4861', ancho: 12 },
   { grupo: 'UBICACIÓN', key: 'longitud', label: 'Longitud', ejemplo: '-69.9312', ancho: 12 },
-  { grupo: 'UBICACIÓN', key: 'distrito_minerd_sigede', label: 'Distrito MINERD/SIGEDE', ejemplo: 'DIST-001', ancho: 22 },
+  { grupo: 'UBICACIÓN', key: 'distrito_minerd_sigede', label: 'Distrito MINERD/SIGEDE (REG-DIST)', ejemplo: '01-01', ancho: 22 },
   // CONTRATISTA (tabla contratistas; responsable enlaza la obra)
   { grupo: 'CONTRATISTA', key: 'responsable', label: 'Responsable', ejemplo: 'Empresa o contratista S.R.L.', ancho: 30 },
   { grupo: 'CONTRATISTA', key: 'identificacion', label: 'Identificación', ejemplo: '001-0000000-0', ancho: 18 },

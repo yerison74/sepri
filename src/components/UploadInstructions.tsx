@@ -5,7 +5,7 @@ import {
   Info,
   TableChart
 } from '@mui/icons-material';
-import { PLANTILLA_OBRAS_COLUMNAS } from '../constants/obraPlantillaCarga';
+import { PLANTILLA_OBRAS_COLUMNAS, PLANTILLA_TIPO_OBRA_VALORES } from '../constants/obraPlantillaCarga';
 
 const columnasPorGrupo = PLANTILLA_OBRAS_COLUMNAS.reduce<Record<string, string[]>>((acc, col) => {
   if (!acc[col.grupo]) acc[col.grupo] = [];
@@ -71,7 +71,14 @@ const UploadInstructions: React.FC = () => {  return (
           <Info className="text-blue-500 mt-1" />
           <div>
             <div className="font-medium text-sm">Valores para tipo_obra:</div>
-            <div className="text-sm text-gray-600">Construccion, Mantenimiento</div>
+            <div className="text-sm text-gray-600">{PLANTILLA_TIPO_OBRA_VALORES.join(', ')}</div>
+          </div>
+        </div>
+        <div className="flex items-start gap-3">
+          <Info className="text-blue-500 mt-1" />
+          <div>
+            <div className="font-medium text-sm">REG-DIST / distrito MINERD:</div>
+            <div className="text-sm text-gray-600">Formato 01-01 (equivale a distrito_minerd_sigede en obras)</div>
           </div>
         </div>
       </div>

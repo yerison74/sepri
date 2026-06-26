@@ -4,6 +4,13 @@ import {
   PLANTILLA_OBRAS_COLUMNAS,
 } from '../constants/obraPlantillaCarga';
 
+const PLANTILLA_LABEL_TO_KEY = new Map<string, string>(
+  PLANTILLA_OBRAS_COLUMNAS.flatMap((c) => [
+    [c.label.toLowerCase().trim(), c.key],
+    [c.key.toLowerCase(), c.key],
+  ]),
+);
+
 export type ObraCargaArchivo = Omit<Obra, 'id' | 'created_at' | 'updated_at'> & {
   id_obra?: string | null;
 };
@@ -21,8 +28,11 @@ export interface ResultadoMapeoObraCarga {
 function pickRaw(src: Record<string, unknown>, key: string): unknown {
   if (src[key] !== undefined && src[key] !== null && src[key] !== '') return src[key];
   for (const k of Object.keys(src)) {
-    if (k.toLowerCase() === key.toLowerCase()) return src[k];
-    if (k.toLowerCase().replace(/\s+/g, '_') === key.toLowerCase()) return src[k];
+    const norm = k.toLowerCase().trim();
+    if (norm === key.toLowerCase()) return src[k];
+    if (norm.replace(/\s+/g, '_') === key.toLowerCase()) return src[k];
+    const mapped = PLANTILLA_LABEL_TO_KEY.get(norm);
+    if (mapped === key) return src[k];
   }
   return undefined;
 }

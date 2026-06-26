@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
-import { ExpandLess, ExpandMore } from '@mui/icons-material';
 import AutocompleteInput from './AutocompleteInput';
+import SeccionColapsable from './ui/SeccionColapsable';
 import {
   REPORTE_OBRAS_FILTRO_GRUPOS,
   TIPO_OBRA_OPCIONES,
@@ -8,6 +8,8 @@ import {
   type ReporteObrasFiltrosState,
   type ObraFiltroCampoDef,
 } from '../constants/obraFiltrosReporte';
+import { CA_FIELD, CA_LABEL } from '../constants/cargaArchivosUi';
+import { SEPRI_BADGE, SEPRI_CARD_RAISED } from '../constants/sepriSurfaces';
 
 interface ReporteObrasFiltrosProps {
   filters: ReporteObrasFiltrosState;
@@ -17,12 +19,11 @@ interface ReporteObrasFiltrosProps {
   responsableSugerencias: string[];
   loadingSearchSugerencias: boolean;
   loadingResponsableSugerencias: boolean;
-  /** Sin tarjeta exterior (dentro de SeccionColapsable). */
+  /** Sin tarjeta exterior (dentro de modal / SeccionColapsable). */
   embebido?: boolean;
 }
 
-const inputClassName =
-  'px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-[#42A5F5] focus:border-transparent w-full text-sm';
+const fieldClassName = CA_FIELD;
 
 const ReporteObrasFiltros: React.FC<ReporteObrasFiltrosProps> = ({
   filters,
@@ -50,24 +51,24 @@ const ReporteObrasFiltros: React.FC<ReporteObrasFiltrosProps> = ({
     if (campo.tipo === 'dateRange' && campo.hastaKey) {
       return (
         <div key={String(campo.key)} className="md:col-span-2 space-y-1">
-          <span className="block text-xs font-medium text-slate-600">{campo.label}</span>
+          <span className={CA_LABEL}>{campo.label}</span>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
             <div>
-              <label className="block text-[10px] text-slate-400 mb-0.5">Desde</label>
+              <label className="block text-[10px] text-stone-400 mb-0.5">Desde</label>
               <input
                 type="date"
                 value={String(filters[campo.key] ?? '')}
                 onChange={(e) => setField(campo.key, e.target.value)}
-                className={inputClassName}
+                className={fieldClassName}
               />
             </div>
             <div>
-              <label className="block text-[10px] text-slate-400 mb-0.5">Hasta</label>
+              <label className="block text-[10px] text-stone-400 mb-0.5">Hasta</label>
               <input
                 type="date"
                 value={String(filters[campo.hastaKey] ?? '')}
                 onChange={(e) => setField(campo.hastaKey!, e.target.value)}
-                className={inputClassName}
+                className={fieldClassName}
               />
             </div>
           </div>
@@ -78,11 +79,11 @@ const ReporteObrasFiltros: React.FC<ReporteObrasFiltrosProps> = ({
     if (campo.tipo === 'select' && campo.selectKey === 'estado') {
       return (
         <div key={String(campo.key)} className="space-y-1">
-          <label className="block text-xs font-medium text-slate-600">{campo.label}</label>
+          <label className={CA_LABEL}>{campo.label}</label>
           <select
             value={filters.estado}
             onChange={(e) => setField('estado', e.target.value)}
-            className={inputClassName}
+            className={fieldClassName}
           >
             <option value="">Todos</option>
             {estadosDisponibles.map((estado) => (
@@ -98,11 +99,11 @@ const ReporteObrasFiltros: React.FC<ReporteObrasFiltrosProps> = ({
     if (campo.tipo === 'select' && campo.selectKey === 'tipo_obra') {
       return (
         <div key={String(campo.key)} className="space-y-1">
-          <label className="block text-xs font-medium text-slate-600">{campo.label}</label>
+          <label className={CA_LABEL}>{campo.label}</label>
           <select
             value={filters.tipo_obra}
             onChange={(e) => setField('tipo_obra', e.target.value)}
-            className={inputClassName}
+            className={fieldClassName}
           >
             <option value="">Todos</option>
             {TIPO_OBRA_OPCIONES.map((t) => (
@@ -115,19 +116,18 @@ const ReporteObrasFiltros: React.FC<ReporteObrasFiltrosProps> = ({
       );
     }
 
-    const inputType = campo.tipo === 'number' ? 'text' : 'text';
     const placeholder =
       campo.tipo === 'number' ? 'Valor numérico exacto' : 'Contiene…';
 
     return (
       <div key={String(campo.key)} className="space-y-1">
-        <label className="block text-xs font-medium text-slate-600">{campo.label}</label>
+        <label className={CA_LABEL}>{campo.label}</label>
         <input
-          type={inputType}
+          type="text"
           value={String(filters[campo.key] ?? '')}
           onChange={(e) => setField(campo.key, e.target.value)}
           placeholder={placeholder}
-          className={inputClassName}
+          className={fieldClassName}
         />
       </div>
     );
@@ -139,28 +139,30 @@ const ReporteObrasFiltros: React.FC<ReporteObrasFiltrosProps> = ({
     <>
       <div className="grid grid-cols-1 md:grid-cols-2 gap-3 sm:gap-4">
         <div className="space-y-1">
-          <label className="block text-xs font-medium text-slate-600">Búsqueda general</label>
+          <label className={CA_LABEL}>Búsqueda general</label>
           <AutocompleteInput
             value={filters.search}
             onChange={(v) => setField('search', v)}
             options={searchSugerencias}
             loading={loadingSearchSugerencias}
             placeholder="Nombre, código, contrato, estado…"
+            className={fieldClassName}
           />
         </div>
         <div className="space-y-1">
-          <label className="block text-xs font-medium text-slate-600">Responsable / Contratista</label>
+          <label className={CA_LABEL}>Responsable / Contratista</label>
           <AutocompleteInput
             value={filters.responsable}
             onChange={(v) => setField('responsable', v)}
             options={responsableSugerencias}
             loading={loadingResponsableSugerencias}
             placeholder="Nombre del contratista"
+            className={fieldClassName}
           />
         </div>
       </div>
 
-      <div className="border-t border-slate-100 pt-2 space-y-2">
+      <div className="space-y-3 pt-1">
         {REPORTE_OBRAS_FILTRO_GRUPOS.map((grupo) => {
           const abierto = gruposAbiertos[grupo.label] ?? false;
           const camposActivos = grupo.campos.filter((c) => {
@@ -171,32 +173,24 @@ const ReporteObrasFiltros: React.FC<ReporteObrasFiltrosProps> = ({
           }).length;
 
           return (
-            <div key={grupo.label} className="border border-slate-200 rounded-xl overflow-hidden">
-              <button
-                type="button"
-                onClick={() => toggleGrupo(grupo.label)}
-                className="w-full flex items-center justify-between px-4 py-2.5 bg-slate-50 hover:bg-slate-100 text-left"
-              >
-                <span className="text-sm font-semibold text-slate-700">
-                  {grupo.label}
-                  {camposActivos > 0 && (
-                    <span className="ml-2 text-xs font-normal text-[#42A5F5]">
-                      ({camposActivos} activo{camposActivos !== 1 ? 's' : ''})
-                    </span>
-                  )}
-                </span>
-                {abierto ? (
-                  <ExpandLess className="text-slate-500" fontSize="small" />
-                ) : (
-                  <ExpandMore className="text-slate-500" fontSize="small" />
-                )}
-              </button>
-              {abierto && (
-                <div className="p-4 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
-                  {grupo.campos.map((campo) => renderCampo(campo))}
-                </div>
-              )}
-            </div>
+            <SeccionColapsable
+              key={grupo.label}
+              titulo={grupo.label}
+              abierto={abierto}
+              onToggle={() => toggleGrupo(grupo.label)}
+              contenidoClassName="pt-0"
+              badge={
+                camposActivos > 0 ? (
+                  <span className={`${SEPRI_BADGE} ml-2`}>
+                    {camposActivos} activo{camposActivos !== 1 ? 's' : ''}
+                  </span>
+                ) : undefined
+              }
+            >
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+                {grupo.campos.map((campo) => renderCampo(campo))}
+              </div>
+            </SeccionColapsable>
           );
         })}
       </div>
@@ -204,15 +198,15 @@ const ReporteObrasFiltros: React.FC<ReporteObrasFiltrosProps> = ({
   );
 
   if (embebido) {
-    return <div className="p-3 sm:p-4 space-y-3">{contenido}</div>;
+    return <div className="p-3 sm:p-4 space-y-3 bg-warm-50/40">{contenido}</div>;
   }
 
   return (
-    <div className="bg-white border border-slate-200 rounded-2xl shadow-sm p-4 sm:p-5 space-y-4">
+    <div className={`${SEPRI_CARD_RAISED} p-4 sm:p-5 space-y-4`}>
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <h3 className="text-sm font-semibold text-slate-600 uppercase tracking-wide">Filtros</h3>
+        <h3 className="text-sm font-semibold text-stone-500 uppercase tracking-wide">Filtros</h3>
         {activos > 0 && (
-          <span className="text-xs text-slate-500 bg-slate-100 px-2 py-1 rounded-full">
+          <span className={SEPRI_BADGE}>
             {activos} filtro(s) activo(s)
           </span>
         )}
