@@ -15,19 +15,20 @@ import {
   Description,
   Roofing,
 } from '@mui/icons-material';
-import FileUpload from './components/FileUpload';
-import StatsDashboard from './components/StatsDashboard';
-import ObrasTable from './components/ObrasTable';
-import Techado from './components/Techado';
-import TramiteHistory from './components/UploadHistory';
-import GestionTecnicaDocumento from './components/GestionTecnicaDocumento';
 import Login from './components/Login';
 import NotificacionesTiempo from './components/NotificacionesTiempo';
 import { useAuth } from './context/AuthContext';
 import { TAB_PERMISOS } from './constants/permisos';
 import { MODULO_REPORTE_HABILITADO } from './constants/featureFlags';
-import GestionUsuarios from './components/GestionUsuarios';
-import AtencionContratista from './components/AtencionContratista';
+
+const StatsDashboard = React.lazy(() => import('./components/StatsDashboard'));
+const ObrasTable = React.lazy(() => import('./components/ObrasTable'));
+const Techado = React.lazy(() => import('./components/Techado'));
+const FileUpload = React.lazy(() => import('./components/FileUpload'));
+const TramiteHistory = React.lazy(() => import('./components/UploadHistory'));
+const GestionTecnicaDocumento = React.lazy(() => import('./components/GestionTecnicaDocumento'));
+const GestionUsuarios = React.lazy(() => import('./components/GestionUsuarios'));
+const AtencionContratista = React.lazy(() => import('./components/AtencionContratista'));
 
 const ReporteObras = MODULO_REPORTE_HABILITADO
   ? React.lazy(() => import('./components/ReporteObras'))
@@ -42,16 +43,25 @@ interface TabPanelProps {
 function TabPanel(props: TabPanelProps) {
   const { children, value, index } = props;
 
+  if (value !== index) return null;
+
   return (
     <div
       role="tabpanel"
-      hidden={value !== index}
       id={`simple-tabpanel-${index}`}
       aria-labelledby={`simple-tab-${index}`}
     >
       <div className="p-2 sm:p-3 md:p-4 lg:p-6">
         {children}
       </div>
+    </div>
+  );
+}
+
+function TabLoading() {
+  return (
+    <div className="flex items-center justify-center min-h-[12rem]">
+      <div className="animate-spin rounded-full h-10 w-10 border-2 border-primary-light border-t-primary" />
     </div>
   );
 }
@@ -245,7 +255,8 @@ function App() {
             <>
               {hasPermission('ver_dashboard') && (
                 <TabPanel value={tabValue} index={0}>
-                  <StatsDashboard
+                  <Suspense fallback={<TabLoading />}>
+                    <StatsDashboard
                     refreshTrigger={refreshTrigger}
                     onEstadoClick={(estado: string) => {
                       setTabValue(1);
@@ -263,46 +274,57 @@ function App() {
                       }, 0);
                     }}
                   />
+                  </Suspense>
                 </TabPanel>
               )}
 
               {hasPermission('ver_obras') && (
                 <TabPanel value={tabValue} index={1}>
-                  <ObrasTable refreshTrigger={refreshTrigger} soloLectura={!hasPermission('editar_obras')} />
+                  <Suspense fallback={<TabLoading />}>
+                    <ObrasTable refreshTrigger={refreshTrigger} soloLectura={!hasPermission('editar_obras')} />
+                  </Suspense>
                 </TabPanel>
               )}
 
               {hasPermission('ver_techado') && (
                 <TabPanel value={tabValue} index={2}>
-                  <Techado
+                  <Suspense fallback={<TabLoading />}>
+                    <Techado
                     refreshTrigger={refreshTrigger}
                     soloLectura={!hasPermission('editar_techado')}
                     onDatosActualizados={handleDatosActualizados}
                   />
+                  </Suspense>
                 </TabPanel>
               )}
 
               {hasPermission('ver_carga_obras') && (
                 <TabPanel value={tabValue} index={3}>
-                  <FileUpload
+                  <Suspense fallback={<TabLoading />}>
+                    <FileUpload
                     onUploadComplete={handleUploadComplete}
                     onError={(error: unknown) => console.error('Upload error:', error)}
                     soloLectura={!hasPermission('editar_carga_obras')}
                   />
+                  </Suspense>
                 </TabPanel>
               )}
 
               {hasPermission('ver_atencion_contratista') && (
                 <TabPanel value={tabValue} index={5}>
-                  <AtencionContratista soloLectura={!hasPermission('editar_atencion_contratista')} />
+                  <Suspense fallback={<TabLoading />}>
+                    <AtencionContratista soloLectura={!hasPermission('editar_atencion_contratista')} />
+                  </Suspense>
                 </TabPanel>
               )}
 
               {hasPermission('ver_gestion_tecnica_documento') && (
                 <TabPanel value={tabValue} index={6}>
-                  <GestionTecnicaDocumento
+                  <Suspense fallback={<TabLoading />}>
+                    <GestionTecnicaDocumento
                     soloLectura={!hasPermission('editar_gestion_tecnica_documento')}
                   />
+                  </Suspense>
                 </TabPanel>
               )}
 
@@ -329,7 +351,9 @@ function App() {
                     <h2 className="text-2xl font-semibold mb-4 text-stone-800">
                       Configuración del Sistema
                     </h2>
-                    <GestionUsuarios />
+                    <Suspense fallback={<TabLoading />}>
+                      <GestionUsuarios />
+                    </Suspense>
                   </div>
                 </TabPanel>
               )}
@@ -338,7 +362,9 @@ function App() {
 
           {hasPermission('ver_tramites') && (
             <TabPanel value={tabValue} index={4}>
-              <TramiteHistory soloLectura={!hasPermission('editar_tramites')} />
+              <Suspense fallback={<TabLoading />}>
+                <TramiteHistory soloLectura={!hasPermission('editar_tramites')} />
+              </Suspense>
             </TabPanel>
           )}
 

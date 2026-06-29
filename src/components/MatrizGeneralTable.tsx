@@ -1,7 +1,6 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { Search, FilterList, Tune, NavigateBefore, NavigateNext, Link as LinkIcon } from '@mui/icons-material';
 import { techadoAPI } from '../services/api';
-import { techadoService } from '../services/techadoService';
 import type { MatrizGeneralVista } from '../types/database';
 import { BTN_SECONDARY, BTN_SECONDARY_SM } from '../constants/buttonStyles';
 import { SEPRI_INSET } from '../constants/sepriSurfaces';
@@ -30,11 +29,6 @@ const MatrizGeneralTable: React.FC<MatrizGeneralTableProps> = ({
     try {
       setLoading(true);
       setError(null);
-      try {
-        await techadoService.sincronizarEstadosObraMatriz();
-      } catch {
-        /* continuar con listado */
-      }
       const res = await techadoAPI.obtenerMatriz({
         limit: rowsPerPage,
         offset: page * rowsPerPage,

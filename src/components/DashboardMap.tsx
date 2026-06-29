@@ -2,29 +2,12 @@ import React, { useMemo, useEffect } from 'react';
 import { MapContainer, TileLayer, CircleMarker, Popup, Tooltip, useMap } from 'react-leaflet';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
-import { PROVINCIAS_RD_CENTROIDES, RD_CENTER, RD_DEFAULT_ZOOM } from '../data/provinciasRD';
+import { RD_CENTER, RD_DEFAULT_ZOOM } from '../data/provinciasRD';
+import { getCoordsForProvincia } from '../utils/mapUtils';
+import { ensureLeafletIcons } from './map/leafletSetup';
+import { MapInvalidateSize } from './map/MapInvalidateSize';
 
-// Iconos por defecto de Leaflet (evitar 404 en bundler)
-const DefaultIcon = L.icon({
-  iconUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon.png',
-  iconRetinaUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon-2x.png',
-  shadowUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png',
-  iconSize: [25, 41],
-  iconAnchor: [12, 41],
-  popupAnchor: [1, -34],
-  shadowSize: [41, 41],
-});
-L.Marker.prototype.options.icon = DefaultIcon;
-
-const provinciasKeys = Object.keys(PROVINCIAS_RD_CENTROIDES);
-const getCoordsForProvincia = (nombre: string): [number, number] | undefined => {
-  const n = String(nombre || '').trim();
-  if (!n) return undefined;
-  if (PROVINCIAS_RD_CENTROIDES[n]) return PROVINCIAS_RD_CENTROIDES[n];
-  const lower = n.toLowerCase();
-  const key = provinciasKeys.find((k) => k.toLowerCase() === lower);
-  return key ? PROVINCIAS_RD_CENTROIDES[key] : undefined;
-};
+ensureLeafletIcons();
 
 export interface ObraPorProvincia {
   provincia: string;
@@ -37,21 +20,13 @@ interface DashboardMapProps {
   height?: string;
 }
 
-function MapBounds({ obrasPorProvincia }: { obrasPorProvincia: ObraPorProvincia[] }) {
+function MapBounds({ coords }: { coords: [number, number][] }) {
   const map = useMap();
-  const coords = useMemo(() => {
-    const positions: [number, number][] = [];
-    obrasPorProvincia.forEach(({ provincia }) => {
-      const c = getCoordsForProvincia(provincia);
-      if (c) positions.push(c);
-    });
-    return positions;
-  }, [obrasPorProvincia]);
 
   useEffect(() => {
     if (coords.length < 2) return;
     const bounds = L.latLngBounds(coords);
-    map.fitBounds(bounds.pad(0.2), { maxZoom: 10 });
+    map.fitBounds(bounds.pad(0.2), { maxZoom: 10, animate: false });
   }, [map, coords]);
 
   return null;
@@ -67,20 +42,36 @@ const DashboardMap: React.FC<DashboardMapProps> = ({
     return Math.max(...obrasPorProvincia.map((p) => p.cantidad), 1);
   }, [obrasPorProvincia]);
 
-  const markers = useMemo(() => {
-    return obrasPorProvincia
+  const { markers, sinMapear } = useMemo(() => {
+    const sinMatch: string[] = [];
+    const list = obrasPorProvincia
       .filter((p) => p && p.provincia && p.cantidad > 0)
       .map((item) => {
         const coords = getCoordsForProvincia(item.provincia);
-        if (!coords) return null;
+        if (!coords) {
+          sinMatch.push(item.provincia);
+          return null;
+        }
         return { ...item, coords };
       })
       .filter(Boolean) as (ObraPorProvincia & { coords: [number, number] })[];
+
+    return { markers: list, sinMapear: sinMatch };
   }, [obrasPorProvincia]);
+
+  const boundsCoords = useMemo(
+    () => markers.map((m) => m.coords),
+    [markers],
+  );
+
+  const totalConProvincia = useMemo(
+    () => obrasPorProvincia.reduce((s, p) => s + (p.cantidad > 0 ? p.cantidad : 0), 0),
+    [obrasPorProvincia],
+  );
 
   return (
     <div
-      className="relative w-full rounded-xl border border-gray-200 shadow-lg overflow-hidden bg-white"
+      className="relative w-full rounded-xl shadow-soft-lg overflow-hidden bg-white"
       style={{ minHeight: height, height }}
     >
       <MapContainer
@@ -91,12 +82,14 @@ const DashboardMap: React.FC<DashboardMapProps> = ({
         zoomControl={true}
         dragging={true}
         doubleClickZoom={true}
+        preferCanvas={markers.length > 20}
       >
         <TileLayer
           attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
           url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
         />
-        {markers.length > 0 && <MapBounds obrasPorProvincia={obrasPorProvincia} />}
+        <MapInvalidateSize />
+        {boundsCoords.length > 1 && <MapBounds coords={boundsCoords} />}
         {markers.map((item) => {
           const radius = Math.max(10, Math.min(28, (item.cantidad / maxCantidad) * 22 + 10));
           return (
@@ -143,11 +136,13 @@ const DashboardMap: React.FC<DashboardMapProps> = ({
       </MapContainer>
       {markers.length === 0 && (
         <div
-          className="absolute inset-0 flex items-center justify-center bg-white/80 text-gray-600 text-sm text-center px-4 z-[1000]"
+          className="absolute inset-0 flex items-center justify-center bg-white/85 text-gray-600 text-sm text-center px-4 z-[1000]"
           style={{ pointerEvents: 'none' }}
         >
           <span>
-            No hay obras con provincia asignada. Asigna provincia a las obras para ver el mapa.
+            {totalConProvincia > 0 && sinMapear.length > 0
+              ? `Hay ${totalConProvincia} obra(s) con provincia, pero no coinciden con el catálogo del mapa (${sinMapear.slice(0, 3).join(', ')}${sinMapear.length > 3 ? '…' : ''}).`
+              : 'No hay obras con provincia asignada. Asigna provincia a las obras para ver el mapa.'}
           </span>
         </div>
       )}

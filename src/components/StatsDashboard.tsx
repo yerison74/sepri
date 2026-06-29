@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, Suspense } from 'react';
 import {
   Assignment,
   TrendingUp,
@@ -12,7 +12,8 @@ import {
   Place,
 } from '@mui/icons-material';
 import { statsAPI, Obra } from '../services/api';
-import DashboardMap from './DashboardMap';
+
+const DashboardMap = React.lazy(() => import('./DashboardMap'));
 
 interface StatsDashboardProps {
   refreshTrigger?: number;
@@ -206,11 +207,22 @@ const StatsDashboard: React.FC<StatsDashboardProps> = ({ refreshTrigger, onEstad
             <p className="text-sm text-slate-500 mb-4 mt-1">
               Haz clic en un punto para abrir la lista filtrada de obras.
             </p>
-            <DashboardMap
-              obrasPorProvincia={obrasPorProvincia}
-              onProvinciaClick={onProvinciaClick}
-              height="340px"
-            />
+            <Suspense
+              fallback={
+                <div
+                  className="flex items-center justify-center rounded-xl bg-slate-50 shadow-soft"
+                  style={{ height: '340px' }}
+                >
+                  <div className="animate-spin rounded-full h-8 w-8 border-2 border-primary-light border-t-primary" />
+                </div>
+              }
+            >
+              <DashboardMap
+                obrasPorProvincia={obrasPorProvincia}
+                onProvinciaClick={onProvinciaClick}
+                height="340px"
+              />
+            </Suspense>
           </div>
 
           <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-4 sm:p-5 lg:p-6 lg:col-span-2 transition-all hover:shadow-md">

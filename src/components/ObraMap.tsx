@@ -1,24 +1,11 @@
-import React, { useEffect } from 'react';
-import { MapContainer, TileLayer, Marker, Popup, useMap } from 'react-leaflet';
-import L from 'leaflet';
+import React from 'react';
+import { MapContainer, TileLayer, Marker, Popup } from 'react-leaflet';
 import 'leaflet/dist/leaflet.css';
+import { parseGpsCoords } from '../utils/mapUtils';
+import { ensureLeafletIcons } from './map/leafletSetup';
+import { MapInvalidateSize } from './map/MapInvalidateSize';
 
-// Fix para los iconos de Leaflet en React
-import icon from 'leaflet/dist/images/marker-icon.png';
-import iconShadow from 'leaflet/dist/images/marker-shadow.png';
-import iconRetina from 'leaflet/dist/images/marker-icon-2x.png';
-
-// Configurar iconos por defecto de Leaflet
-delete (L.Icon.Default.prototype as any)._getIconUrl;
-L.Icon.Default.mergeOptions({
-  iconUrl: icon,
-  iconRetinaUrl: iconRetina,
-  shadowUrl: iconShadow,
-  iconSize: [25, 41],
-  iconAnchor: [12, 41],
-  popupAnchor: [1, -34],
-  shadowSize: [41, 41]
-});
+ensureLeafletIcons();
 
 interface ObraMapProps {
   latitud: string | null | undefined;
@@ -27,63 +14,33 @@ interface ObraMapProps {
   height?: string;
 }
 
-// Componente para ajustar el zoom cuando cambian las coordenadas y actualizar el tamaño
-function MapUpdater({ lat, lng }: { lat: number; lng: number }) {
-  const map = useMap();
-  
-  useEffect(() => {
-    map.setView([lat, lng], map.getZoom());
-    // Asegurar que el mapa se renderice correctamente después de que el diálogo se abre
-    const timer = setTimeout(() => {
-      map.invalidateSize();
-    }, 100);
-    
-    return () => clearTimeout(timer);
-  }, [lat, lng, map]);
-  
-  // También invalidar el tamaño cuando el componente se monta
-  useEffect(() => {
-    const timer = setTimeout(() => {
-      map.invalidateSize();
-    }, 300);
-    
-    return () => clearTimeout(timer);
-  }, [map]);
-  
-  return null;
-}
-
-const ObraMap: React.FC<ObraMapProps> = ({ 
-  latitud, 
-  longitud, 
+const ObraMap: React.FC<ObraMapProps> = ({
+  latitud,
+  longitud,
   nombre = 'Ubicación de la obra',
-  height = '400px'
+  height = '400px',
 }) => {
-  // Convertir coordenadas a números
-  const lat = latitud ? parseFloat(latitud) : null;
-  const lng = longitud ? parseFloat(longitud) : null;
+  const coords = parseGpsCoords(latitud, longitud);
 
-  // Si no hay coordenadas válidas, mostrar mensaje
-  if (!lat || !lng || isNaN(lat) || isNaN(lng)) {
+  if (!coords) {
     return (
-      <div 
-        className="flex items-center justify-center rounded border border-gray-300 bg-gray-100"
+      <div
+        className="flex items-center justify-center rounded-xl bg-warm-50/80 shadow-soft"
         style={{ height }}
       >
-        <p className="text-sm text-gray-600">
-          No hay coordenadas disponibles para esta obra
+        <p className="text-sm text-stone-500">
+          No hay coordenadas GPS válidas para esta obra
         </p>
       </div>
     );
   }
 
-  // Coordenadas por defecto (República Dominicana)
-  const defaultCenter: [number, number] = [18.4861, -69.9312];
+  const [lat, lng] = coords;
   const center: [number, number] = [lat, lng];
 
   return (
-    <div 
-      className="w-full rounded border border-gray-300 shadow-sm relative overflow-hidden"
+    <div
+      className="w-full rounded-xl shadow-soft-lg relative overflow-hidden"
       style={{ height }}
     >
       <MapContainer
@@ -102,7 +59,7 @@ const ObraMap: React.FC<ObraMapProps> = ({
           attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
           url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
         />
-        <MapUpdater lat={lat} lng={lng} />
+        <MapInvalidateSize center={center} zoom={15} />
         <Marker position={center}>
           <Popup>
             <div style={{ margin: 0, padding: 0 }}>
@@ -119,4 +76,3 @@ const ObraMap: React.FC<ObraMapProps> = ({
 };
 
 export default ObraMap;
-

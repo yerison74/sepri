@@ -1960,6 +1960,36 @@ export const tramitesService = {
   },
 
   /**
+   * Última fecha de movimiento por trámite (una sola consulta para listados).
+   */
+  obtenerUltimosMovimientosPorTramites: async (
+    tramiteIds: string[],
+  ): Promise<Map<string, string | null>> => {
+    const resultado = new Map<string, string | null>();
+    if (tramiteIds.length === 0) return resultado;
+
+    try {
+      const { data, error } = await supabase
+        .from('movimientos_tramites')
+        .select('tramite_id, fecha_movimiento')
+        .in('tramite_id', tramiteIds)
+        .order('fecha_movimiento', { ascending: false });
+
+      if (error) throw error;
+
+      for (const row of data || []) {
+        if (!resultado.has(row.tramite_id)) {
+          resultado.set(row.tramite_id, row.fecha_movimiento ?? null);
+        }
+      }
+      return resultado;
+    } catch (error: any) {
+      console.error('Error al obtener últimos movimientos:', error);
+      throw new Error(error.message || 'Error al obtener últimos movimientos');
+    }
+  },
+
+  /**
    * Registrar un movimiento de trámite
    */
   registrarMovimiento: async (

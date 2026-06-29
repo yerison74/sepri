@@ -934,6 +934,21 @@ export const tramitesAPI = {
     }
   },
 
+  obtenerUltimosMovimientosPorTramites: async (tramiteIds: string[]) => {
+    try {
+      const mapa = await tramitesService.obtenerUltimosMovimientosPorTramites(tramiteIds);
+      const data = Object.fromEntries(mapa.entries());
+      return { data: { data } } as AxiosResponse<{ data: Record<string, string | null> }>;
+    } catch (error: any) {
+      throw {
+        response: {
+          data: { error: error.message || 'Error al obtener últimos movimientos' },
+          status: 500,
+        },
+      };
+    }
+  },
+
   obtenerTiemposActualesPorTramites: async (tramiteIds: string[]) => {
     try {
       const data = await tramitesService.obtenerTiemposActualesPorTramites(tramiteIds);

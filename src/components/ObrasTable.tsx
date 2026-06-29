@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, Suspense } from 'react';
 import {
   Search,
   FilterList,
@@ -9,7 +9,6 @@ import {
   OpenInNew,
 } from '@mui/icons-material';
 import { mantenimientosAPI, Obra } from '../services/api';
-import ObraMap from './ObraMap';
 import ObraMasDetallesDialog from './ObraMasDetallesDialog';
 import ObraTechadoResumenSection from './ObraTechadoResumenSection';
 import {
@@ -28,6 +27,8 @@ import { techadoService } from '../services/techadoService';
 import { esTipoObraTechados } from '../constants/tipoObra';
 import EstadoObraBadge from './EstadoObraBadge';
 import type { ObraMatrizTechadoResumen } from '../types/database';
+
+const ObraMap = React.lazy(() => import('./ObraMap'));
 
 interface ObrasTableProps {
   refreshTrigger?: number;
@@ -66,14 +67,6 @@ const ObrasTable: React.FC<ObrasTableProps> = ({
     try {
       setLoading(true);
       setError(null);
-      if (!modoTechado) {
-        try {
-          await techadoService.sincronizarTiposObraTechados();
-          await techadoService.sincronizarEstadosObraMatriz();
-        } catch {
-          /* no bloquear listado si falla la sincronización */
-        }
-      }
       const response = await mantenimientosAPI.obtenerObras({
         limit: rowsPerPage,
         offset: page * rowsPerPage,
@@ -656,12 +649,20 @@ const ObrasTable: React.FC<ObrasTableProps> = ({
                     }
                   </div>
                 )}
-                <ObraMap
-                  latitud={selectedObra.latitud}
-                  longitud={selectedObra.longitud}
-                  nombre={selectedObra.nombre}
-                  height="400px"
-                />
+                <Suspense
+                  fallback={
+                    <div className="flex items-center justify-center rounded-xl bg-warm-50/80 shadow-soft h-[400px]">
+                      <div className="animate-spin rounded-full h-8 w-8 border-2 border-primary-light border-t-primary" />
+                    </div>
+                  }
+                >
+                  <ObraMap
+                    latitud={selectedObra.latitud}
+                    longitud={selectedObra.longitud}
+                    nombre={selectedObra.nombre}
+                    height="400px"
+                  />
+                </Suspense>
               </div>
 
               {/* Información de auditoría */}

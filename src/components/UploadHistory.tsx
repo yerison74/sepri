@@ -450,18 +450,8 @@ const TramiteHistory: React.FC<TramiteHistoryProps> = ({ soloLectura = false }) 
       if (tramitesConUrl.length > 0) {
         const ids = tramitesConUrl.map((t: Tramite) => t.id);
         try {
-          const historiales = await Promise.all(
-            ids.map(async (tramiteId) => {
-              try {
-                const res = await tramitesAPI.obtenerHistorialTramite(tramiteId);
-                const ultimo = (res.data.data || [])[0];
-                return { tramiteId, fechaUltimoMovimiento: ultimo?.fecha_movimiento || null };
-              } catch {
-                return { tramiteId, fechaUltimoMovimiento: null };
-              }
-            })
-          );
-          const mapaFechas = new Map(historiales.map((h) => [h.tramiteId, h.fechaUltimoMovimiento]));
+          const res = await tramitesAPI.obtenerUltimosMovimientosPorTramites(ids);
+          const mapaFechas = new Map(Object.entries(res.data.data || {}));
           tramitesOrdenados = [...tramitesConUrl].sort((a, b) => {
             const fa = mapaFechas.get(a.id) || a.fecha_creacion || a.created_at || '';
             const fb = mapaFechas.get(b.id) || b.fecha_creacion || b.created_at || '';
