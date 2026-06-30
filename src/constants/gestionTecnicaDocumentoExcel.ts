@@ -1,10 +1,12 @@
 /** Hojas del libro Excel — Gestión técnica de documento. */
 export const HOJA_DOCUMENTOS = 'Documentos';
 export const HOJA_MOVIMIENTOS = 'Movimientos';
+export const HOJA_ADENDAS = 'Adendas';
 
 export const DOCUMENTOS_EXCEL_HEADERS = [
   'Solicitud',
   'Cuadrantes',
+  'Número de contrato',
   'Monto contrato base',
   'Tipo adenda anterior',
   'Codigo adenda anterior',
@@ -31,9 +33,18 @@ export const MOVIMIENTOS_EXCEL_HEADERS = [
   'Observaciones',
 ] as const;
 
+export const ADENDAS_EXCEL_HEADERS = [
+  'Número de contrato',
+  'Código adenda',
+  'Tipo adenda',
+  'Monto',
+  'Estado',
+] as const;
+
 export const DOCUMENTOS_EXCEL_EJEMPLO: string[] = [
   'Juan Pérez García',
   'Norte',
+  '1234-5678',
   '15000000.00',
   'Reformulacion de presupuesto',
   '12-345',
@@ -60,9 +71,18 @@ export const MOVIMIENTOS_EXCEL_EJEMPLO: string[] = [
   'Ejemplo de observación del movimiento',
 ];
 
+export const ADENDAS_EXCEL_EJEMPLO: string[] = [
+  '1234-5678',
+  '12-345',
+  'Reformulacion de presupuesto',
+  '250000.00',
+  'en_curso',
+];
+
 export const DOCUMENTOS_EXCEL_COL_WIDTHS = [
   { wch: 28 },
   { wch: 14 },
+  { wch: 18 },
   { wch: 18 },
   { wch: 26 },
   { wch: 18 },
@@ -87,4 +107,12 @@ export const MOVIMIENTOS_EXCEL_COL_WIDTHS = [
   { wch: 24 },
   { wch: 16 },
   { wch: 36 },
+];
+
+export const ADENDAS_EXCEL_COL_WIDTHS = [
+  { wch: 18 },
+  { wch: 16 },
+  { wch: 28 },
+  { wch: 16 },
+  { wch: 12 },
 ];

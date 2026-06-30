@@ -21,8 +21,12 @@ export interface Obra {
   id_obra?: string | null;
   /** Código interno o identificador externo usado para actualizar la obra (ej. 0000-0000). */
   codigo?: string | null;
-  /** Código de contrato (máx. 9 caracteres, guía: xxxx-xxxx). */
+  /** Código de contrato (máx. 9 caracteres, guía: xxxx-xxxx). Derivado de contrato_id o legado. */
   contrato?: string | null;
+  /** FK al catálogo Techado (contrato). Una obra → un contrato; un contrato → N obras. */
+  contrato_id?: string | null;
+  /** Join lectura — no persistir. */
+  contrato_ref?: Pick<ContratoTechado, 'id' | 'lote' | 'no_contrato' | 'contratista_nombre'> | null;
   nombre: string;
   nombre_inaugurado?: string | null;
   /** Tipo de obra: por ejemplo "Construccion" o "Mantenimiento". */
@@ -77,6 +81,7 @@ export interface DocumentoTecnicoObra {
   tipo_adenda?: string | null;
   no_adenda_solicituda?: number | null;
   contratista_id?: string | null;
+  contrato_id?: string | null;
   id_sigede: string[];
   tipo_adenda_anterior?: string | null;
   numero_adenda_anterior?: string | null;
@@ -89,8 +94,26 @@ export interface DocumentoTecnicoObra {
   created_at?: string | null;
   updated_at?: string | null;
   contratista?: Contratista | null;
+  contrato?: Pick<ContratoTechado, 'id' | 'lote' | 'no_contrato' | 'contratista_nombre'> | null;
+  /** Adendas del contrato vinculado (consulta, no persistido en documentos_tecnicos_obra). */
+  adendas?: Adenda[];
   /** Datos de obra por cada id_sigede (consulta, no persistido). */
   obras_sigede?: ObraSigedeResumen[];
+}
+
+/** Adenda contractual — Gestión técnica de documento (tabla adenda). */
+export type EstadoAdenda = 'en_curso' | 'anterior';
+
+export interface Adenda {
+  id: string;
+  contrato_id: string;
+  numero_adenda: string;
+  tipo_adenda?: string | null;
+  monto?: number | null;
+  estado: EstadoAdenda;
+  created_at?: string | null;
+  updated_at?: string | null;
+  contrato?: Pick<ContratoTechado, 'id' | 'lote' | 'no_contrato'> | null;
 }
 
 /** Datos de obra mostrados al seleccionar un ID SIGEDE. */
@@ -225,8 +248,10 @@ export interface MovimientoTramite {
   usuario?: string | null;
   /** Estado que quedó el trámite tras este movimiento (ej. 'detenido', 'completado'). Para indicadores en historial. */
   estado_resultante?: string | null;
-  /** Tipo de trámite ligado al movimiento (interno / contratista). */
+  /** Tipo de trámite ligado al movimiento (interno / contratista / gestión técnica). */
   tipo_tramite?: 'tipo_interno' | 'tipo_contratista' | 'tipo_gestion_tecnica' | string | null;
+  /** FK al movimiento en gestión técnica de documento (espejo de solo lectura en seguimiento). */
+  movimiento_documento_id?: string | null;
 }
 
 /** Registro de tiempo que un trámite permanece en un área (para procesos con medición). */

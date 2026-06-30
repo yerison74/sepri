@@ -32,6 +32,7 @@ export const TABLE_ORDER = [
   'movimiento_documentos_tecnicos_obra',
   'contrato',
   'contrato_adenda',
+  'adenda',
   'matriz_general',
 ];
 
@@ -55,6 +56,7 @@ export const UPSERT_KEY = {
   movimiento_documentos_tecnicos_obra: 'id',
   contrato: 'id',
   contrato_adenda: 'id',
+  adenda: 'id',
   matriz_general: 'id',
 };
 

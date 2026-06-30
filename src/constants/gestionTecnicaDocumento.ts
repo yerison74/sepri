@@ -64,3 +64,17 @@ export function normalizarCodigoAdenda(value: string): string | null {
   const trimmed = value.trim();
   return trimmed || null;
 }
+
+/** Estados de adenda contractual (tabla adenda). */
+export const ESTADOS_ADENDA = ['en_curso', 'anterior'] as const;
+
+export type EstadoAdendaGestion = (typeof ESTADOS_ADENDA)[number];
+
+export const ETIQUETAS_ESTADO_ADENDA: Record<EstadoAdendaGestion, string> = {
+  en_curso: 'En curso',
+  anterior: 'Anterior',
+};
+
+export function esEstadoAdendaValido(value: string): boolean {
+  return ESTADOS_ADENDA.includes(value as EstadoAdendaGestion);
+}

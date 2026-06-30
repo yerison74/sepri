@@ -1,20 +1,25 @@
 import * as XLSX from 'xlsx';
-import type { DocumentoTecnicoObra, MovimientoDocumentoTecnicoObra } from '../types/database';
+import type { Adenda, DocumentoTecnicoObra, EstadoAdenda, MovimientoDocumentoTecnicoObra } from '../types/database';
 import {
+  ADENDAS_EXCEL_COL_WIDTHS,
+  ADENDAS_EXCEL_EJEMPLO,
+  ADENDAS_EXCEL_HEADERS,
   DOCUMENTOS_EXCEL_COL_WIDTHS,
   DOCUMENTOS_EXCEL_EJEMPLO,
   DOCUMENTOS_EXCEL_HEADERS,
+  HOJA_ADENDAS,
   HOJA_DOCUMENTOS,
   HOJA_MOVIMIENTOS,
   MOVIMIENTOS_EXCEL_COL_WIDTHS,
   MOVIMIENTOS_EXCEL_EJEMPLO,
   MOVIMIENTOS_EXCEL_HEADERS,
 } from '../constants/gestionTecnicaDocumentoExcel';
-import { parseMontoDOP } from '../constants/gestionTecnicaDocumento';
+import { esEstadoAdendaValido, parseMontoDOP } from '../constants/gestionTecnicaDocumento';
 
 export interface FilaDocumentoExcel {
   solicitud: string;
   cuadrantes?: string;
+  no_contrato?: string;
   monto_contrato_base?: number | null;
   tipo_adenda_anterior?: string;
   numero_adenda_anterior?: string | null;
@@ -27,6 +32,14 @@ export interface FilaDocumentoExcel {
   observacion?: string;
   contratista?: string;
   id_sigede?: string[];
+}
+
+export interface FilaAdendaExcel {
+  no_contrato: string;
+  numero_adenda: string;
+  tipo_adenda?: string;
+  monto?: number | null;
+  estado?: EstadoAdenda | null;
 }
 
 export interface FilaMovimientoExcel {
@@ -44,6 +57,7 @@ export interface FilaMovimientoExcel {
 export interface ResultadoParseoExcel {
   documentos: FilaDocumentoExcel[];
   movimientos: FilaMovimientoExcel[];
+  adendas: FilaAdendaExcel[];
 }
 
 function normalizarClave(clave: string): string {
@@ -107,6 +121,17 @@ function parseSigede(valor: unknown): string[] {
     .filter(Boolean);
 }
 
+function parseEstadoAdendaExcel(valor: unknown): EstadoAdenda | null {
+  const texto = String(valor ?? '')
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, '_');
+  if (!texto) return null;
+  if (texto === 'en_curso' || texto === 'encurso') return 'en_curso';
+  if (texto === 'anterior') return 'anterior';
+  return esEstadoAdendaValido(texto) ? (texto as EstadoAdenda) : null;
+}
+
 function filaADocumento(row: Record<string, unknown>, indice: number): FilaDocumentoExcel | null {
   const solicitud = String(
     valorCelda(row, 'Solicitud', 'Solicitud (nombre del solicitante)') || '',
@@ -116,6 +141,10 @@ function filaADocumento(row: Record<string, unknown>, indice: number): FilaDocum
   return {
     solicitud: solicitud.slice(0, 75),
     cuadrantes: String(valorCelda(row, 'Cuadrantes') || '').trim() || undefined,
+    no_contrato:
+      String(
+        valorCelda(row, 'Número de contrato', 'Numero de contrato', 'No. contrato', 'Contrato') || '',
+      ).trim() || undefined,
     monto_contrato_base: parseMontoExcel(valorCelda(row, 'Monto contrato base')),
     tipo_adenda_anterior:
       String(valorCelda(row, 'Tipo adenda anterior') || '').trim() || undefined,
@@ -158,6 +187,24 @@ function filaADocumento(row: Record<string, unknown>, indice: number): FilaDocum
   };
 }
 
+function filaAAdenda(row: Record<string, unknown>): FilaAdendaExcel | null {
+  const noContrato = String(
+    valorCelda(row, 'Número de contrato', 'Numero de contrato', 'No. contrato', 'Contrato') || '',
+  ).trim();
+  const numeroAdenda = String(
+    valorCelda(row, 'Código adenda', 'Codigo adenda', 'Numero adenda', 'Número adenda') || '',
+  ).trim();
+  if (!noContrato || !numeroAdenda) return null;
+
+  return {
+    no_contrato: noContrato,
+    numero_adenda: numeroAdenda,
+    tipo_adenda: String(valorCelda(row, 'Tipo adenda') || '').trim() || undefined,
+    monto: parseMontoExcel(valorCelda(row, 'Monto')),
+    estado: parseEstadoAdendaExcel(valorCelda(row, 'Estado')),
+  };
+}
+
 function filaAMovimiento(row: Record<string, unknown>): FilaMovimientoExcel | null {
   const solicitud = String(valorCelda(row, 'Solicitud') || '').trim();
   if (!solicitud) return null;
@@ -192,6 +239,7 @@ export function documentoAFilaExport(doc: DocumentoTecnicoObra): string[] {
   return [
     doc.solicitud,
     doc.cuadrantes || '',
+    doc.contrato?.no_contrato || '',
     doc.monto_contrato_base != null ? String(doc.monto_contrato_base) : '',
     doc.tipo_adenda_anterior || '',
     doc.numero_adenda_anterior || '',
@@ -204,6 +252,16 @@ export function documentoAFilaExport(doc: DocumentoTecnicoObra): string[] {
     doc.observacion || '',
     doc.contratista?.responsable || '',
     (doc.id_sigede || []).join(', '),
+  ];
+}
+
+export function adendaAFilaExport(adenda: Adenda): string[] {
+  return [
+    adenda.contrato?.no_contrato || '',
+    adenda.numero_adenda,
+    adenda.tipo_adenda || '',
+    adenda.monto != null ? String(adenda.monto) : '',
+    adenda.estado,
   ];
 }
 
@@ -224,6 +282,7 @@ export function movimientoAFilaExport(mov: MovimientoDocumentoTecnicoObra): stri
 export function construirWorkbookExport(
   documentos: DocumentoTecnicoObra[],
   movimientos: MovimientoDocumentoTecnicoObra[],
+  adendas: Adenda[] = [],
 ): XLSX.WorkBook {
   const wsDoc = XLSX.utils.aoa_to_sheet([
     [...DOCUMENTOS_EXCEL_HEADERS],
@@ -237,9 +296,16 @@ export function construirWorkbookExport(
   ]);
   wsMov['!cols'] = MOVIMIENTOS_EXCEL_COL_WIDTHS;
 
+  const wsAd = XLSX.utils.aoa_to_sheet([
+    [...ADENDAS_EXCEL_HEADERS],
+    ...adendas.map(adendaAFilaExport),
+  ]);
+  wsAd['!cols'] = ADENDAS_EXCEL_COL_WIDTHS;
+
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, wsDoc, HOJA_DOCUMENTOS);
   XLSX.utils.book_append_sheet(wb, wsMov, HOJA_MOVIMIENTOS);
+  XLSX.utils.book_append_sheet(wb, wsAd, HOJA_ADENDAS);
   return wb;
 }
 
@@ -253,9 +319,13 @@ export function construirWorkbookPlantilla(): XLSX.WorkBook {
   ]);
   wsMov['!cols'] = MOVIMIENTOS_EXCEL_COL_WIDTHS;
 
+  const wsAd = XLSX.utils.aoa_to_sheet([[...ADENDAS_EXCEL_HEADERS], ADENDAS_EXCEL_EJEMPLO]);
+  wsAd['!cols'] = ADENDAS_EXCEL_COL_WIDTHS;
+
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, wsDoc, HOJA_DOCUMENTOS);
   XLSX.utils.book_append_sheet(wb, wsMov, HOJA_MOVIMIENTOS);
+  XLSX.utils.book_append_sheet(wb, wsAd, HOJA_ADENDAS);
   return wb;
 }
 
@@ -289,6 +359,7 @@ export function parsearArchivoExcel(buffer: ArrayBuffer): ResultadoParseoExcel {
 
   const filasDoc = leerHojaPorNombre(wb, HOJA_DOCUMENTOS);
   const filasMov = leerHojaPorNombre(wb, HOJA_MOVIMIENTOS);
+  const filasAd = leerHojaPorNombre(wb, HOJA_ADENDAS);
 
   const documentos: FilaDocumentoExcel[] = [];
   filasDoc.forEach((row, idx) => {
@@ -302,5 +373,11 @@ export function parsearArchivoExcel(buffer: ArrayBuffer): ResultadoParseoExcel {
     if (mov) movimientos.push(mov);
   });
 
-  return { documentos, movimientos };
+  const adendas: FilaAdendaExcel[] = [];
+  filasAd.forEach((row) => {
+    const ad = filaAAdenda(row);
+    if (ad) adendas.push(ad);
+  });
+
+  return { documentos, movimientos, adendas };
 }

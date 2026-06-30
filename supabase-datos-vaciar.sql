@@ -15,6 +15,7 @@ TRUNCATE TABLE
   public.documentos_tecnicos_obra,
   public.matriz_general,
   public.contrato_adenda,
+  public.adenda,
   public.contrato,
   public.contratista_access_tokens,
   public.movimientos_solicitud_contratista,

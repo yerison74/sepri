@@ -13,6 +13,7 @@ import {
 } from '@mui/material';
 import { History as HistoryIcon, Person } from '@mui/icons-material';
 import type { Tramite, MovimientoTramite } from '../../services/api';
+import { esMovimientoDesdeGestionTecnica } from '../../utils/tramiteGestionTecnica';
 
 interface HistorialDialogProps {
   open: boolean;
@@ -158,6 +159,7 @@ const HistorialDialog: React.FC<HistorialDialogProps> = ({
             >
               {historial.map((movimiento, index) => {
                 const esUltimo = index === 0;
+                const desdeGestionTecnica = esMovimientoDesdeGestionTecnica(movimiento);
                 const movimientoDetenido =
                   movimiento.estado_resultante === 'detenido';
                 const colorBorde = movimientoDetenido
@@ -199,6 +201,22 @@ const HistorialDialog: React.FC<HistorialDialogProps> = ({
                           top: 8,
                           right: 8,
                           fontWeight: 600,
+                        }}
+                      />
+                    )}
+                    {desdeGestionTecnica && (
+                      <Chip
+                        label="Gestión técnica · solo lectura"
+                        size="small"
+                        variant="outlined"
+                        sx={{
+                          position: 'absolute',
+                          top: esUltimo ? 40 : 8,
+                          right: 8,
+                          fontWeight: 500,
+                          fontSize: '0.65rem',
+                          borderColor: 'info.main',
+                          color: 'info.main',
                         }}
                       />
                     )}

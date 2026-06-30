@@ -18,6 +18,9 @@ import type {
   DocumentoTecnicoObra,
   ObraSigedeResumen,
   MovimientoDocumentoTecnicoObra,
+  Adenda,
+  ContratoTechado,
+  EstadoAdenda,
 } from '../types/database';
 import { aplicarFiltrosObrasEnQuery } from '../utils/aplicarFiltrosObrasQuery';
 import { ordenarMovimientosDocumento, validarMovimientoDocumento } from '../utils/validarMovimientoDocumento';
@@ -29,6 +32,9 @@ import {
   resolverObrasSelectSinJoin,
 } from '../constants/obrasSelect';
 import { propagarEstadoObraAMatriz } from './obraTechadoSync';
+import { contratoObrasService, numeroContratoDesdeObra } from './contratoObrasService';
+import { normalizarNoContrato } from '../utils/techadoNormalizar';
+import { MARCA_OBSERVACION_GESTION_TECNICA } from '../utils/tramiteGestionTecnica';
 
 // ── Generador de token seguro (Web Crypto API) ──────────────────────────────
 function generarToken(longitud = 32): string {
@@ -534,10 +540,21 @@ function mapObraRow(row: Record<string, unknown>): Obra {
   const contratista = (
     Array.isArray(contratistaRaw) ? contratistaRaw[0] : contratistaRaw
   ) as Contratista | null | undefined;
+  const contratoRaw = row.contrato_ref;
+  const contratoRef = (
+    Array.isArray(contratoRaw) ? contratoRaw[0] : contratoRaw
+  ) as Obra['contrato_ref'];
   const responsableLegacy = row.responsable as string | null | undefined;
-  const { contratistas: _c, ...rest } = row;
+  const { contratistas: _c, contrato_ref: _cr, ...rest } = row;
+  const contratoNumero =
+    numeroContratoDesdeObra({
+      contrato: rest.contrato as string | null | undefined,
+      contrato_ref: contratoRef,
+    }) ?? (rest.contrato as string | null | undefined) ?? null;
   return {
     ...(rest as unknown as Obra),
+    contrato: contratoNumero,
+    contrato_ref: contratoRef ?? null,
     contratista: contratista ?? null,
     responsable: contratista?.responsable ?? responsableLegacy ?? null,
   };
@@ -704,10 +721,27 @@ async function prepararPayloadObraPersistencia(
   const responsable = typeof raw.responsable === 'string' ? raw.responsable.trim() : '';
   delete raw.responsable;
   delete raw.contratista;
+  delete raw.contrato_ref;
 
   if (responsable && !raw.contratista_id) {
     raw.contratista_id = await contratistasService.buscarOCrearPorResponsable(responsable);
   }
+
+  const numContrato =
+    typeof raw.contrato === 'string' && raw.contrato.trim()
+      ? raw.contrato.trim()
+      : null;
+  if (numContrato && !raw.contrato_id) {
+    const contrato = await contratoObrasService.resolverOCrearContrato({
+      no_contrato: numContrato,
+      contratista_nombre: responsable || null,
+      crearSiFalta: true,
+    });
+    if (contrato?.id) {
+      raw.contrato_id = contrato.id;
+    }
+  }
+  delete raw.contrato;
 
   return normalizarPayloadObra(raw);
 }
@@ -723,7 +757,7 @@ function normalizarPayloadObra(
 ): Record<string, unknown> {
   return Object.fromEntries(
     Object.entries(obra)
-      .filter(([k]) => k !== 'id_obra')
+      .filter(([k]) => k !== 'id_obra' && k !== 'contrato_ref')
       .map(([k, v]) => [k, truncarStringObraPorCampo(k, v)]),
   );
 }
@@ -1524,14 +1558,27 @@ export const obrasService = {
     const pattern = `%${term.replace(/'/g, "''")}%`;
     const { data, error } = await supabase
       .from('obras')
-      .select('codigo, nombre, contrato, tipo_obra, provincia, municipio, distrito_minerd_sigede')
+      .select(
+        'codigo, nombre, contrato, contrato_id, tipo_obra, provincia, municipio, distrito_minerd_sigede, contrato_ref:contrato_id(no_contrato)',
+      )
       .or(
         `codigo.ilike.${pattern},nombre.ilike.${pattern},distrito_minerd_sigede.ilike.${pattern}`,
       )
       .order('codigo', { ascending: true })
       .limit(limit);
     if (error) throw error;
-    return data || [];
+    return (data || []).map((row) => ({
+      codigo: row.codigo,
+      nombre: row.nombre,
+      contrato:
+        numeroContratoDesdeObra(
+          row as unknown as Parameters<typeof numeroContratoDesdeObra>[0],
+        ) ?? row.contrato ?? null,
+      tipo_obra: row.tipo_obra,
+      provincia: row.provincia,
+      municipio: row.municipio,
+      distrito_minerd_sigede: row.distrito_minerd_sigede,
+    }));
   },
 
   /** Búsqueda de obras para vincular a trámites (SIGEDE, contrato, nombre, responsable). */
@@ -1753,7 +1800,8 @@ export const obrasService = {
     const uniq = Array.from(new Set(ids.map((id) => id.trim()).filter(Boolean)));
     if (uniq.length === 0) return [];
 
-    const cols = 'codigo, nombre, contrato, tipo_obra, provincia, municipio, distrito_minerd_sigede';
+    const cols =
+      'codigo, nombre, contrato, contrato_id, tipo_obra, provincia, municipio, distrito_minerd_sigede, contrato_ref:contrato_id(no_contrato)';
     const [resCodigo, resDistrito] = await Promise.all([
       supabase.from('obras').select(cols).in('codigo', uniq),
       supabase.from('obras').select(cols).in('distrito_minerd_sigede', uniq),
@@ -1775,7 +1823,12 @@ export const obrasService = {
       }
       return {
         id_sigede: idSigede,
-        contrato: obra.contrato ?? null,
+        contrato:
+          numeroContratoDesdeObra(
+            obra as unknown as Parameters<typeof numeroContratoDesdeObra>[0],
+          ) ??
+          obra.contrato ??
+          null,
         plantel: obra.nombre ?? null,
         tipo: obra.tipo_obra ?? null,
         provincia: obra.provincia ?? null,
@@ -2343,7 +2396,8 @@ export const historialUploadsService = {
 // DOCUMENTOS TÉCNICOS DE OBRA
 // ============================================
 
-const DOC_TECNICO_SELECT = '*, contratistas(id, responsable, identificacion)';
+const DOC_TECNICO_SELECT =
+  '*, contratistas(id, responsable, identificacion), contrato:contrato_id(id, lote, no_contrato, contratista_nombre)';
 const MOV_DOC_TECNICO_SELECT = '*, area:departamento(id, area)';
 
 function parseNoAdendaSolicitud(value: string | number | null | undefined): number | null {
@@ -2373,7 +2427,11 @@ function mapDocumentoTecnicoRow(row: Record<string, unknown>): DocumentoTecnicoO
   const contratista = (
     Array.isArray(contratistaRaw) ? contratistaRaw[0] : contratistaRaw
   ) as Contratista | null;
-  const { contratistas: _c, ...rest } = row;
+  const contratoRaw = row.contrato;
+  const contrato = (
+    Array.isArray(contratoRaw) ? contratoRaw[0] : contratoRaw
+  ) as DocumentoTecnicoObra['contrato'];
+  const { contratistas: _c, contrato: _ct, ...rest } = row;
   const idSigede = Array.isArray(rest.id_sigede)
     ? (rest.id_sigede as string[]).map(String)
     : rest.id_sigede
@@ -2388,6 +2446,7 @@ function mapDocumentoTecnicoRow(row: Record<string, unknown>): DocumentoTecnicoO
     numero_adenda_anterior: parseCodigoAdenda(rest.numero_adenda_anterior as string | number | null),
     numero_adenda_actual: parseCodigoAdenda(rest.numero_adenda_actual as string | number | null),
     contratista: contratista ?? null,
+    contrato: contrato ?? null,
   };
 }
 
@@ -2451,13 +2510,29 @@ async function asegurarTramiteGestionTecnica(params: {
   areaDestinatario: string;
   oficio?: string | null;
 }): Promise<void> {
+  const id = params.noTramite.trim();
   const { data: existing, error: selErr } = await supabase
     .from('tramites')
-    .select('id')
-    .eq('id', params.noTramite.trim())
+    .select('id, tipo_tramite')
+    .eq('id', id)
     .maybeSingle();
   if (selErr) throw selErr;
-  if (existing?.id) return;
+
+  if (existing?.id) {
+    if (existing.tipo_tramite !== 'tipo_gestion_tecnica') {
+      const { error: updErr } = await supabase
+        .from('tramites')
+        .update({
+          tipo_tramite: 'tipo_gestion_tecnica',
+          area_destinatario: params.areaDestinatario,
+          area_destino_final: params.areaDestinatario,
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', id);
+      if (updErr) throw updErr;
+    }
+    return;
+  }
 
   const { data: doc, error: docErr } = await supabase
     .from('documentos_tecnicos_obra')
@@ -2472,7 +2547,7 @@ async function asegurarTramiteGestionTecnica(params: {
     : tituloBase;
 
   const { error: insErr } = await supabase.from('tramites').insert({
-    id: params.noTramite.trim(),
+    id,
     titulo,
     oficio: params.oficio?.trim() || null,
     nombre_destinatario: params.solicitud,
@@ -2480,23 +2555,67 @@ async function asegurarTramiteGestionTecnica(params: {
     area_destino_final: params.areaDestinatario,
     proceso: null,
     estado: 'en_transito',
-    codigo_barras: params.noTramite.trim(),
+    codigo_barras: id,
     archivo_pdf: null,
     nombre_archivo: null,
+    tipo_tramite: 'tipo_gestion_tecnica',
   });
   if (insErr) throw insErr;
 }
 
+async function actualizarEstadoTramiteDesdeUltimoMovimiento(tramiteId: string): Promise<void> {
+  const { data: ultimo, error } = await supabase
+    .from('movimientos_tramites')
+    .select('area_destino, estado_resultante')
+    .eq('tramite_id', tramiteId.trim())
+    .order('fecha_movimiento', { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (error) throw error;
+  if (!ultimo) return;
+
+  const estado =
+    ultimo.estado_resultante === 'detenido'
+      ? 'detenido'
+      : ultimo.estado_resultante === 'completado'
+        ? 'completado'
+        : 'en_transito';
+
+  await tramitesService.actualizarTramite(tramiteId, {
+    area_destinatario: ultimo.area_destino as string,
+    estado: estado as Tramite['estado'],
+  });
+}
+
+async function eliminarEspejoMovimientoEnTramite(movimientoDocumentoId: string): Promise<string | null> {
+  const { data: espejo, error: selErr } = await supabase
+    .from('movimientos_tramites')
+    .select('tramite_id')
+    .eq('movimiento_documento_id', movimientoDocumentoId)
+    .maybeSingle();
+  if (selErr) throw selErr;
+
+  const { error: delErr } = await supabase
+    .from('movimientos_tramites')
+    .delete()
+    .eq('movimiento_documento_id', movimientoDocumentoId);
+  if (delErr) throw delErr;
+
+  return (espejo?.tramite_id as string) || null;
+}
+
 /**
- * Replica el movimiento de gestión técnica en `movimientos_tramites` para Seguimiento de trámite.
- * Notifica por Realtime a usuarios cuyo `usuarios_app.area` coincide con `area_destino`.
+ * Replica o actualiza el movimiento de gestión técnica en `movimientos_tramites` (solo lectura en seguimiento).
  */
 async function sincronizarMovimientoGestionTecnicaATramite(
   movimiento: MovimientoDocumentoTecnicoObra,
   opciones: { usuario?: string | null } = {},
 ): Promise<void> {
   const noTramite = movimiento.no_tramite?.trim();
-  if (!noTramite) return;
+  if (!noTramite) {
+    await eliminarEspejoMovimientoEnTramite(movimiento.id);
+    return;
+  }
 
   const areas = await areasService.obtenerAreas();
   const areaDestinoNombre =
@@ -2527,21 +2646,49 @@ async function sincronizarMovimientoGestionTecnicaATramite(
     `Solicitud: ${movimiento.solicitud}`,
     estatus ? `Estatus: ${estatus}` : null,
     movimiento.fecha_entrada ? `Entrada: ${movimiento.fecha_entrada}` : null,
-    'Origen: Gestión técnica de documento',
+    MARCA_OBSERVACION_GESTION_TECNICA,
   ].filter(Boolean);
 
-  await tramitesService.registrarMovimiento(noTramite, {
+  const payload = {
+    tramite_id: noTramite,
     area_origen: areaOrigen,
     area_destino: areaDestinoMovimiento,
     oficio: movimiento.oficio?.trim() || null,
     observaciones: observacionesPartes.join(' | '),
     usuario: opciones.usuario?.trim() || 'Gestión técnica de documento',
     estado_resultante: mapearEstatusAEstadoResultante(estatus),
-  });
+    tipo_tramite: 'tipo_gestion_tecnica',
+    movimiento_documento_id: movimiento.id,
+  };
+
+  const { data: espejo, error: buscarErr } = await supabase
+    .from('movimientos_tramites')
+    .select('id, tramite_id')
+    .eq('movimiento_documento_id', movimiento.id)
+    .maybeSingle();
+  if (buscarErr) throw buscarErr;
+
+  if (espejo?.id) {
+    if (espejo.tramite_id !== noTramite) {
+      await supabase.from('movimientos_tramites').delete().eq('id', espejo.id);
+      const { error: insErr } = await supabase.from('movimientos_tramites').insert(payload);
+      if (insErr) throw insErr;
+    } else {
+      const { error: updErr } = await supabase
+        .from('movimientos_tramites')
+        .update(payload)
+        .eq('id', espejo.id);
+      if (updErr) throw updErr;
+    }
+  } else {
+    const { error: insErr } = await supabase.from('movimientos_tramites').insert(payload);
+    if (insErr) throw insErr;
+  }
 
   await tramitesService.actualizarTramite(noTramite, {
     area_destinatario: areaDestinoNombre,
     estado: mapearEstatusAEstadoTramite(estatus),
+    tipo_tramite: 'tipo_gestion_tecnica',
   });
 }
 
@@ -2563,9 +2710,22 @@ export const documentosTecnicosService = {
     );
     const term = filtros?.busqueda?.trim().toLowerCase();
     if (term) {
+      const termNorm = normalizarNoContrato(term).toLowerCase();
+      const coincideNumeroContrato = (valor?: string | null): boolean => {
+        if (!valor?.trim()) return false;
+        const raw = valor.toLowerCase();
+        if (raw.includes(term)) return true;
+        const norm = normalizarNoContrato(valor).toLowerCase();
+        return !!termNorm && norm.includes(termNorm);
+      };
+
       filas = filas.filter((d) => {
         const responsable = (d.contratista?.responsable || '').toLowerCase();
         const sigedes = (d.id_sigede || []).join(' ').toLowerCase();
+        const contratoDoc = d.contrato?.no_contrato;
+        const contratosObra = (d.obras_sigede || [])
+          .map((o) => o.contrato)
+          .filter(Boolean) as string[];
         return (
           d.solicitud.toLowerCase().includes(term) ||
           (d.cuadrantes || '').toLowerCase().includes(term) ||
@@ -2576,7 +2736,9 @@ export const documentosTecnicosService = {
           (d.tipo_adenda_anterior || '').toLowerCase().includes(term) ||
           (d.observacion || '').toLowerCase().includes(term) ||
           responsable.includes(term) ||
-          sigedes.includes(term)
+          sigedes.includes(term) ||
+          coincideNumeroContrato(contratoDoc) ||
+          contratosObra.some((c) => coincideNumeroContrato(c))
         );
       });
     }
@@ -2588,6 +2750,21 @@ export const documentosTecnicosService = {
       .from('documentos_tecnicos_obra')
       .select(DOC_TECNICO_SELECT)
       .eq('solicitud', solicitud.trim())
+      .maybeSingle();
+    if (error) throw error;
+    if (!data) return null;
+    const doc = mapDocumentoTecnicoRow(data as Record<string, unknown>);
+    return {
+      ...doc,
+      obras_sigede: await obrasService.obtenerResumenesPorSigede(doc.id_sigede || []),
+    };
+  },
+
+  obtenerPorId: async (id: string): Promise<DocumentoTecnicoObra | null> => {
+    const { data, error } = await supabase
+      .from('documentos_tecnicos_obra')
+      .select(DOC_TECNICO_SELECT)
+      .eq('id', id)
       .maybeSingle();
     if (error) throw error;
     if (!data) return null;
@@ -2612,6 +2789,7 @@ export const documentosTecnicosService = {
     monto_adenda_solicitada?: number | string | null;
     monto_total?: number | string | null;
     contratista_id?: string | null;
+    contrato_id?: string | null;
     id_sigede: string[];
   }): Promise<DocumentoTecnicoObra> => {
     const row = {
@@ -2628,6 +2806,7 @@ export const documentosTecnicosService = {
       monto_adenda_solicitada: parseMontoDocumento(payload.monto_adenda_solicitada),
       monto_total: parseMontoDocumento(payload.monto_total),
       contratista_id: payload.contratista_id || null,
+      contrato_id: payload.contrato_id || null,
       id_sigede: payload.id_sigede.filter(Boolean).map((s) => s.trim()).filter(Boolean),
       updated_at: new Date().toISOString(),
     };
@@ -2662,6 +2841,7 @@ export const documentosTecnicosService = {
       monto_adenda_solicitada: number | string | null;
       monto_total: number | string | null;
       contratista_id: string | null;
+      contrato_id: string | null;
       id_sigede: string[];
     }>,
   ): Promise<DocumentoTecnicoObra> => {
@@ -2697,6 +2877,7 @@ export const documentosTecnicosService = {
       updates.monto_total = parseMontoDocumento(payload.monto_total);
     }
     if (payload.contratista_id !== undefined) updates.contratista_id = payload.contratista_id;
+    if (payload.contrato_id !== undefined) updates.contrato_id = payload.contrato_id || null;
     if (payload.id_sigede !== undefined) {
       updates.id_sigede = payload.id_sigede.filter(Boolean).map((s) => s.trim()).filter(Boolean);
     }
@@ -2841,12 +3022,29 @@ export const documentosTecnicosService = {
       .single();
 
     if (error) throw error;
-    return mapMovimientoDocumentoRow(data as Record<string, unknown>);
+    const movimiento = mapMovimientoDocumentoRow(data as Record<string, unknown>);
+    try {
+      await sincronizarMovimientoGestionTecnicaATramite(movimiento);
+    } catch (syncErr: unknown) {
+      const msg = syncErr instanceof Error ? syncErr.message : 'Error al sincronizar con seguimiento de trámite';
+      throw new Error(
+        `Movimiento actualizado, pero no se pudo sincronizar con Seguimiento de trámite: ${msg}`,
+      );
+    }
+    return movimiento;
   },
 
   eliminarMovimiento: async (id: string): Promise<void> => {
+    const tramiteId = await eliminarEspejoMovimientoEnTramite(id);
     const { error } = await supabase.from('movimiento_documentos_tecnicos_obra').delete().eq('id', id);
     if (error) throw error;
+    if (tramiteId) {
+      try {
+        await actualizarEstadoTramiteDesdeUltimoMovimiento(tramiteId);
+      } catch {
+        /* estado del trámite se ajustará en el próximo movimiento */
+      }
+    }
   },
 
   listarTodosMovimientos: async (): Promise<MovimientoDocumentoTecnicoObra[]> => {
@@ -2865,6 +3063,7 @@ export const documentosTecnicosService = {
     documentos: Array<{
       solicitud: string;
       cuadrantes?: string;
+      no_contrato?: string;
       tipo_adenda?: string;
       no_adenda_solicituda?: number | null;
       tipo_adenda_anterior?: string;
@@ -2889,20 +3088,35 @@ export const documentosTecnicosService = {
       fecha_salida?: string | null;
       observaciones?: string | null;
     }>;
+    adendas?: Array<{
+      no_contrato: string;
+      numero_adenda: string;
+      tipo_adenda?: string;
+      monto?: number | null;
+      estado?: EstadoAdenda | null;
+    }>;
   }): Promise<{
     documentosCreados: number;
     documentosActualizados: number;
     movimientosCreados: number;
+    adendasCreadas: number;
+    adendasActualizadas: number;
     errores: string[];
   }> => {
     const resultado = {
       documentosCreados: 0,
       documentosActualizados: 0,
       movimientosCreados: 0,
+      adendasCreadas: 0,
+      adendasActualizadas: 0,
       errores: [] as string[],
     };
 
-    if (payload.documentos.length === 0 && payload.movimientos.length === 0) {
+    if (
+      payload.documentos.length === 0 &&
+      payload.movimientos.length === 0 &&
+      (payload.adendas?.length ?? 0) === 0
+    ) {
       throw new Error('El archivo no contiene documentos ni movimientos para importar');
     }
 
@@ -2927,6 +3141,21 @@ export const documentosTecnicosService = {
           contratista_id = await contratistasService.buscarOCrearPorResponsable(fila.contratista);
         }
 
+        let contrato_id: string | null = null;
+        if (fila.no_contrato?.trim()) {
+          const contrato = await adendaService.resolverOCrearContrato({
+            no_contrato: fila.no_contrato,
+            crearSiFalta: true,
+          });
+          if (contrato?.id) {
+            contrato_id = contrato.id;
+          } else {
+            resultado.errores.push(
+              `Documentos fila ${filaNum}: no se pudo resolver el contrato "${fila.no_contrato.trim()}"`,
+            );
+          }
+        }
+
         const existente = await documentosTecnicosService.obtenerPorSolicitud(fila.solicitud);
         const docPayload = {
           solicitud: fila.solicitud,
@@ -2942,6 +3171,7 @@ export const documentosTecnicosService = {
           monto_total: fila.monto_total,
           observacion: fila.observacion,
           contratista_id,
+          contrato_id,
           id_sigede: fila.id_sigede || [],
         };
 
@@ -2956,6 +3186,57 @@ export const documentosTecnicosService = {
       } catch (err: unknown) {
         const msg = err instanceof Error ? err.message : 'Error desconocido';
         resultado.errores.push(`Documentos fila ${filaNum}: ${msg}`);
+      }
+    }
+
+    const filasAdendas = payload.adendas || [];
+    for (let i = 0; i < filasAdendas.length; i++) {
+      const fila = filasAdendas[i];
+      const filaNum = i + 2;
+      try {
+        const noContrato = fila.no_contrato.trim();
+        const numeroAdenda = fila.numero_adenda.trim();
+        if (!noContrato || !numeroAdenda) {
+          resultado.errores.push(`Adendas fila ${filaNum}: número de contrato y código adenda son obligatorios`);
+          continue;
+        }
+        if (!fila.estado || !['en_curso', 'anterior'].includes(fila.estado)) {
+          resultado.errores.push(
+            `Adendas fila ${filaNum}: estado inválido (use en_curso o anterior)`,
+          );
+          continue;
+        }
+
+        const contrato = await adendaService.resolverOCrearContrato({
+          no_contrato: noContrato,
+          crearSiFalta: true,
+        });
+        if (!contrato?.id) {
+          resultado.errores.push(
+            `Adendas fila ${filaNum}: no se pudo resolver el contrato "${noContrato}"`,
+          );
+          continue;
+        }
+
+        const existente = await adendaService.obtenerPorContratoYNumero(contrato.id, numeroAdenda);
+        const adendaPayload = {
+          contrato_id: contrato.id,
+          numero_adenda: numeroAdenda,
+          tipo_adenda: fila.tipo_adenda || null,
+          monto: fila.monto ?? null,
+          estado: fila.estado,
+        };
+
+        if (existente) {
+          await adendaService.actualizar(existente.id, adendaPayload);
+          resultado.adendasActualizadas += 1;
+        } else {
+          await adendaService.crear(adendaPayload);
+          resultado.adendasCreadas += 1;
+        }
+      } catch (err: unknown) {
+        const msg = err instanceof Error ? err.message : 'Error desconocido';
+        resultado.errores.push(`Adendas fila ${filaNum}: ${msg}`);
       }
     }
 
@@ -3012,6 +3293,187 @@ export const documentosTecnicosService = {
     }
 
     return resultado;
+  },
+};
+
+const ADENDA_SELECT = '*, contrato:contrato_id(id, lote, no_contrato)';
+
+function mapAdendaRow(row: Record<string, unknown>): Adenda {
+  const contratoRaw = row.contrato;
+  const contrato = (
+    Array.isArray(contratoRaw) ? contratoRaw[0] : contratoRaw
+  ) as Adenda['contrato'];
+  const { contrato: _c, ...rest } = row;
+  return {
+    ...(rest as unknown as Adenda),
+    estado: (rest.estado as EstadoAdenda) || 'anterior',
+    numero_adenda: String(rest.numero_adenda || ''),
+    contrato: contrato ?? null,
+  };
+}
+
+async function demoteOtrasAdendasEnCurso(contratoId: string, exceptId?: string): Promise<void> {
+  let query = supabase
+    .from('adenda')
+    .update({ estado: 'anterior', updated_at: new Date().toISOString() })
+    .eq('contrato_id', contratoId)
+    .eq('estado', 'en_curso');
+  if (exceptId) query = query.neq('id', exceptId);
+  const { error } = await query;
+  if (error) throw error;
+}
+
+export const adendaService = {
+  listarPorContrato: async (contratoId: string): Promise<Adenda[]> => {
+    const { data, error } = await supabase
+      .from('adenda')
+      .select(ADENDA_SELECT)
+      .eq('contrato_id', contratoId)
+      .order('estado', { ascending: true })
+      .order('created_at', { ascending: false });
+
+    if (error) throw error;
+    const filas = (data || []).map((r) => mapAdendaRow(r as Record<string, unknown>));
+    return filas.sort((a, b) => {
+      if (a.estado !== b.estado) {
+        if (a.estado === 'en_curso') return -1;
+        if (b.estado === 'en_curso') return 1;
+      }
+      return (b.created_at || '').localeCompare(a.created_at || '');
+    });
+  },
+
+  buscarContratos: async (search: string, limit = 8): Promise<ContratoTechado[]> => {
+    return contratoObrasService.buscarContratos(search, limit);
+  },
+
+  buscarContratoPorNumero: async (
+    noContrato: string,
+    options?: { crearSiFalta?: boolean },
+  ): Promise<ContratoTechado | null> => {
+    return contratoObrasService.buscarContratoPorNumero(noContrato, options);
+  },
+
+  resolverOCrearContrato: async (options: {
+    no_contrato: string;
+    contratista_nombre?: string | null;
+    crearSiFalta?: boolean;
+  }): Promise<ContratoTechado | null> => {
+    return contratoObrasService.resolverOCrearContrato(options);
+  },
+
+  listarPorContratoIds: async (contratoIds: string[]): Promise<Adenda[]> => {
+    const ids = Array.from(new Set(contratoIds.filter(Boolean)));
+    if (ids.length === 0) return [];
+    const { data, error } = await supabase
+      .from('adenda')
+      .select(ADENDA_SELECT)
+      .in('contrato_id', ids)
+      .order('contrato_id', { ascending: true })
+      .order('estado', { ascending: true })
+      .order('created_at', { ascending: false });
+
+    if (error) throw error;
+    return (data || []).map((r) => mapAdendaRow(r as Record<string, unknown>));
+  },
+
+  obtenerPorContratoYNumero: async (
+    contratoId: string,
+    numeroAdenda: string,
+  ): Promise<Adenda | null> => {
+    const numero = parseCodigoAdenda(numeroAdenda) || numeroAdenda.trim();
+    if (!contratoId || !numero) return null;
+    const { data, error } = await supabase
+      .from('adenda')
+      .select(ADENDA_SELECT)
+      .eq('contrato_id', contratoId)
+      .eq('numero_adenda', numero)
+      .maybeSingle();
+
+    if (error) throw error;
+    return data ? mapAdendaRow(data as Record<string, unknown>) : null;
+  },
+
+  obtenerContratoPorId: async (id: string): Promise<ContratoTechado | null> => {
+    return contratoObrasService.obtenerContratoPorId(id);
+  },
+
+  crear: async (payload: {
+    contrato_id: string;
+    numero_adenda: string;
+    tipo_adenda?: string | null;
+    monto?: number | string | null;
+    estado: EstadoAdenda;
+  }): Promise<Adenda> => {
+    const estado = payload.estado;
+    if (estado === 'en_curso') {
+      await demoteOtrasAdendasEnCurso(payload.contrato_id);
+    }
+
+    const row = {
+      contrato_id: payload.contrato_id,
+      numero_adenda: parseCodigoAdenda(payload.numero_adenda) || payload.numero_adenda.trim(),
+      tipo_adenda: payload.tipo_adenda?.trim() || null,
+      monto: parseMontoDocumento(payload.monto),
+      estado,
+      updated_at: new Date().toISOString(),
+    };
+
+    const { data, error } = await supabase
+      .from('adenda')
+      .insert(row)
+      .select(ADENDA_SELECT)
+      .single();
+
+    if (error) throw error;
+    return mapAdendaRow(data as Record<string, unknown>);
+  },
+
+  actualizar: async (
+    id: string,
+    payload: Partial<{
+      numero_adenda: string;
+      tipo_adenda: string | null;
+      monto: number | string | null;
+      estado: EstadoAdenda;
+    }>,
+  ): Promise<Adenda> => {
+    const { data: actual, error: errActual } = await supabase
+      .from('adenda')
+      .select('contrato_id, estado')
+      .eq('id', id)
+      .maybeSingle();
+
+    if (errActual) throw errActual;
+    if (!actual) throw new Error('Adenda no encontrada');
+
+    const nuevoEstado = payload.estado ?? (actual.estado as EstadoAdenda);
+    if (nuevoEstado === 'en_curso') {
+      await demoteOtrasAdendasEnCurso(actual.contrato_id as string, id);
+    }
+
+    const updates: Record<string, unknown> = { updated_at: new Date().toISOString() };
+    if (payload.numero_adenda !== undefined) {
+      updates.numero_adenda = parseCodigoAdenda(payload.numero_adenda) || payload.numero_adenda.trim();
+    }
+    if (payload.tipo_adenda !== undefined) updates.tipo_adenda = payload.tipo_adenda?.trim() || null;
+    if (payload.monto !== undefined) updates.monto = parseMontoDocumento(payload.monto);
+    if (payload.estado !== undefined) updates.estado = payload.estado;
+
+    const { data, error } = await supabase
+      .from('adenda')
+      .update(updates)
+      .eq('id', id)
+      .select(ADENDA_SELECT)
+      .single();
+
+    if (error) throw error;
+    return mapAdendaRow(data as Record<string, unknown>);
+  },
+
+  eliminar: async (id: string): Promise<void> => {
+    const { error } = await supabase.from('adenda').delete().eq('id', id);
+    if (error) throw error;
   },
 };
 

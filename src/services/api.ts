@@ -1,5 +1,5 @@
 import axios, { AxiosInstance, AxiosResponse } from 'axios';
-import { obrasService, historialUploadsService, storageService, tramitesService, notificacionesTiempoService, areasService, formularioContratistaService, documentosTecnicosService, contratistasService } from './supabaseService';
+import { obrasService, historialUploadsService, storageService, tramitesService, notificacionesTiempoService, areasService, formularioContratistaService, documentosTecnicosService, contratistasService, adendaService } from './supabaseService';
 import { techadoService } from './techadoService';
 import { getDiasMaximosPorArea } from '../constants/procesos';
 import { mensajeNotificacionTiempo } from '../utils/notificacionesTiempo';
@@ -228,6 +228,7 @@ export const gestionTecnicaDocumentoAPI = {
       monto_adenda_solicitada?: number | string | null;
       monto_total?: number | string | null;
       contratista_id?: string | null;
+      contrato_id?: string | null;
       id_sigede: string[];
     },
     id?: string,
@@ -255,6 +256,20 @@ export const gestionTecnicaDocumentoAPI = {
       throw {
         response: {
           data: { error: error.message || 'Error al eliminar documento' },
+          status: 500,
+        },
+      };
+    }
+  },
+
+  obtenerDocumentoPorId: async (id: string) => {
+    try {
+      const data = await documentosTecnicosService.obtenerPorId(id);
+      return { data: { data } } as AxiosResponse<{ data: DocumentoTecnicoObra | null }>;
+    } catch (error: any) {
+      throw {
+        response: {
+          data: { error: error.message || 'Error al obtener documento' },
           status: 500,
         },
       };
@@ -383,6 +398,105 @@ export const gestionTecnicaDocumentoAPI = {
     }
   },
 
+  buscarContratos: async (search: string, limit = 8) => {
+    try {
+      const data = await adendaService.buscarContratos(search, limit);
+      return { data: { data } } as AxiosResponse<{ data: import('../types/database').ContratoTechado[] }>;
+    } catch (error: any) {
+      throw {
+        response: {
+          data: { error: error.message || 'Error al buscar contratos' },
+          status: 500,
+        },
+      };
+    }
+  },
+
+  obtenerContratoPorId: async (id: string) => {
+    try {
+      const data = await adendaService.obtenerContratoPorId(id);
+      return { data: { data } } as AxiosResponse<{ data: import('../types/database').ContratoTechado | null }>;
+    } catch (error: any) {
+      throw {
+        response: {
+          data: { error: error.message || 'Error al obtener contrato' },
+          status: 500,
+        },
+      };
+    }
+  },
+
+  resolverContratoDesdeObras: async (noContrato: string, contratistaNombre?: string | null) => {
+    try {
+      const data = await adendaService.resolverOCrearContrato({
+        no_contrato: noContrato,
+        contratista_nombre: contratistaNombre,
+        crearSiFalta: true,
+      });
+      return { data: { data } } as AxiosResponse<{ data: import('../types/database').ContratoTechado | null }>;
+    } catch (error: any) {
+      throw {
+        response: {
+          data: { error: error.message || 'Error al resolver contrato' },
+          status: 500,
+        },
+      };
+    }
+  },
+
+  listarAdendasContrato: async (contratoId: string) => {
+    try {
+      const data = await adendaService.listarPorContrato(contratoId);
+      return { data: { data } } as AxiosResponse<{ data: import('../types/database').Adenda[] }>;
+    } catch (error: any) {
+      throw {
+        response: {
+          data: { error: error.message || 'Error al listar adendas' },
+          status: 500,
+        },
+      };
+    }
+  },
+
+  guardarAdenda: async (
+    payload: {
+      contrato_id: string;
+      numero_adenda: string;
+      tipo_adenda?: string | null;
+      monto?: number | string | null;
+      estado: import('../types/database').EstadoAdenda;
+    },
+    id?: string,
+  ) => {
+    try {
+      const data = id
+        ? await adendaService.actualizar(id, payload)
+        : await adendaService.crear(payload);
+      return { data: { data } } as AxiosResponse<{ data: import('../types/database').Adenda }>;
+    } catch (error: any) {
+      throw {
+        response: {
+          data: { error: error.message || 'Error al guardar adenda' },
+          status: 500,
+        },
+      };
+    }
+  },
+
+  eliminarAdenda: async (id: string) => {
+    try {
+      await adendaService.eliminar(id);
+      return { data: { ok: true } };
+    } catch (error: any) {
+      throw {
+        response: {
+          data: { error: error.message || 'Error al eliminar adenda' },
+          status: 500,
+        },
+      };
+    }
+  },
+
   exportarExcel: async (filtros?: { busqueda?: string }) => {
     try {
       const documentos = await documentosTecnicosService.listar(filtros);
@@ -391,8 +505,13 @@ export const gestionTecnicaDocumentoAPI = {
       const movimientosFiltrados = filtros?.busqueda?.trim()
         ? movimientos.filter((m) => solicitudes.has(m.solicitud))
         : movimientos;
+      const contratoIds = Array.from(
+        new Set(documentos.map((d) => d.contrato_id).filter((id): id is string => !!id)),
+      );
+      const adendas =
+        contratoIds.length > 0 ? await adendaService.listarPorContratoIds(contratoIds) : [];
 
-      const wb = construirWorkbookExport(documentos, movimientosFiltrados);
+      const wb = construirWorkbookExport(documentos, movimientosFiltrados, adendas);
       const blob = workbookABlob(wb);
       return { data: blob } as AxiosResponse<Blob>;
     } catch (error: any) {
@@ -423,17 +542,18 @@ export const gestionTecnicaDocumentoAPI = {
   importarExcel: async (file: File) => {
     try {
       const buffer = await file.arrayBuffer();
-      const { documentos, movimientos } = parsearArchivoExcel(buffer);
+      const { documentos, movimientos, adendas } = parsearArchivoExcel(buffer);
 
-      if (documentos.length === 0 && movimientos.length === 0) {
+      if (documentos.length === 0 && movimientos.length === 0 && adendas.length === 0) {
         throw new Error(
-          'No se encontraron filas válidas. Use las hojas "Documentos" y "Movimientos" con los encabezados de la plantilla.',
+          'No se encontraron filas válidas. Use las hojas "Documentos", "Movimientos" y/o "Adendas" con los encabezados de la plantilla.',
         );
       }
 
       const resultado = await documentosTecnicosService.importarMasivo({
         documentos,
         movimientos,
+        adendas,
       });
 
       return { data: { data: resultado } };

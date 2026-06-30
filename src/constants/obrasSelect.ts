@@ -6,6 +6,7 @@ export const OBRAS_COLUMNAS_LISTADO = [
   'id',
   'codigo',
   'contrato',
+  'contrato_id',
   'nombre',
   'nombre_inaugurado',
   'tipo_obra',
@@ -34,14 +35,15 @@ export const OBRAS_COLUMNAS_LISTADO = [
 /** Listado + coordenadas para reportes y mapas. */
 export const OBRAS_COLUMNAS_REPORTE = [...OBRAS_COLUMNAS_LISTADO, 'latitud', 'longitud'] as const;
 
-export const OBRAS_SELECT_COMPLETO = '*, contratistas(*)';
-export const OBRAS_SELECT_COMPLETO_INNER = '*, contratistas!inner(*)';
+export const OBRAS_SELECT_COMPLETO = '*, contratistas(*), contrato_ref:contrato_id(id, no_contrato, lote, contratista_nombre)';
+export const OBRAS_SELECT_COMPLETO_INNER = '*, contratistas!inner(*), contrato_ref:contrato_id(id, no_contrato, lote, contratista_nombre)';
 
 export const OBRAS_SELECT_DASHBOARD_PROXIMAS =
   'id, codigo, nombre, estado, fecha_inauguracion, contratista_id, contratistas(responsable)';
 
 const JOIN_CONTRATISTA = 'contratistas(responsable)';
 const JOIN_CONTRATISTA_INNER = 'contratistas!inner(responsable)';
+const JOIN_CONTRATO = 'contrato_ref:contrato_id(id, no_contrato, lote, contratista_nombre)';
 
 export function columnasObrasProyeccion(proyeccion: ObrasProyeccion): string {
   if (proyeccion === 'completo') return '*';
@@ -58,7 +60,7 @@ export function resolverObrasSelect(
   }
   const cols = columnasObrasProyeccion(proyeccion);
   const join = filtroResponsableActivo ? JOIN_CONTRATISTA_INNER : JOIN_CONTRATISTA;
-  return `${cols}, ${join}`;
+  return `${cols}, ${join}, ${JOIN_CONTRATO}`;
 }
 
 /** Select sin join contratistas (fallback si la relación no existe). */

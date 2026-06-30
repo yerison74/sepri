@@ -70,6 +70,7 @@ import SeguimientoDialog, { SeguimientoData } from './tramites/SeguimientoDialog
 import HistorialDialog from './tramites/HistorialDialog';
 import BarcodeDialog from './tramites/BarcodeDialog';
 import DetalleTramiteDialog from './tramites/DetalleTramiteDialog';
+import { esTramiteGestionTecnica } from '../utils/tramiteGestionTecnica';
 const LazyPdfViewerDialog = React.lazy(() => import('./tramites/PdfViewerDialog'));
 
 const ESTADO_OPTIONS: { value: string; label: string }[] = [
@@ -860,6 +861,12 @@ const TramiteHistory: React.FC<TramiteHistoryProps> = ({ soloLectura = false }) 
 
   const handleRegistrarSeguimiento = async () => {
     if (!selectedTramite) return;
+    if (esTramiteGestionTecnica(selectedTramite)) {
+      setError(
+        'Este trámite proviene de Gestión técnica de documento. Registre o edite movimientos allí; en Seguimiento solo puede consultarlos.',
+      );
+      return;
+    }
 
     const esDetenido = seguimientoData.actualizar_estado === 'detenido';
     const esCompletado = seguimientoData.actualizar_estado === 'completado';
@@ -1135,7 +1142,9 @@ const TramiteHistory: React.FC<TramiteHistoryProps> = ({ soloLectura = false }) 
                               <QrCode fontSize="small" />
                             </IconButton>
                           </Tooltip>
-                          {tramite.estado !== 'completado' && !soloLectura && (
+                          {tramite.estado !== 'completado' &&
+                            !soloLectura &&
+                            !esTramiteGestionTecnica(tramite) && (
                             <Tooltip title="Registrar Seguimiento">
                               <IconButton
                                 size="small"
@@ -1335,7 +1344,9 @@ const TramiteHistory: React.FC<TramiteHistoryProps> = ({ soloLectura = false }) 
                           </IconButton>
                         </Tooltip>
                       </Box>
-                      {tramite.estado !== 'completado' && !soloLectura && (
+                      {tramite.estado !== 'completado' &&
+                        !soloLectura &&
+                        !esTramiteGestionTecnica(tramite) && (
                         <Tooltip title="Registrar Seguimiento">
                           <IconButton
                             size="small"
