@@ -25,6 +25,11 @@ import {
 import { SEPRI_INSET } from '../constants/sepriSurfaces';
 import { techadoService } from '../services/techadoService';
 import { esTipoObraTechados } from '../constants/tipoObra';
+import {
+  CLASE_ETIQUETA_OBRA_GESTION_MANTENIMIENTO,
+  ETIQUETA_OBRA_GESTION_MANTENIMIENTO,
+  esTipoObraGestionMantenimiento,
+} from '../constants/tipoObraGestion';
 import EstadoObraBadge from './EstadoObraBadge';
 import type { ObraMatrizTechadoResumen } from '../types/database';
 
@@ -320,14 +325,19 @@ const ObrasTable: React.FC<ObrasTableProps> = ({
                           {obra.nombre || 'Sin nombre'}
                         </h3>
                         <div className="flex flex-wrap items-center gap-2 text-sm text-gray-600">
-                          {obra.id_obra && (
+                          {(obra.id_obra || obra.id) && (
                             <span className="font-mono font-medium text-[#42A5F5] font-semibold">
-                              {obra.id_obra}
+                              {obra.id_obra || obra.id}
+                            </span>
+                          )}
+                          {obra.contrato && (
+                            <span className="font-mono font-medium text-gray-700">
+                              Contrato {obra.contrato}
                             </span>
                           )}
                           {obra.codigo && (
                             <span className="font-mono font-medium text-gray-600">
-                              {obra.codigo}
+                              SIGEDE {obra.codigo}
                             </span>
                           )}
                           {obra.nivel && (
@@ -336,6 +346,11 @@ const ObrasTable: React.FC<ObrasTableProps> = ({
                           {!modoTechado && esTipoObraTechados(obra.tipo_obra) && (
                             <span className="px-2 py-0.5 text-xs font-semibold rounded-full bg-amber-100 text-amber-900">
                               Programa Techado
+                            </span>
+                          )}
+                          {!modoTechado && esTipoObraGestionMantenimiento(obra.tipo) && (
+                            <span className={CLASE_ETIQUETA_OBRA_GESTION_MANTENIMIENTO}>
+                              {ETIQUETA_OBRA_GESTION_MANTENIMIENTO}
                             </span>
                           )}
                         </div>
@@ -505,7 +520,11 @@ const ObrasTable: React.FC<ObrasTableProps> = ({
                   </div>
                 )}
                 <div>
-                  <div className="text-xs text-gray-500 mb-1">Código</div>
+                  <div className="text-xs text-gray-500 mb-1">Contrato</div>
+                  <div className="text-base font-medium font-mono">{selectedObra.contrato || '-'}</div>
+                </div>
+                <div>
+                  <div className="text-xs text-gray-500 mb-1">Código SIGEDE</div>
                   <div className="text-base font-medium">{selectedObra.codigo || '-'}</div>
                 </div>
                 {!selectedObra.id_obra && (
@@ -528,6 +547,11 @@ const ObrasTable: React.FC<ObrasTableProps> = ({
                       {esTipoObraTechados(selectedObra.tipo_obra) && (
                         <span className="ml-2 px-2 py-0.5 text-xs font-semibold rounded-full bg-amber-100 text-amber-900">
                           Programa Techado
+                        </span>
+                      )}
+                      {esTipoObraGestionMantenimiento(selectedObra.tipo) && (
+                        <span className={`ml-2 ${CLASE_ETIQUETA_OBRA_GESTION_MANTENIMIENTO}`}>
+                          {ETIQUETA_OBRA_GESTION_MANTENIMIENTO}
                         </span>
                       )}
                     </div>

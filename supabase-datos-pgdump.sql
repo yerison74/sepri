@@ -16,7 +16,7 @@
 -- ── IMPORTAR datos (destino, esquema ya creado con supabase-schema-completo.sql) ─
 -- 1) Opcional: supabase-datos-vaciar.sql en SQL Editor del destino
 -- 2) psql "postgresql://postgres.[PROJECT_REF]:[PASSWORD]@..." -f sepri-datos.sql
--- 3) supabase-datos-secuencias.sql en SQL Editor del destino
+-- 3) supabase-datos-secuencias.sql  (SELECT sepri_reset_secuencias)
 --
 -- ── EXPORTAR esquema + datos (clon completo) ───────────────────────────────────
 -- pg_dump "postgresql://..." \

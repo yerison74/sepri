@@ -6,6 +6,9 @@ import * as XLSX from 'xlsx';
 import { XMLParser } from 'fast-xml-parser';
 import { obrasService, contratistasService } from './supabaseService';
 import { supabase } from '../lib/supabase';
+import { reservarIdsObra } from '../utils/reservarIdObra';
+import { inferirTipoObraGestion } from '../constants/tipoObraGestion';
+import { normalizarCodigoObra } from '../utils/normalizarCodigoObra';
 import type { Obra } from '../types/database';
 import {
   mapearRegistroPlantillaObra,
@@ -44,49 +47,42 @@ function tipoObraNormalizado(tipo: string): 'Construccion' | 'Mantenimiento' {
 
 async function obtenerMapaCodigoAId(codigos: string[]): Promise<Map<string, string>> {
   const map = new Map<string, string>();
-  const uniq = Array.from(new Set(codigos.map((c) => c.trim().toUpperCase()).filter(Boolean)));
+  const uniq = Array.from(
+    new Set(
+      codigos
+        .map((c) => normalizarCodigoObra(c))
+        .filter((c): c is string => !!c),
+    ),
+  );
   for (let i = 0; i < uniq.length; i += CODIGO_CHUNK) {
     const chunk = uniq.slice(i, i + CODIGO_CHUNK);
     const { data, error } = await supabase.from('obras').select('id,codigo').in('codigo', chunk);
     if (error) throw error;
     for (const row of data || []) {
-      if (row.codigo != null) {
-        map.set(String(row.codigo).trim().toUpperCase(), row.id as string);
-      }
+      const key = normalizarCodigoObra(row.codigo as string);
+      if (key) map.set(key, row.id as string);
     }
   }
   return map;
 }
 
-/**
- * Reserva N IDs OB-xxxx / MT-xxxx libres con pocas consultas (antes: hasta 5 por fila).
- */
-async function reservarIdsObra(tipoObra: string, cantidad: number): Promise<string[]> {
-  if (cantidad <= 0) return [];
-  const prefijo = tipoObraNormalizado(tipoObra) === 'Mantenimiento' ? 'MT' : 'OB';
-  const resultado: string[] = [];
-  let intentos = 0;
-  while (resultado.length < cantidad && intentos < 40) {
-    intentos += 1;
-    const necesita = cantidad - resultado.length;
-    const objetivoCandidatos = Math.min(Math.max(necesita * 8, 80), 800);
-    const pool = new Set<string>();
-    while (pool.size < objetivoCandidatos) {
-      const random = Math.floor(Math.random() * 10000).toString().padStart(4, '0');
-      pool.add(`${prefijo}-${random}`);
-    }
-    const arr = Array.from(pool);
-    const { data, error } = await supabase.from('obras').select('id').in('id', arr);
-    if (error) throw error;
-    const ocupados = new Set((data || []).map((r: { id: string }) => r.id));
-    for (const id of arr) {
-      if (!ocupados.has(id) && !resultado.includes(id)) {
-        resultado.push(id);
-        if (resultado.length >= cantidad) return resultado;
-      }
-    }
+/** En un mismo archivo, el último registro por código prevalece (evita doble insert). */
+function deduplicarItemsPorCodigo(items: ItemCargaObra[]): {
+  items: ItemCargaObra[];
+  filasDuplicadas: number;
+} {
+  const porCodigo = new Map<string, ItemCargaObra>();
+  let filasDuplicadas = 0;
+  for (const it of items) {
+    if (porCodigo.has(it.codigoNormalizado)) filasDuplicadas += 1;
+    porCodigo.set(it.codigoNormalizado, it);
   }
-  throw new Error(`No se pudieron reservar ${cantidad} IDs únicos para obras ${prefijo}`);
+  return { items: Array.from(porCodigo.values()), filasDuplicadas };
+}
+
+async function reservarIdsObraPorTipoObra(tipoObra: string, cantidad: number): Promise<string[]> {
+  const prefijo = tipoObraNormalizado(tipoObra) === 'Mantenimiento' ? 'MT' : 'OB';
+  return reservarIdsObra(prefijo, cantidad);
 }
 
 type ItemCargaObra = {
@@ -147,6 +143,13 @@ async function ejecutarCargaObrasLote(
     return resultados;
   }
 
+  const { items: itemsUnicos, filasDuplicadas } = deduplicarItemsPorCodigo(items);
+  if (filasDuplicadas > 0) {
+    resultados.errores.push(
+      `${filasDuplicadas} fila(s) duplicada(s) en el archivo (mismo código SIGEDE); se aplicó el último valor de cada una.`,
+    );
+  }
+
   const { desde, hasta } = rangoPct;
   const span = hasta - desde;
   const emit = (frac: number, mensaje: string) => {
@@ -154,11 +157,11 @@ async function ejecutarCargaObrasLote(
   };
 
   emit(0, 'Consultando obras ya registradas por código…');
-  const existing = await obtenerMapaCodigoAId(items.map((it) => it.codigoNormalizado));
+  const existing = await obtenerMapaCodigoAId(itemsUnicos.map((it) => it.codigoNormalizado));
 
   const sim = new Map(existing);
   const createByTipo = new Map<'Construccion' | 'Mantenimiento', number>();
-  for (const it of items) {
+  for (const it of itemsUnicos) {
     const c = it.codigoNormalizado;
     if (sim.has(c)) continue;
     const tipo = tipoObraNormalizado(it.tipoObraRaw);
@@ -172,7 +175,7 @@ async function ejecutarCargaObrasLote(
   for (const tipo of ['Construccion', 'Mantenimiento'] as const) {
     const n = createByTipo.get(tipo) || 0;
     if (n > 0) {
-      reserved.set(tipo, await reservarIdsObra(tipo, n));
+      reserved.set(tipo, await reservarIdsObraPorTipoObra(tipo, n));
       reservedIdx.set(tipo, 0);
     }
   }
@@ -202,9 +205,9 @@ async function ejecutarCargaObrasLote(
     insertsBuffer.length = 0;
   };
 
-  const totalFilas = items.length;
+  const totalFilas = itemsUnicos.length;
   let filaHecha = 0;
-  for (const it of items) {
+  for (const it of itemsUnicos) {
     try {
       const tipo = tipoObraNormalizado(it.tipoObraRaw);
       const { obra, codigoNormalizado, contratista } = it;
@@ -229,6 +232,11 @@ async function ejecutarCargaObrasLote(
           id: nuevoId,
           codigo: codigoNormalizado,
           tipo_obra: tipo,
+          tipo: inferirTipoObraGestion({
+            codigo: codigoNormalizado,
+            distrito_minerd_sigede: obra.distrito_minerd_sigede,
+            contrato: obra.contrato,
+          }),
         } as Omit<Obra, 'created_at' | 'updated_at'>;
         insertsBuffer.push(obraParaCrear);
         pendientesContratista.push({
@@ -336,7 +344,8 @@ export const procesarArchivoXml = async (
             flatFromXmlObra(obraXml as Record<string, unknown>),
           );
 
-          if (!obra.codigo || obra.codigo.trim() === '') {
+          const codigoNormalizado = normalizarCodigoObra(obra.codigo);
+          if (!codigoNormalizado) {
             resultados.fallidas++;
             resultados.errores.push(
               'Obra sin código. El campo "codigo" es obligatorio para crear/actualizar.',
@@ -344,7 +353,6 @@ export const procesarArchivoXml = async (
             continue;
           }
 
-          const codigoNormalizado = obra.codigo.trim().toUpperCase();
           const tipoObra = (obra as any).tipo_obra || 'Construccion';
           const etiquetaError = `Obra ${obraXml.id || obraXml['@_id'] || 'desconocida'}`;
           items.push({ obra, contratista, codigoNormalizado, tipoObraRaw: tipoObra, etiquetaError });
@@ -426,7 +434,8 @@ export const procesarArchivoExcel = async (
           const row = (jsonData as Record<string, unknown>[])[rowIdx];
           const { obra, contratista } = mapearRegistroPlantillaObra(row);
 
-          if (!obra.codigo || obra.codigo.trim() === '') {
+          const codigoNormalizado = normalizarCodigoObra(obra.codigo);
+          if (!codigoNormalizado) {
             resultados.fallidas++;
             resultados.errores.push(
               'Fila sin código. El campo "codigo" es obligatorio para crear/actualizar. Columnas encontradas: ' +
@@ -435,7 +444,6 @@ export const procesarArchivoExcel = async (
             continue;
           }
 
-          const codigoNormalizado = obra.codigo.trim().toUpperCase();
           const tipoObra = (obra as any).tipo_obra || 'Construccion';
           const etiquetaError = `Fila ${rowIdx + 2}`;
           items.push({ obra, contratista, codigoNormalizado, tipoObraRaw: tipoObra, etiquetaError });

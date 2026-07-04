@@ -9,7 +9,11 @@
 -- Login por defecto tras ejecutar: admin / admin
 --
 -- Datos (export/import): scripts/export-supabase-datos.mjs y scripts/import-supabase-datos.mjs
--- Ver también: supabase-datos-vaciar.sql, supabase-datos-secuencias.sql, supabase-datos-pgdump.sql
+--
+-- Scripts auxiliares (requieren funciones de este archivo):
+--   supabase-datos-vaciar.sql    → TRUNCATE + sepri_seed_catalogos()
+--   supabase-datos-secuencias.sql → sepri_reset_secuencias()
+--   supabase-datos-pgdump.sql    → guía pg_dump/pg_restore
 -- =============================================================================
 
 GRANT USAGE ON SCHEMA public TO anon, authenticated;
@@ -25,6 +29,94 @@ AS $$
 BEGIN
   NEW.updated_at = now();
   RETURN NEW;
+END;
+$$;
+
+-- Catálogo de áreas + usuario admin (reutilizado por schema y datos-vaciar)
+CREATE OR REPLACE FUNCTION public.sepri_seed_catalogos()
+RETURNS void
+LANGUAGE plpgsql
+AS $$
+BEGIN
+  INSERT INTO public.area (id, area, encargado_id) VALUES
+    ('DIGE', 'Dirección General', NULL),
+    ('OAIP', 'Oficina de Libre Acceso a la Información Pública', NULL),
+    ('JURI', 'Departamento Jurídico', NULL),
+    ('RRHH', 'Departamento de Recursos Humanos', NULL),
+    ('PYDE', 'Departamento de Planificación y Desarrollo', NULL),
+    ('COGI', 'División Control de Gestión Interna', NULL),
+    ('SEFI', 'División de Seguridad', NULL),
+    ('TECO', 'División de Tecnologías de la Información y Comunicación', NULL),
+    ('ADFI', 'Departamento Administrativo y Financiero', NULL),
+    ('DIAR', 'Departamento de Diseño y Arquitectura', NULL),
+    ('GEIE', 'Departamento de Gestión de Infraestructura Escolar', NULL),
+    ('GERI', 'Departamento Gestión de Riesgo', NULL),
+    ('MANO', 'Departamento de Mantenimiento de Obras', NULL),
+    ('SUPO', 'Departamento Supervisión de Obras', NULL),
+    ('FISO', 'Departamento Fiscalización de Obras', NULL),
+    ('CUBI', 'Departamento de Cubicaciones', NULL),
+    ('COOR', 'Departamento de Coordinación Regional', NULL)
+  ON CONFLICT (id) DO NOTHING;
+
+  DELETE FROM public.usuarios_app WHERE lower(trim(usuario)) = 'admin';
+
+  INSERT INTO public.usuarios_app (
+    usuario, password, nombre, apellido, cargo, area, rol, permisos, activo
+  ) VALUES (
+    'admin', 'admin', 'Administrador', 'Sistema', 'Administrador', 'Ninguna', 'admin',
+    '{
+      "crear_usuarios": true, "editar_usuarios": true,
+      "ver_dashboard": true, "editar_dashboard": true,
+      "ver_obras": true, "editar_obras": true,
+      "ver_techado": true, "editar_techado": true,
+      "ver_carga_obras": true, "editar_carga_obras": true,
+      "ver_tramites": true, "editar_tramites": true,
+      "ver_atencion_contratista": true, "editar_atencion_contratista": true,
+      "ver_configuracion": true, "editar_configuracion": true,
+      "ver_reporte": true, "editar_reporte": true
+    }'::jsonb,
+    true
+  );
+END;
+$$;
+
+-- Ajustar secuencias tras importar datos (reutilizado por datos-secuencias.sql)
+CREATE OR REPLACE FUNCTION public.sepri_reset_secuencias()
+RETURNS void
+LANGUAGE plpgsql
+AS $$
+DECLARE
+  rec record;
+BEGIN
+  FOR rec IN
+    SELECT * FROM (VALUES
+      ('historial_estados', 'id'),
+      ('movimientos_tramites', 'id'),
+      ('historial_uploads', 'id'),
+      ('tiempo_en_area', 'id'),
+      ('notificaciones_tiempo', 'id'),
+      ('notificacion_leida', 'id'),
+      ('movimientos_solicitud_contratista', 'id'),
+      ('contratista_access_tokens', 'id')
+    ) AS t(tbl, col)
+  LOOP
+    EXECUTE format(
+      'SELECT setval(pg_get_serial_sequence(%L, %L), COALESCE((SELECT MAX(%I) FROM public.%I), 1))',
+      'public.' || rec.tbl, rec.col, rec.col, rec.tbl
+    );
+  END LOOP;
+
+  PERFORM setval(
+    'public.formulario_contratista_id_seq',
+    GREATEST(
+      COALESCE((
+        SELECT MAX(NULLIF(regexp_replace(id, '\D', '', 'g'), '')::bigint)
+        FROM public.formulario_contratista
+        WHERE id ~ '^FC-\d+$'
+      ), 0),
+      1
+    )
+  );
 END;
 $$;
 
@@ -92,26 +184,6 @@ CREATE TABLE IF NOT EXISTS public.area (
   encargado_id text REFERENCES public.usuarios_app(id)
 );
 
-INSERT INTO public.area (id, area, encargado_id) VALUES
-  ('DIGE', 'Dirección General', NULL),
-  ('OAIP', 'Oficina de Libre Acceso a la Información Pública', NULL),
-  ('JURI', 'Departamento Jurídico', NULL),
-  ('RRHH', 'Departamento de Recursos Humanos', NULL),
-  ('PYDE', 'Departamento de Planificación y Desarrollo', NULL),
-  ('COGI', 'División Control de Gestión Interna', NULL),
-  ('SEFI', 'División de Seguridad', NULL),
-  ('TECO', 'División de Tecnologías de la Información y Comunicación', NULL),
-  ('ADFI', 'Departamento Administrativo y Financiero', NULL),
-  ('DIAR', 'Departamento de Diseño y Arquitectura', NULL),
-  ('GEIE', 'Departamento de Gestión de Infraestructura Escolar', NULL),
-  ('GERI', 'Departamento Gestión de Riesgo', NULL),
-  ('MANO', 'Departamento de Mantenimiento de Obras', NULL),
-  ('SUPO', 'Departamento Supervisión de Obras', NULL),
-  ('FISO', 'Departamento Fiscalización de Obras', NULL),
-  ('CUBI', 'Departamento de Cubicaciones', NULL),
-  ('COOR', 'Departamento de Coordinación Regional', NULL)
-ON CONFLICT (id) DO NOTHING;
-
 -- =============================================================================
 -- 2) OBRAS Y CONTRATISTAS
 -- =============================================================================
@@ -137,6 +209,7 @@ CREATE TABLE IF NOT EXISTS public.obras (
   nombre                      varchar(200) NOT NULL,
   nombre_inaugurado           varchar(100),
   tipo_obra                   varchar(100),
+  tipo                        varchar(20) NOT NULL DEFAULT 'Arrastre',
   estado                      varchar(120) NOT NULL,
   fecha_inicio                date,
   fecha_fin_estimada          date,
@@ -200,6 +273,9 @@ ALTER TABLE public.obras
   ADD COLUMN IF NOT EXISTS monto_snip numeric(18, 2),
   ADD COLUMN IF NOT EXISTS modificacion_snip varchar(100);
 
+-- Vistas legadas de proyectos antiguos (bloquean ALTER TYPE en columnas de obras)
+DROP VIEW IF EXISTS public.dashboard_stats CASCADE;
+
 ALTER TABLE public.obras ALTER COLUMN estado TYPE varchar(120);
 ALTER TABLE public.obras ALTER COLUMN codigo TYPE varchar(100);
 ALTER TABLE public.obras ALTER COLUMN tipo_obra TYPE varchar(100);
@@ -214,7 +290,28 @@ ALTER TABLE public.obras ALTER COLUMN descripcion TYPE text;
 ALTER TABLE public.obras ALTER COLUMN observacion_legal TYPE text;
 ALTER TABLE public.obras ALTER COLUMN observacion_financiero TYPE text;
 
-CREATE INDEX IF NOT EXISTS idx_obras_contratista_id ON public.obras (contratista_id);
+-- Tipo gestión técnica: Arrastre (SIGEDE) vs Mantenimiento (contrato, sin SIGEDE)
+ALTER TABLE public.obras
+  ADD COLUMN IF NOT EXISTS tipo varchar(20) NOT NULL DEFAULT 'Arrastre';
+
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_constraint
+    WHERE conname = 'obras_tipo_check' AND conrelid = 'public.obras'::regclass
+  ) THEN
+    ALTER TABLE public.obras
+      ADD CONSTRAINT obras_tipo_check
+      CHECK (tipo IN ('Arrastre', 'Mantenimiento'));
+  END IF;
+END $$;
+
+ALTER TABLE public.obras ALTER COLUMN codigo DROP NOT NULL;
+
+COMMENT ON COLUMN public.obras.tipo IS
+  'Clasificación gestión técnica: Arrastre (con SIGEDE) o Mantenimiento (sin SIGEDE, con contrato).';
+COMMENT ON COLUMN public.obras.codigo IS
+  'Código SIGEDE del arrastre. NULL en obras de tipo Mantenimiento (gestión técnica).';
 
 DO $$
 BEGIN
@@ -299,14 +396,6 @@ CREATE TABLE IF NOT EXISTS public.movimientos_tramites (
   estado_resultante text,
   tipo_tramite      text
 );
-
-ALTER TABLE public.movimientos_tramites
-  ADD COLUMN IF NOT EXISTS movimiento_documento_id uuid
-    REFERENCES public.movimiento_documentos_tecnicos_obra(id) ON DELETE CASCADE;
-
-CREATE UNIQUE INDEX IF NOT EXISTS idx_mov_tramites_mov_documento
-  ON public.movimientos_tramites (movimiento_documento_id)
-  WHERE movimiento_documento_id IS NOT NULL;
 
 CREATE TABLE IF NOT EXISTS public.historial_uploads (
   id                   bigint GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY,
@@ -454,6 +543,7 @@ CREATE TABLE IF NOT EXISTS public.documentos_tecnicos_obra (
   no_adenda_solicituda     integer,
   contratista_id           text REFERENCES public.contratistas(id) ON DELETE SET NULL,
   id_sigede                text[] NOT NULL DEFAULT '{}',
+  obra_ids                 text[] NOT NULL DEFAULT '{}',
   tipo_adenda_anterior     varchar(120),
   numero_adenda_anterior   varchar(12),
   numero_adenda_actual     varchar(12),
@@ -494,6 +584,7 @@ ALTER TABLE public.documentos_tecnicos_obra
   ADD COLUMN IF NOT EXISTS monto_adenda_solicitada numeric(18, 2),
   ADD COLUMN IF NOT EXISTS monto_total numeric(18, 2);
 
+-- Migraciones legado documentos técnicos (un solo bloque)
 DO $$
 BEGIN
   IF EXISTS (
@@ -506,10 +597,7 @@ BEGIN
     WHERE tipo_adenda_anterior IS NULL AND adenda_anterior IS NOT NULL;
     ALTER TABLE public.documentos_tecnicos_obra DROP COLUMN adenda_anterior;
   END IF;
-END $$;
 
-DO $$
-BEGIN
   IF EXISTS (
     SELECT 1 FROM information_schema.columns
     WHERE table_schema = 'public' AND table_name = 'documentos_tecnicos_obra'
@@ -521,12 +609,7 @@ BEGIN
   ) THEN
     ALTER TABLE public.documentos_tecnicos_obra
       RENAME COLUMN no_adenda_solicitud TO no_adenda_solicituda;
-  END IF;
-END $$;
-
-DO $$
-BEGIN
-  IF EXISTS (
+  ELSIF EXISTS (
     SELECT 1 FROM information_schema.columns
     WHERE table_schema = 'public' AND table_name = 'documentos_tecnicos_obra'
       AND column_name = 'no_adenda_solicitud'
@@ -539,10 +622,7 @@ BEGIN
         ELSE trim(no_adenda_solicitud::text)::integer
       END;
   END IF;
-END $$;
 
-DO $$
-BEGIN
   IF EXISTS (
     SELECT 1 FROM information_schema.columns
     WHERE table_schema = 'public' AND table_name = 'documentos_tecnicos_obra'
@@ -557,11 +637,17 @@ BEGIN
   END IF;
 END $$;
 
+ALTER TABLE public.documentos_tecnicos_obra
+  ADD COLUMN IF NOT EXISTS obra_ids text[] NOT NULL DEFAULT '{}';
+
 ALTER TABLE public.movimiento_documentos_tecnicos_obra
   ADD COLUMN IF NOT EXISTS fecha_entrada date,
   ADD COLUMN IF NOT EXISTS oficio varchar(120),
   ADD COLUMN IF NOT EXISTS estatus varchar(40),
   ADD COLUMN IF NOT EXISTS observaciones text;
+
+COMMENT ON COLUMN public.documentos_tecnicos_obra.obra_ids IS
+  'IDs de obras de mantenimiento (obras.id, ej. MT-xxxx) vinculadas al documento.';
 
 CREATE INDEX IF NOT EXISTS idx_documentos_tecnicos_solicitud
   ON public.documentos_tecnicos_obra(solicitud);
@@ -575,11 +661,14 @@ CREATE INDEX IF NOT EXISTS idx_mov_doc_tecnicos_solicitud_tramite
   ON public.movimiento_documentos_tecnicos_obra(solicitud, lower(trim(no_tramite)))
   WHERE no_tramite IS NOT NULL AND trim(no_tramite) <> '';
 
-ALTER TABLE public.documentos_tecnicos_obra
-  ADD COLUMN IF NOT EXISTS contrato_id text REFERENCES public.contrato(id) ON DELETE SET NULL;
+-- FK diferida: movimientos_tramites (§3) se define antes que esta tabla
+ALTER TABLE public.movimientos_tramites
+  ADD COLUMN IF NOT EXISTS movimiento_documento_id uuid
+    REFERENCES public.movimiento_documentos_tecnicos_obra(id) ON DELETE CASCADE;
 
-CREATE INDEX IF NOT EXISTS idx_documentos_tecnicos_contrato_id
-  ON public.documentos_tecnicos_obra(contrato_id);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_mov_tramites_mov_documento
+  ON public.movimientos_tramites (movimiento_documento_id)
+  WHERE movimiento_documento_id IS NOT NULL;
 
 -- =============================================================================
 -- 6) TECHADO (contrato + matriz_general)
@@ -607,6 +696,13 @@ CREATE TABLE IF NOT EXISTS public.contrato (
   updated_at              timestamptz NOT NULL DEFAULT now(),
   CONSTRAINT contrato_lote_no_unique UNIQUE (lote, no_contrato)
 );
+
+-- FK diferida: documentos_tecnicos_obra (§5) se define antes que contrato
+ALTER TABLE public.documentos_tecnicos_obra
+  ADD COLUMN IF NOT EXISTS contrato_id text REFERENCES public.contrato(id) ON DELETE SET NULL;
+
+CREATE INDEX IF NOT EXISTS idx_documentos_tecnicos_contrato_id
+  ON public.documentos_tecnicos_obra(contrato_id);
 
 -- Obras → contrato (N:1). contrato (varchar) queda legado; preferir contrato_id.
 ALTER TABLE public.obras
@@ -744,28 +840,10 @@ LEFT JOIN LATERAL (
 ) ca ON true;
 
 -- =============================================================================
--- 7) USUARIO ADMINISTRADOR (semilla)
+-- 7) DATOS SEMILLA (áreas + admin)
 -- =============================================================================
 
-DELETE FROM public.usuarios_app WHERE lower(trim(usuario)) = 'admin';
-
-INSERT INTO public.usuarios_app (
-  usuario, password, nombre, apellido, cargo, area, rol, permisos, activo
-) VALUES (
-  'admin', 'admin', 'Administrador', 'Sistema', 'Administrador', 'Ninguna', 'admin',
-  '{
-    "crear_usuarios": true, "editar_usuarios": true,
-    "ver_dashboard": true, "editar_dashboard": true,
-    "ver_obras": true, "editar_obras": true,
-    "ver_techado": true, "editar_techado": true,
-    "ver_carga_obras": true, "editar_carga_obras": true,
-    "ver_tramites": true, "editar_tramites": true,
-    "ver_atencion_contratista": true, "editar_atencion_contratista": true,
-    "ver_configuracion": true, "editar_configuracion": true,
-    "ver_reporte": true, "editar_reporte": true
-  }'::jsonb,
-  true
-);
+SELECT public.sepri_seed_catalogos();
 
 -- =============================================================================
 -- 8) RPC — vinculación Techado ↔ obras
@@ -816,6 +894,22 @@ BEGIN
       AND (o.contrato_id IS DISTINCT FROM v_contrato_id);
   END LOOP;
 END $$;
+
+-- Backfill obras.tipo (requiere contrato_id ya creado en §6)
+UPDATE public.obras
+SET tipo = 'Arrastre'
+WHERE (codigo IS NOT NULL AND trim(codigo) <> '')
+   OR (distrito_minerd_sigede IS NOT NULL AND trim(distrito_minerd_sigede) <> '');
+
+UPDATE public.obras
+SET tipo = 'Mantenimiento'
+WHERE tipo = 'Arrastre'
+  AND (codigo IS NULL OR trim(codigo) = '')
+  AND (distrito_minerd_sigede IS NULL OR trim(distrito_minerd_sigede) = '')
+  AND (
+    contrato_id IS NOT NULL
+    OR (contrato IS NOT NULL AND trim(contrato) <> '')
+  );
 
 CREATE OR REPLACE FUNCTION public.sepri_normalizar_reg_dist(raw text)
 RETURNS text LANGUAGE plpgsql IMMUTABLE AS $$
@@ -912,6 +1006,7 @@ GRANT EXECUTE ON FUNCTION public.buscar_obra_para_matriz(text, text, text, text,
 -- 9) ÍNDICES DE OPTIMIZACIÓN
 -- =============================================================================
 
+CREATE INDEX IF NOT EXISTS idx_obras_contratista_id ON public.obras (contratista_id);
 CREATE INDEX IF NOT EXISTS idx_obras_contrato_id
   ON public.obras (contrato_id) WHERE contrato_id IS NOT NULL;
 CREATE INDEX IF NOT EXISTS idx_obras_contrato
@@ -931,27 +1026,45 @@ CREATE INDEX IF NOT EXISTS idx_obras_contrato_reg_dist
   ON public.obras (contrato, distrito_minerd_sigede)
   WHERE contrato IS NOT NULL AND distrito_minerd_sigede IS NOT NULL;
 
-DO $$
-DECLARE dup_count integer;
-BEGIN
-  IF to_regclass('public.obras') IS NULL THEN RETURN; END IF;
-  SELECT count(*) INTO dup_count FROM (
-    SELECT lower(trim(codigo)) AS c FROM public.obras
+-- Unicidad: código SIGEDE (mayúsculas) y obras de mantenimiento por contrato + nombre
+UPDATE public.obras
+SET codigo = upper(trim(codigo))
+WHERE codigo IS NOT NULL
+  AND trim(codigo) <> ''
+  AND codigo IS DISTINCT FROM upper(trim(codigo));
+
+WITH duplicados AS (
+  SELECT o.id
+  FROM public.obras o
+  INNER JOIN (
+    SELECT codigo, min(id) AS keep_id
+    FROM public.obras
     WHERE codigo IS NOT NULL AND trim(codigo) <> ''
-    GROUP BY lower(trim(codigo)) HAVING count(*) > 1
-  ) d;
-  IF dup_count = 0 THEN
-    CREATE UNIQUE INDEX IF NOT EXISTS idx_obras_codigo_unique
-      ON public.obras (lower(trim(codigo)))
-      WHERE codigo IS NOT NULL AND trim(codigo) <> '';
-  ELSE
-    RAISE WARNING 'Códigos SIGEDE duplicados (% grupos). Índice UNIQUE omitido.', dup_count;
-  END IF;
-END $$;
+    GROUP BY codigo
+    HAVING count(*) > 1
+  ) d ON d.codigo = o.codigo AND o.id <> d.keep_id
+)
+DELETE FROM public.obras WHERE id IN (SELECT id FROM duplicados);
+
+DROP INDEX IF EXISTS idx_obras_codigo_unique;
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_obras_codigo_unique
+  ON public.obras (codigo)
+  WHERE codigo IS NOT NULL AND trim(codigo) <> '';
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_obras_mantenimiento_contrato_nombre
+  ON public.obras (contrato_id, lower(trim(nombre)))
+  WHERE tipo = 'Mantenimiento'
+    AND contrato_id IS NOT NULL
+    AND trim(nombre) <> '';
 
 CREATE INDEX IF NOT EXISTS idx_tramites_id_sigede_gin ON public.tramites USING gin (id_sigede);
 CREATE INDEX IF NOT EXISTS idx_doc_tecnicos_id_sigede_gin
   ON public.documentos_tecnicos_obra USING gin (id_sigede);
+CREATE INDEX IF NOT EXISTS idx_doc_tecnicos_obra_ids_gin
+  ON public.documentos_tecnicos_obra USING gin (obra_ids);
+CREATE INDEX IF NOT EXISTS idx_obras_tipo
+  ON public.obras (tipo);
 CREATE INDEX IF NOT EXISTS idx_matriz_reg_dist_contrato
   ON public.matriz_general (reg_dist, contrato_id)
   WHERE reg_dist IS NOT NULL AND trim(reg_dist) <> '';
@@ -991,28 +1104,22 @@ BEGIN
 END;
 $$;
 
-SELECT public.sepri_rls_anon_all('obras');
-SELECT public.sepri_rls_anon_all('tramites');
-SELECT public.sepri_rls_anon_all('movimientos_tramites');
-SELECT public.sepri_rls_anon_all('historial_uploads');
-SELECT public.sepri_rls_anon_all('usuarios_app');
-SELECT public.sepri_rls_anon_all('area');
-SELECT public.sepri_rls_anon_all('contratistas');
-SELECT public.sepri_rls_anon_all('historial_estados');
-SELECT public.sepri_rls_anon_all('tiempo_en_area');
-SELECT public.sepri_rls_anon_all('notificaciones_tiempo');
-SELECT public.sepri_rls_anon_all('notificacion_leida');
-SELECT public.sepri_rls_anon_all('documentos_tecnicos_obra');
-SELECT public.sepri_rls_anon_all('movimiento_documentos_tecnicos_obra');
-SELECT public.sepri_rls_anon_all('contrato');
-SELECT public.sepri_rls_anon_all('contrato_adenda');
-SELECT public.sepri_rls_anon_all('adenda');
-SELECT public.sepri_rls_anon_all('matriz_general');
-SELECT public.sepri_rls_anon_all('contratista_access_tokens');
-
--- Formulario contratista: políticas adicionales para Supabase Auth (futuro)
-SELECT public.sepri_rls_anon_all('formulario_contratista');
-SELECT public.sepri_rls_anon_all('movimientos_solicitud_contratista');
+DO $$
+DECLARE t text;
+BEGIN
+  FOREACH t IN ARRAY ARRAY[
+    'obras', 'tramites', 'movimientos_tramites', 'historial_uploads',
+    'usuarios_app', 'area', 'contratistas', 'historial_estados',
+    'tiempo_en_area', 'notificaciones_tiempo', 'notificacion_leida',
+    'documentos_tecnicos_obra', 'movimiento_documentos_tecnicos_obra',
+    'contrato', 'contrato_adenda', 'adenda', 'matriz_general',
+    'contratista_access_tokens', 'formulario_contratista',
+    'movimientos_solicitud_contratista'
+  ]
+  LOOP
+    PERFORM public.sepri_rls_anon_all(t);
+  END LOOP;
+END $$;
 
 CREATE POLICY "fc_select_authenticated" ON public.formulario_contratista FOR SELECT TO authenticated
   USING (EXISTS (

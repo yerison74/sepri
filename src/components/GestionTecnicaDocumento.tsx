@@ -27,6 +27,8 @@ import type {
 import { useAreas } from '../hooks/useAreas';
 import { useAuth } from '../context/AuthContext';
 import { ESTATUS_MOVIMIENTO_DOCUMENTO, parseMontoDOP, montoFormDesdeNumero, esMontoValido, esCodigoAdendaValido, normalizarCodigoAdenda, esEstatusMovimientoValido } from '../constants/gestionTecnicaDocumento';
+import { TIPO_OBRA_OPCIONES } from '../constants/tipoObra';
+import { TIPO_OBRA_GESTION_ARRASTRE, TIPO_OBRA_GESTION_MANTENIMIENTO } from '../constants/tipoObraGestion';
 import { validarMovimientoDocumento } from '../utils/validarMovimientoDocumento';
 import { normalizarNoContrato } from '../utils/techadoNormalizar';
 import SeccionColapsable from './ui/SeccionColapsable';
@@ -293,6 +295,7 @@ const EMPTY_DOC_FORM = {
   contratista_id: '' as string | null,
   contrato_id: '' as string | null,
   id_sigede: [] as string[],
+  obra_ids: [] as string[],
 };
 
 type ObraSigedeOpcion = {
@@ -375,27 +378,28 @@ function InputMontoDOP({
   );
 }
 
-function TablaObrasSigede({
+function TablaObrasDocumento({
   filas,
   soloLectura,
   onQuitar,
 }: {
   filas: ObraSigedeResumen[];
   soloLectura?: boolean;
-  onQuitar?: (id: string) => void;
+  onQuitar?: (fila: ObraSigedeResumen) => void;
 }) {
   if (filas.length === 0) {
-    return <p className="text-xs text-slate-400">Sin ID SIGEDE asignados.</p>;
+    return <p className="text-xs text-slate-400">Sin obras asignadas al documento.</p>;
   }
   return (
     <div className={`overflow-x-auto rounded-xl ${SEPRI_INSET}`}>
       <table className={`${GT_TABLA} text-xs`}>
         <thead className={GT_TABLA_HEAD}>
           <tr>
-            <th className={GT_TABLA_TH}>ID SIGEDE</th>
+            <th className={GT_TABLA_TH}>Gestión</th>
+            <th className={GT_TABLA_TH}>ID / SIGEDE</th>
             <th className={GT_TABLA_TH}>Contrato</th>
             <th className={GT_TABLA_TH}>Plantel</th>
-            <th className={GT_TABLA_TH}>Tipo</th>
+            <th className={GT_TABLA_TH}>Tipo obra</th>
             <th className={GT_TABLA_TH}>Provincia</th>
             <th className={GT_TABLA_TH}>Municipio</th>
             {!soloLectura && onQuitar && <th className={`${GT_TABLA_TH} text-center`} />}
@@ -403,7 +407,18 @@ function TablaObrasSigede({
         </thead>
         <tbody>
           {filas.map((fila) => (
-            <tr key={fila.id_sigede}>
+            <tr key={`${fila.tipo_gestion}-${fila.id_sigede}`}>
+              <td className={GT_TABLA_TD}>
+                <span
+                  className={`inline-flex px-2 py-0.5 rounded-md text-[10px] font-medium ${
+                    fila.tipo_gestion === TIPO_OBRA_GESTION_MANTENIMIENTO
+                      ? 'bg-amber-50 text-amber-700'
+                      : 'bg-sky-50 text-sky-700'
+                  }`}
+                >
+                  {fila.tipo_gestion ?? TIPO_OBRA_GESTION_ARRASTRE}
+                </span>
+              </td>
               <td className={`${GT_TABLA_TD} font-mono text-slate-700`}>{fila.id_sigede}</td>
               <td className={GT_TABLA_TD}>{fila.encontrada ? fila.contrato || '—' : '—'}</td>
               <td className={GT_TABLA_TD}>{fila.encontrada ? fila.plantel || '—' : '—'}</td>
@@ -414,7 +429,7 @@ function TablaObrasSigede({
                 <td className={`${GT_TABLA_TD} text-center`}>
                   <button
                     type="button"
-                    onClick={() => onQuitar(fila.id_sigede)}
+                    onClick={() => onQuitar(fila)}
                     className="p-1 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors"
                   >
                     <Close sx={{ fontSize: 14 }} />
@@ -607,6 +622,13 @@ const GestionTecnicaDocumento: React.FC<GestionTecnicaDocumentoProps> = ({ soloL
   const [obraBusqueda, setObraBusqueda] = useState('');
   const [obraOpciones, setObraOpciones] = useState<ObraSigedeOpcion[]>([]);
   const [obrasResumen, setObrasResumen] = useState<ObraSigedeResumen[]>([]);
+  const [mantForm, setMantForm] = useState({
+    nombre: '',
+    provincia: '',
+    municipio: '',
+    tipo_obra: '',
+  });
+  const [agregandoMant, setAgregandoMant] = useState(false);
   const [movForm, setMovForm] = useState(EMPTY_MOV_FORM);
   const [editandoMovId, setEditandoMovId] = useState<string | null>(null);
 
@@ -716,16 +738,29 @@ const GestionTecnicaDocumento: React.FC<GestionTecnicaDocumentoProps> = ({ soloL
     return () => window.clearTimeout(timer);
   }, [contratoBusqueda]);
 
-  const cargarResumenesSigede = useCallback(async (ids: string[]) => {
-    if (ids.length === 0) {
+  const cargarResumenesObras = useCallback(async (sigedes: string[], obraIds: string[]) => {
+    if (sigedes.length === 0 && obraIds.length === 0) {
       setObrasResumen([]);
       return;
     }
     try {
-      const resp = await gestionTecnicaDocumentoAPI.resumenesSigede(ids);
+      const resp = await gestionTecnicaDocumentoAPI.resumenesSigede(sigedes, obraIds);
       setObrasResumen(resp.data.data || []);
     } catch {
-      setObrasResumen(ids.map((id) => ({ id_sigede: id, encontrada: false })));
+      const filas: ObraSigedeResumen[] = [
+        ...sigedes.map((id) => ({
+          id_sigede: id,
+          tipo_gestion: TIPO_OBRA_GESTION_ARRASTRE,
+          encontrada: false,
+        })),
+        ...obraIds.map((id) => ({
+          id_sigede: id,
+          obra_id: id,
+          tipo_gestion: TIPO_OBRA_GESTION_MANTENIMIENTO,
+          encontrada: false,
+        })),
+      ];
+      setObrasResumen(filas);
     }
   }, []);
 
@@ -747,14 +782,15 @@ const GestionTecnicaDocumento: React.FC<GestionTecnicaDocumentoProps> = ({ soloL
   }, [obraBusqueda]);
 
   useEffect(() => {
-    cargarResumenesSigede(docForm.id_sigede);
-  }, [docForm.id_sigede, cargarResumenesSigede]);
+    cargarResumenesObras(docForm.id_sigede, docForm.obra_ids);
+  }, [docForm.id_sigede, docForm.obra_ids, cargarResumenesObras]);
 
   const resetDocForm = (cerrarPanel = true) => {
     setDocForm(EMPTY_DOC_FORM);
     setObraBusqueda('');
     setObraOpciones([]);
     setObrasResumen([]);
+    setMantForm({ nombre: '', provincia: '', municipio: '', tipo_obra: '' });
     setContratistaSel(null);
     setContratistaBusqueda('');
     setContratoSel(null);
@@ -937,6 +973,7 @@ const GestionTecnicaDocumento: React.FC<GestionTecnicaDocumentoProps> = ({ soloL
       contratista_id: doc.contratista_id || null,
       contrato_id: doc.contrato_id || null,
       id_sigede: [...(doc.id_sigede || [])],
+      obra_ids: [...(doc.obra_ids || [])],
     });
     setContratistaSel(doc.contratista || null);
     setObrasResumen(doc.obras_sigede || []);
@@ -965,8 +1002,55 @@ const GestionTecnicaDocumento: React.FC<GestionTecnicaDocumentoProps> = ({ soloL
     }
   };
 
-  const quitarSigede = (id: string) => {
-    setDocForm((prev) => ({ ...prev, id_sigede: prev.id_sigede.filter((x) => x !== id) }));
+  const quitarObraDocumento = (fila: ObraSigedeResumen) => {
+    if (fila.tipo_gestion === TIPO_OBRA_GESTION_MANTENIMIENTO) {
+      setDocForm((prev) => ({
+        ...prev,
+        obra_ids: prev.obra_ids.filter((x) => x !== fila.id_sigede),
+      }));
+      return;
+    }
+    setDocForm((prev) => ({
+      ...prev,
+      id_sigede: prev.id_sigede.filter((x) => x !== fila.id_sigede),
+    }));
+  };
+
+  const agregarObraMantenimiento = async () => {
+    if (soloLectura) return;
+    const contratoId = contratoSel?.id || docForm.contrato_id;
+    if (!contratoId) {
+      setError('Indique el número de contrato antes de agregar una obra de mantenimiento');
+      return;
+    }
+    if (!mantForm.nombre.trim()) {
+      setError('El nombre del plantel es obligatorio para obras de mantenimiento');
+      return;
+    }
+    try {
+      setAgregandoMant(true);
+      setError(null);
+      const resp = await gestionTecnicaDocumentoAPI.crearObraMantenimiento({
+        nombre: mantForm.nombre,
+        provincia: mantForm.provincia || null,
+        municipio: mantForm.municipio || null,
+        tipo_obra: mantForm.tipo_obra || null,
+        contrato_id: contratoId,
+        contratista_id: contratistaSel?.id || docForm.contratista_id || null,
+      });
+      const obra = resp.data.data;
+      if (!obra?.id) return;
+      if (docForm.obra_ids.includes(obra.id)) return;
+      setDocForm((prev) => ({ ...prev, obra_ids: [...prev.obra_ids, obra.id] }));
+      setMantForm({ nombre: '', provincia: '', municipio: '', tipo_obra: '' });
+    } catch (err: unknown) {
+      const msg =
+        (err as { response?: { data?: { error?: string } } })?.response?.data?.error ||
+        'No se pudo crear la obra de mantenimiento';
+      setError(msg);
+    } finally {
+      setAgregandoMant(false);
+    }
   };
 
   const handleGuardarDocumento = async (e: React.FormEvent) => {
@@ -1028,6 +1112,7 @@ const GestionTecnicaDocumento: React.FC<GestionTecnicaDocumentoProps> = ({ soloL
           contratista_id: contratistaSel?.id || docForm.contratista_id || null,
           contrato_id: contratoId,
           id_sigede: docForm.id_sigede,
+          obra_ids: docForm.obra_ids,
         },
         editandoId || undefined,
       );
@@ -1419,68 +1504,142 @@ const GestionTecnicaDocumento: React.FC<GestionTecnicaDocumentoProps> = ({ soloL
               </BloqueFormulario>
 
               <BloqueFormulario
-                titulo="ID SIGEDE (obras)"
+                titulo="Obras del documento"
                 descripcion={
                   editandoId
-                    ? 'Agregue o quite obras SIGEDE del documento y pulse «Actualizar documento».'
-                    : 'Asigne una o más obras por código o distrito SIGEDE.'
+                    ? 'Arrastre: obras con SIGEDE. Mantenimiento: sin SIGEDE, con contrato; los datos se ingresan manualmente.'
+                    : 'Vincule obras de arrastre (SIGEDE) o agregue obras de mantenimiento al documento.'
                 }
                 activo={!!editandoId}
               >
-                <AutocompleteBusqueda
-                  value={obraBusqueda}
-                  onChange={setObraBusqueda}
-                  placeholder="Buscar por código, nombre o distrito SIGEDE…"
-                  abierto={obraOpciones.length > 0}
-                >
-                  {obraOpciones.map((obra, idx) => {
-                    const id = idSigedeDesdeObra(obra);
-                    const yaAsignada = docForm.id_sigede.includes(id);
-                    return (
-                      <li key={`${id}-${idx}`}>
-                        <div
-                          role="option"
-                          aria-selected={false}
-                          tabIndex={!id || yaAsignada ? -1 : 0}
-                          className={`${dropdownItemClass} ${
-                            !id || yaAsignada ? 'opacity-40 cursor-not-allowed hover:bg-white active:bg-white' : ''
-                          }`}
-                          onClick={() => {
-                            if (!id || yaAsignada) return;
-                            agregarObraSigede(obra);
-                          }}
-                          onKeyDown={(e) => {
-                            if ((!id || yaAsignada) && (e.key === 'Enter' || e.key === ' ')) return;
-                            if (e.key === 'Enter' || e.key === ' ') {
-                              e.preventDefault();
-                              agregarObraSigede(obra);
-                            }
-                          }}
-                        >
-                          <span className="flex items-baseline gap-1.5 min-w-0">
-                            <span className="font-mono text-xs text-[#42A5F5] shrink-0">{id || '—'}</span>
-                            <span className="text-slate-600 truncate">{obra.nombre}</span>
-                          </span>
-                          {(obra.contrato || obra.municipio) && (
-                            <span className="block text-xs text-slate-400 truncate mt-0.5">
-                              {[obra.contrato && `Contrato ${obra.contrato}`, obra.municipio]
-                                .filter(Boolean)
-                                .join(' · ')}
-                            </span>
-                          )}
-                          {yaAsignada && (
-                            <span className="block text-[11px] text-slate-400 mt-0.5">Ya asignada</span>
-                          )}
+                <div className="space-y-5">
+                  <div className="space-y-2">
+                    <p className="text-xs font-medium text-slate-500">Arrastre (SIGEDE)</p>
+                    <AutocompleteBusqueda
+                      value={obraBusqueda}
+                      onChange={setObraBusqueda}
+                      placeholder="Buscar por código, nombre o distrito SIGEDE…"
+                      abierto={obraOpciones.length > 0 && !soloLectura}
+                    >
+                      {obraOpciones.map((obra, idx) => {
+                        const id = idSigedeDesdeObra(obra);
+                        const yaAsignada = docForm.id_sigede.includes(id);
+                        return (
+                          <li key={`${id}-${idx}`}>
+                            <div
+                              role="option"
+                              aria-selected={false}
+                              tabIndex={!id || yaAsignada ? -1 : 0}
+                              className={`${dropdownItemClass} ${
+                                !id || yaAsignada ? 'opacity-40 cursor-not-allowed hover:bg-white active:bg-white' : ''
+                              }`}
+                              onClick={() => {
+                                if (!id || yaAsignada) return;
+                                agregarObraSigede(obra);
+                              }}
+                              onKeyDown={(e) => {
+                                if ((!id || yaAsignada) && (e.key === 'Enter' || e.key === ' ')) return;
+                                if (e.key === 'Enter' || e.key === ' ') {
+                                  e.preventDefault();
+                                  agregarObraSigede(obra);
+                                }
+                              }}
+                            >
+                              <span className="flex items-baseline gap-1.5 min-w-0">
+                                <span className="font-mono text-xs text-[#42A5F5] shrink-0">{id || '—'}</span>
+                                <span className="text-slate-600 truncate">{obra.nombre}</span>
+                              </span>
+                              {(obra.contrato || obra.municipio) && (
+                                <span className="block text-xs text-slate-400 truncate mt-0.5">
+                                  {[obra.contrato && `Contrato ${obra.contrato}`, obra.municipio]
+                                    .filter(Boolean)
+                                    .join(' · ')}
+                                </span>
+                              )}
+                              {yaAsignada && (
+                                <span className="block text-[11px] text-slate-400 mt-0.5">Ya asignada</span>
+                              )}
+                            </div>
+                          </li>
+                        );
+                      })}
+                    </AutocompleteBusqueda>
+                  </div>
+
+                  {!soloLectura && (
+                    <div className="space-y-3 pt-1 border-t border-slate-100">
+                      <p className="text-xs font-medium text-slate-500">Mantenimiento (manual)</p>
+                      <p className="text-[11px] text-slate-400 leading-relaxed">
+                        Requiere contrato del documento. La obra se registra en el catálogo con tipo
+                        Mantenimiento.
+                      </p>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                        <div className="space-y-1 sm:col-span-2">
+                          <label htmlFor="mant-nombre" className={labelClass}>
+                            Plantel / nombre
+                          </label>
+                          <input
+                            id="mant-nombre"
+                            type="text"
+                            value={mantForm.nombre}
+                            onChange={(e) => setMantForm((p) => ({ ...p, nombre: e.target.value }))}
+                            className={inputClass}
+                            placeholder="Nombre del plantel"
+                          />
                         </div>
-                      </li>
-                    );
-                  })}
-                </AutocompleteBusqueda>
-                <TablaObrasSigede
-                  filas={obrasResumen}
-                  soloLectura={soloLectura}
-                  onQuitar={soloLectura ? undefined : quitarSigede}
-                />
+                        <div className="space-y-1">
+                          <label htmlFor="mant-provincia" className={labelClass}>
+                            Provincia
+                          </label>
+                          <input
+                            id="mant-provincia"
+                            type="text"
+                            value={mantForm.provincia}
+                            onChange={(e) => setMantForm((p) => ({ ...p, provincia: e.target.value }))}
+                            className={inputClass}
+                          />
+                        </div>
+                        <div className="space-y-1">
+                          <label htmlFor="mant-municipio" className={labelClass}>
+                            Municipio
+                          </label>
+                          <input
+                            id="mant-municipio"
+                            type="text"
+                            value={mantForm.municipio}
+                            onChange={(e) => setMantForm((p) => ({ ...p, municipio: e.target.value }))}
+                            className={inputClass}
+                          />
+                        </div>
+                        <div className="space-y-1 sm:col-span-2">
+                          <SelectPersonalizado
+                            id="mant-tipo-obra"
+                            label="Tipo de obra"
+                            value={mantForm.tipo_obra}
+                            onChange={(v) => setMantForm((p) => ({ ...p, tipo_obra: v }))}
+                            options={TIPO_OBRA_OPCIONES.map((t) => ({ value: t, label: t }))}
+                            placeholder="Mantenimiento (por defecto)"
+                          />
+                        </div>
+                      </div>
+                      <button
+                        type="button"
+                        disabled={agregandoMant}
+                        onClick={() => void agregarObraMantenimiento()}
+                        className={`${BTN_SECONDARY_SM} inline-flex items-center gap-1.5`}
+                      >
+                        <Add sx={{ fontSize: 16 }} />
+                        {agregandoMant ? 'Creando obra…' : 'Agregar obra mantenimiento'}
+                      </button>
+                    </div>
+                  )}
+
+                  <TablaObrasDocumento
+                    filas={obrasResumen}
+                    soloLectura={soloLectura}
+                    onQuitar={soloLectura ? undefined : quitarObraDocumento}
+                  />
+                </div>
               </BloqueFormulario>
 
               <BloqueFormulario titulo="Montos y adendas (DOP)">

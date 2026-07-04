@@ -33,6 +33,13 @@ import {
 } from '../constants/obrasSelect';
 import { propagarEstadoObraAMatriz } from './obraTechadoSync';
 import { contratoObrasService, numeroContratoDesdeObra } from './contratoObrasService';
+import {
+  inferirTipoObraGestion,
+  TIPO_OBRA_GESTION_ARRASTRE,
+  TIPO_OBRA_GESTION_MANTENIMIENTO,
+} from '../constants/tipoObraGestion';
+import { reservarIdsObra } from '../utils/reservarIdObra';
+import { normalizarCodigoObra } from '../utils/normalizarCodigoObra';
 import { normalizarNoContrato } from '../utils/techadoNormalizar';
 import { MARCA_OBSERVACION_GESTION_TECNICA } from '../utils/tramiteGestionTecnica';
 
@@ -507,6 +514,7 @@ const OBRA_CAMPO_STRING_MAX: Record<string, number> = {
   codigo: 100,
   contrato: 9,
   tipo_obra: 100,
+  tipo: 20,
   estado: 120,
   nombre: 200,
   nombre_inaugurado: 100,
@@ -616,6 +624,50 @@ async function buscarContratistaIdsPorResponsable(term: string): Promise<string[
     throw error;
   }
   return (data || []).map((r) => r.id as string);
+}
+
+async function condicionesBusquedaObras(searchTerm: string): Promise<string[]> {
+  const term = searchTerm.trim();
+  const esc = term.replace(/'/g, "''");
+  const searchPattern = `%${esc}%`;
+  const isNumeric = /^\d+$/.test(term);
+  const searchConditions: string[] = [];
+
+  if (isNumeric) {
+    searchConditions.push(`id.eq.${term}`);
+  }
+
+  searchConditions.push(
+    `id.ilike.${searchPattern}`,
+    `contrato.ilike.${searchPattern}`,
+    `codigo.ilike.${searchPattern}`,
+    `nombre.ilike.${searchPattern}`,
+    `estado.ilike.${searchPattern}`,
+    `descripcion.ilike.${searchPattern}`,
+    `provincia.ilike.${searchPattern}`,
+    `municipio.ilike.${searchPattern}`,
+    `nivel.ilike.${searchPattern}`,
+    `distrito_minerd_sigede.ilike.${searchPattern}`,
+    `coordinador.ilike.${searchPattern}`,
+    `supervisor.ilike.${searchPattern}`,
+    `nombre_inaugurado.ilike.${searchPattern}`,
+  );
+
+  const contratistaIds = await buscarContratistaIdsPorResponsable(term);
+  if (contratistaIds.length > 0) {
+    searchConditions.push(`contratista_id.in.(${contratistaIds.join(',')})`);
+  }
+
+  try {
+    const contratoIds = await contratoObrasService.buscarContratoIdsPorTermino(term);
+    if (contratoIds.length > 0) {
+      searchConditions.push(`contrato_id.in.(${contratoIds.join(',')})`);
+    }
+  } catch {
+    /* catálogo contrato opcional */
+  }
+
+  return searchConditions;
 }
 
 async function sugerenciasResponsableLegacy(_search: string, _limit: number): Promise<string[]> {
@@ -743,6 +795,18 @@ async function prepararPayloadObraPersistencia(
   }
   delete raw.contrato;
 
+  if (!raw.tipo) {
+    raw.tipo = inferirTipoObraGestion({
+      codigo: raw.codigo as string | null | undefined,
+      distrito_minerd_sigede: raw.distrito_minerd_sigede as string | null | undefined,
+      contrato_id: raw.contrato_id as string | null | undefined,
+    });
+  }
+
+  if (raw.codigo != null && raw.codigo !== '') {
+    raw.codigo = normalizarCodigoObra(String(raw.codigo));
+  }
+
   return normalizarPayloadObra(raw);
 }
 
@@ -848,36 +912,7 @@ export const obrasService = {
       }
 
       if (filtros.search) {
-        const searchTerm = filtros.search.trim();
-        const searchPattern = `%${searchTerm}%`;
-        const isNumeric = /^\d+$/.test(searchTerm);
-        const searchConditions: string[] = [];
-
-        if (isNumeric) {
-          searchConditions.push(`id.eq.${searchTerm}`);
-        }
-
-        searchConditions.push(
-          `id.ilike.${searchPattern}`,
-          `contrato.ilike.${searchPattern}`,
-          `codigo.ilike.${searchPattern}`,
-          `nombre.ilike.${searchPattern}`,
-          `estado.ilike.${searchPattern}`,
-          `descripcion.ilike.${searchPattern}`,
-          `provincia.ilike.${searchPattern}`,
-          `municipio.ilike.${searchPattern}`,
-          `nivel.ilike.${searchPattern}`,
-          `distrito_minerd_sigede.ilike.${searchPattern}`,
-          `coordinador.ilike.${searchPattern}`,
-          `supervisor.ilike.${searchPattern}`,
-          `nombre_inaugurado.ilike.${searchPattern}`,
-        );
-
-        const contratistaIds = await buscarContratistaIdsPorResponsable(searchTerm);
-        if (contratistaIds.length > 0) {
-          searchConditions.push(`contratista_id.in.(${contratistaIds.join(',')})`);
-        }
-
+        const searchConditions = await condicionesBusquedaObras(filtros.search);
         query = query.or(searchConditions.join(','));
       }
 
@@ -910,6 +945,10 @@ export const obrasService = {
           else {
             return { data: [], count: 0 };
           }
+        }
+        if (filtros.search) {
+          const searchConditions = await condicionesBusquedaObras(filtros.search);
+          fallback = fallback.or(searchConditions.join(','));
         }
         fallback = fallback.order('created_at', { ascending: false });
         if (filtros.limit) fallback = fallback.limit(filtros.limit);
@@ -984,7 +1023,9 @@ export const obrasService = {
       const pattern = `%${term.replace(/'/g, "''")}%`;
       const { data, error } = await supabase
         .from('obras')
-        .select('id, nombre, codigo, contrato, estado, contratista_id, contratistas(responsable)')
+        .select(
+          'id, nombre, codigo, contrato, contrato_id, estado, contratista_id, contratistas(responsable), contrato_ref:contrato_id(no_contrato)',
+        )
         .or(
           [
             `nombre.ilike.${pattern}`,
@@ -998,18 +1039,46 @@ export const obrasService = {
 
       if (error) throw error;
 
+      let filas = (data || []) as Record<string, unknown>[];
+      try {
+        const contratoIds = await contratoObrasService.buscarContratoIdsPorTermino(term);
+        if (contratoIds.length > 0) {
+          const { data: porContrato } = await supabase
+            .from('obras')
+            .select(
+              'id, nombre, codigo, contrato, contrato_id, estado, contratista_id, contratistas(responsable), contrato_ref:contrato_id(no_contrato)',
+            )
+            .in('contrato_id', contratoIds)
+            .limit(limit * 4);
+          const idsVistos = new Set(filas.map((r) => String(r.id)));
+          for (const row of porContrato || []) {
+            if (!idsVistos.has(String(row.id))) filas.push(row as Record<string, unknown>);
+          }
+        }
+      } catch {
+        /* sin catálogo contrato */
+      }
+
       const lower = term.toLowerCase();
       const candidatos: string[] = [];
-      for (const obra of data || []) {
+      for (const obra of filas) {
         const row = obra as Record<string, unknown>;
         const contratista = row.contratistas as { responsable?: string } | null;
+        const contratoRef = row.contrato_ref as { no_contrato?: string } | { no_contrato?: string }[] | null;
+        const ref = Array.isArray(contratoRef) ? contratoRef[0] : contratoRef;
+        const numContrato =
+          numeroContratoDesdeObra({
+            contrato: row.contrato as string | null,
+            contrato_ref: ref as Parameters<typeof numeroContratoDesdeObra>[0]['contrato_ref'],
+          }) ?? (row.contrato as string | null);
         for (const valor of [
-          obra.nombre,
-          obra.codigo,
-          obra.contrato,
-          obra.id,
+          row.nombre,
+          row.codigo,
+          numContrato,
+          row.contrato,
+          row.id,
           contratista?.responsable,
-          obra.estado,
+          row.estado,
         ]) {
           const limpio = String(valor || '').trim();
           if (limpio && limpio.toLowerCase().includes(lower)) {
@@ -1180,10 +1249,13 @@ export const obrasService = {
         const payloads = await Promise.all(
           slice.map((o) => prepararPayloadObraPersistencia(o as Record<string, unknown>)),
         );
-        const { data, error } = await supabase
-          .from('obras')
-          .insert(payloads)
-          .select(OBRAS_SELECT_COMPLETO);
+        const conCodigo = payloads.every((p) => p.codigo);
+        const { data, error } = conCodigo
+          ? await supabase
+              .from('obras')
+              .upsert(payloads, { onConflict: 'codigo' })
+              .select(OBRAS_SELECT_COMPLETO)
+          : await supabase.from('obras').insert(payloads).select(OBRAS_SELECT_COMPLETO);
         if (error) throw error;
         todas.push(...mapObrasRows((data || []) as Record<string, unknown>[]));
       }
@@ -1228,12 +1300,15 @@ export const obrasService = {
    */
   actualizarObraPorCodigo: async (codigo: string, updates: Partial<Obra>): Promise<Obra> => {
     try {
+      const codigoNorm = normalizarCodigoObra(codigo);
+      if (!codigoNorm) throw new Error('Código de obra inválido');
+
       const payload = await prepararPayloadObraPersistencia(updates as Record<string, unknown>);
 
       const { data, error } = await supabase
         .from('obras')
         .update(payload)
-        .eq('codigo', codigo)
+        .eq('codigo', codigoNorm)
         .select(OBRAS_SELECT_COMPLETO)
         .maybeSingle();
 
@@ -1559,8 +1634,9 @@ export const obrasService = {
     const { data, error } = await supabase
       .from('obras')
       .select(
-        'codigo, nombre, contrato, contrato_id, tipo_obra, provincia, municipio, distrito_minerd_sigede, contrato_ref:contrato_id(no_contrato)',
+        'codigo, nombre, contrato, contrato_id, tipo, tipo_obra, provincia, municipio, distrito_minerd_sigede, contrato_ref:contrato_id(no_contrato)',
       )
+      .eq('tipo', TIPO_OBRA_GESTION_ARRASTRE)
       .or(
         `codigo.ilike.${pattern},nombre.ilike.${pattern},distrito_minerd_sigede.ilike.${pattern}`,
       )
@@ -1795,13 +1871,13 @@ export const obrasService = {
     };
   },
 
-  /** Resumen de obra (contrato, plantel, tipo, ubicación) por cada id_sigede. */
+  /** Resumen de obra (contrato, plantel, tipo, ubicación) por cada id_sigede (arrastre). */
   obtenerResumenesPorSigede: async (ids: string[]): Promise<ObraSigedeResumen[]> => {
     const uniq = Array.from(new Set(ids.map((id) => id.trim()).filter(Boolean)));
     if (uniq.length === 0) return [];
 
     const cols =
-      'codigo, nombre, contrato, contrato_id, tipo_obra, provincia, municipio, distrito_minerd_sigede, contrato_ref:contrato_id(no_contrato)';
+      'codigo, nombre, contrato, contrato_id, tipo, tipo_obra, provincia, municipio, distrito_minerd_sigede, contrato_ref:contrato_id(no_contrato)';
     const [resCodigo, resDistrito] = await Promise.all([
       supabase.from('obras').select(cols).in('codigo', uniq),
       supabase.from('obras').select(cols).in('distrito_minerd_sigede', uniq),
@@ -1819,10 +1895,15 @@ export const obrasService = {
     return uniq.map((idSigede) => {
       const obra = porCodigo.get(idSigede) || porDistrito.get(idSigede);
       if (!obra) {
-        return { id_sigede: idSigede, encontrada: false };
+        return {
+          id_sigede: idSigede,
+          tipo_gestion: TIPO_OBRA_GESTION_ARRASTRE,
+          encontrada: false,
+        };
       }
       return {
         id_sigede: idSigede,
+        tipo_gestion: TIPO_OBRA_GESTION_ARRASTRE,
         contrato:
           numeroContratoDesdeObra(
             obra as unknown as Parameters<typeof numeroContratoDesdeObra>[0],
@@ -1836,6 +1917,105 @@ export const obrasService = {
         encontrada: true,
       };
     });
+  },
+
+  /** Resumen de obras de mantenimiento por id (MT-xxxx). */
+  obtenerResumenesPorObraIds: async (ids: string[]): Promise<ObraSigedeResumen[]> => {
+    const uniq = Array.from(new Set(ids.map((id) => id.trim()).filter(Boolean)));
+    if (uniq.length === 0) return [];
+
+    const cols =
+      'id, nombre, contrato, contrato_id, tipo, tipo_obra, provincia, municipio, contrato_ref:contrato_id(no_contrato)';
+    const { data, error } = await supabase.from('obras').select(cols).in('id', uniq);
+    if (error) throw error;
+
+    const porId = new Map((data || []).map((o) => [String(o.id || '').trim(), o]));
+
+    return uniq.map((obraId) => {
+      const obra = porId.get(obraId);
+      if (!obra) {
+        return {
+          id_sigede: obraId,
+          obra_id: obraId,
+          tipo_gestion: TIPO_OBRA_GESTION_MANTENIMIENTO,
+          encontrada: false,
+        };
+      }
+      return {
+        id_sigede: obraId,
+        obra_id: obraId,
+        tipo_gestion: TIPO_OBRA_GESTION_MANTENIMIENTO,
+        contrato:
+          numeroContratoDesdeObra(
+            obra as unknown as Parameters<typeof numeroContratoDesdeObra>[0],
+          ) ??
+          obra.contrato ??
+          null,
+        plantel: obra.nombre ?? null,
+        tipo: obra.tipo_obra ?? null,
+        provincia: obra.provincia ?? null,
+        municipio: obra.municipio ?? null,
+        encontrada: true,
+      };
+    });
+  },
+
+  obtenerResumenesObrasDocumento: async (
+    idSigede: string[],
+    obraIds: string[],
+  ): Promise<ObraSigedeResumen[]> => {
+    const [arrastre, mantenimiento] = await Promise.all([
+      obrasService.obtenerResumenesPorSigede(idSigede),
+      obrasService.obtenerResumenesPorObraIds(obraIds),
+    ]);
+    return [...arrastre, ...mantenimiento];
+  },
+
+  /** Crea una obra de mantenimiento (sin SIGEDE) vinculada al contrato del documento. */
+  crearObraMantenimientoGestionTecnica: async (payload: {
+    nombre: string;
+    provincia?: string | null;
+    municipio?: string | null;
+    tipo_obra?: string | null;
+    contrato_id: string;
+    contratista_id?: string | null;
+  }): Promise<Obra> => {
+    const nombre = payload.nombre.trim();
+    if (!nombre) throw new Error('El nombre del plantel es obligatorio');
+    if (!payload.contrato_id?.trim()) {
+      throw new Error('Debe indicar el contrato antes de agregar una obra de mantenimiento');
+    }
+
+    const { data: existente } = await supabase
+      .from('obras')
+      .select('id, nombre')
+      .eq('tipo', TIPO_OBRA_GESTION_MANTENIMIENTO)
+      .eq('contrato_id', payload.contrato_id)
+      .ilike('nombre', nombre)
+      .limit(1)
+      .maybeSingle();
+
+    if (existente?.id) {
+      throw new Error(
+        `Ya existe una obra de mantenimiento «${existente.nombre}» en este contrato (${existente.id})`,
+      );
+    }
+
+    const [idObra] = await reservarIdsObra('MT', 1);
+    const obra = await obrasService.crearObra({
+      id: idObra,
+      nombre,
+      estado: 'NO ESPECIFICADO',
+      codigo: null,
+      distrito_minerd_sigede: null,
+      provincia: payload.provincia?.trim() || null,
+      municipio: payload.municipio?.trim() || null,
+      tipo_obra: payload.tipo_obra?.trim() || 'Mantenimiento',
+      tipo: TIPO_OBRA_GESTION_MANTENIMIENTO,
+      contrato_id: payload.contrato_id,
+      contratista_id: payload.contratista_id || null,
+    });
+    return obra;
   },
 };
 
@@ -2437,9 +2617,15 @@ function mapDocumentoTecnicoRow(row: Record<string, unknown>): DocumentoTecnicoO
     : rest.id_sigede
       ? [String(rest.id_sigede)]
       : [];
+  const obraIds = Array.isArray(rest.obra_ids)
+    ? (rest.obra_ids as string[]).map(String)
+    : rest.obra_ids
+      ? [String(rest.obra_ids)]
+      : [];
   return {
     ...(rest as unknown as DocumentoTecnicoObra),
     id_sigede: idSigede,
+    obra_ids: obraIds,
     no_adenda_solicituda: parseNoAdendaSolicitud(
       (rest.no_adenda_solicituda ?? rest.no_adenda_solicitud) as string | number | null,
     ),
@@ -2692,6 +2878,12 @@ async function sincronizarMovimientoGestionTecnicaATramite(
   });
 }
 
+async function cargarObrasSigedeDocumento(
+  doc: Pick<DocumentoTecnicoObra, 'id_sigede' | 'obra_ids'>,
+): Promise<ObraSigedeResumen[]> {
+  return obrasService.obtenerResumenesObrasDocumento(doc.id_sigede || [], doc.obra_ids || []);
+}
+
 export const documentosTecnicosService = {
   listar: async (filtros?: { busqueda?: string }): Promise<DocumentoTecnicoObra[]> => {
     const { data, error } = await supabase
@@ -2705,7 +2897,7 @@ export const documentosTecnicosService = {
     filas = await Promise.all(
       filas.map(async (doc) => ({
         ...doc,
-        obras_sigede: await obrasService.obtenerResumenesPorSigede(doc.id_sigede || []),
+        obras_sigede: await cargarObrasSigedeDocumento(doc),
       })),
     );
     const term = filtros?.busqueda?.trim().toLowerCase();
@@ -2722,6 +2914,11 @@ export const documentosTecnicosService = {
       filas = filas.filter((d) => {
         const responsable = (d.contratista?.responsable || '').toLowerCase();
         const sigedes = (d.id_sigede || []).join(' ').toLowerCase();
+        const obraIds = (d.obra_ids || []).join(' ').toLowerCase();
+        const planteles = (d.obras_sigede || [])
+          .map((o) => o.plantel || '')
+          .join(' ')
+          .toLowerCase();
         const contratoDoc = d.contrato?.no_contrato;
         const contratosObra = (d.obras_sigede || [])
           .map((o) => o.contrato)
@@ -2737,6 +2934,8 @@ export const documentosTecnicosService = {
           (d.observacion || '').toLowerCase().includes(term) ||
           responsable.includes(term) ||
           sigedes.includes(term) ||
+          obraIds.includes(term) ||
+          planteles.includes(term) ||
           coincideNumeroContrato(contratoDoc) ||
           contratosObra.some((c) => coincideNumeroContrato(c))
         );
@@ -2756,7 +2955,7 @@ export const documentosTecnicosService = {
     const doc = mapDocumentoTecnicoRow(data as Record<string, unknown>);
     return {
       ...doc,
-      obras_sigede: await obrasService.obtenerResumenesPorSigede(doc.id_sigede || []),
+      obras_sigede: await cargarObrasSigedeDocumento(doc),
     };
   },
 
@@ -2771,7 +2970,7 @@ export const documentosTecnicosService = {
     const doc = mapDocumentoTecnicoRow(data as Record<string, unknown>);
     return {
       ...doc,
-      obras_sigede: await obrasService.obtenerResumenesPorSigede(doc.id_sigede || []),
+      obras_sigede: await cargarObrasSigedeDocumento(doc),
     };
   },
 
@@ -2791,6 +2990,7 @@ export const documentosTecnicosService = {
     contratista_id?: string | null;
     contrato_id?: string | null;
     id_sigede: string[];
+    obra_ids?: string[];
   }): Promise<DocumentoTecnicoObra> => {
     const row = {
       solicitud: payload.solicitud.trim().slice(0, 75),
@@ -2808,6 +3008,7 @@ export const documentosTecnicosService = {
       contratista_id: payload.contratista_id || null,
       contrato_id: payload.contrato_id || null,
       id_sigede: payload.id_sigede.filter(Boolean).map((s) => s.trim()).filter(Boolean),
+      obra_ids: (payload.obra_ids || []).filter(Boolean).map((s) => s.trim()).filter(Boolean),
       updated_at: new Date().toISOString(),
     };
 
@@ -2821,7 +3022,7 @@ export const documentosTecnicosService = {
     const doc = mapDocumentoTecnicoRow(data as Record<string, unknown>);
     return {
       ...doc,
-      obras_sigede: await obrasService.obtenerResumenesPorSigede(doc.id_sigede || []),
+      obras_sigede: await cargarObrasSigedeDocumento(doc),
     };
   },
 
@@ -2843,6 +3044,7 @@ export const documentosTecnicosService = {
       contratista_id: string | null;
       contrato_id: string | null;
       id_sigede: string[];
+      obra_ids: string[];
     }>,
   ): Promise<DocumentoTecnicoObra> => {
     const updates: Record<string, unknown> = { updated_at: new Date().toISOString() };
@@ -2881,6 +3083,9 @@ export const documentosTecnicosService = {
     if (payload.id_sigede !== undefined) {
       updates.id_sigede = payload.id_sigede.filter(Boolean).map((s) => s.trim()).filter(Boolean);
     }
+    if (payload.obra_ids !== undefined) {
+      updates.obra_ids = payload.obra_ids.filter(Boolean).map((s) => s.trim()).filter(Boolean);
+    }
 
     const { data, error } = await supabase
       .from('documentos_tecnicos_obra')
@@ -2893,7 +3098,7 @@ export const documentosTecnicosService = {
     const doc = mapDocumentoTecnicoRow(data as Record<string, unknown>);
     return {
       ...doc,
-      obras_sigede: await obrasService.obtenerResumenesPorSigede(doc.id_sigede || []),
+      obras_sigede: await cargarObrasSigedeDocumento(doc),
     };
   },
 

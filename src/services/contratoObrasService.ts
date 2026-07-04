@@ -96,6 +96,34 @@ async function vincularObrasAContrato(contratoId: string, noContrato: string): P
 }
 
 export const contratoObrasService = {
+  /** IDs de contrato cuyo no_contrato coincide con el término (búsqueda en gestión de obras). */
+  buscarContratoIdsPorTermino: async (search: string): Promise<string[]> => {
+    const term = (search || '').trim();
+    if (!term) return [];
+    const esc = term.replace(/'/g, "''");
+    const pattern = `%${esc}%`;
+    const ids = new Set<string>();
+
+    const norm = normalizarNoContrato(term);
+    if (norm) {
+      const { data: exact } = await supabase.from('contrato').select('id').eq('no_contrato', norm);
+      for (const row of exact || []) {
+        if (row.id) ids.add(String(row.id));
+      }
+    }
+
+    const { data, error } = await supabase
+      .from('contrato')
+      .select('id')
+      .ilike('no_contrato', pattern)
+      .limit(80);
+    if (error) throw error;
+    for (const row of data || []) {
+      if (row.id) ids.add(String(row.id));
+    }
+    return Array.from(ids);
+  },
+
   /**
    * Busca en catálogo Techado (contrato) y en obras.
    * Si no existe y crearSiFalta, lo crea en contrato (con o sin obras vinculadas).

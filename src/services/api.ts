@@ -230,6 +230,7 @@ export const gestionTecnicaDocumentoAPI = {
       contratista_id?: string | null;
       contrato_id?: string | null;
       id_sigede: string[];
+      obra_ids?: string[];
     },
     id?: string,
   ) => {
@@ -384,14 +385,35 @@ export const gestionTecnicaDocumentoAPI = {
     }
   },
 
-  resumenesSigede: async (ids: string[]) => {
+  resumenesSigede: async (ids: string[], obraIds: string[] = []) => {
     try {
-      const data = await obrasService.obtenerResumenesPorSigede(ids);
+      const data = await obrasService.obtenerResumenesObrasDocumento(ids, obraIds);
       return { data: { data } };
     } catch (error: any) {
       throw {
         response: {
           data: { error: error.message || 'Error al consultar obras' },
+          status: 500,
+        },
+      };
+    }
+  },
+
+  crearObraMantenimiento: async (payload: {
+    nombre: string;
+    provincia?: string | null;
+    municipio?: string | null;
+    tipo_obra?: string | null;
+    contrato_id: string;
+    contratista_id?: string | null;
+  }) => {
+    try {
+      const data = await obrasService.crearObraMantenimientoGestionTecnica(payload);
+      return { data: { data } };
+    } catch (error: any) {
+      throw {
+        response: {
+          data: { error: error.message || 'Error al crear obra de mantenimiento' },
           status: 500,
         },
       };

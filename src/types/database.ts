@@ -31,6 +31,8 @@ export interface Obra {
   nombre_inaugurado?: string | null;
   /** Tipo de obra: por ejemplo "Construccion" o "Mantenimiento". */
   tipo_obra?: string | null;
+  /** Clasificación gestión técnica: Arrastre (SIGEDE) o Mantenimiento (contrato, sin SIGEDE). */
+  tipo?: 'Arrastre' | 'Mantenimiento' | null;
   estado: string;
   fecha_inicio?: string | null;
   fecha_fin_estimada?: string | null;
@@ -83,6 +85,8 @@ export interface DocumentoTecnicoObra {
   contratista_id?: string | null;
   contrato_id?: string | null;
   id_sigede: string[];
+  /** IDs de obras de mantenimiento (obras.id, ej. MT-xxxx). */
+  obra_ids?: string[];
   tipo_adenda_anterior?: string | null;
   numero_adenda_anterior?: string | null;
   numero_adenda_actual?: string | null;
@@ -116,9 +120,14 @@ export interface Adenda {
   contrato?: Pick<ContratoTechado, 'id' | 'lote' | 'no_contrato'> | null;
 }
 
-/** Datos de obra mostrados al seleccionar un ID SIGEDE. */
+/** Datos de obra mostrados al vincular obras a un documento técnico. */
 export interface ObraSigedeResumen {
+  /** Clave en el documento: código/distrito SIGEDE o id de obra (MT-xxxx). */
   id_sigede: string;
+  /** Arrastre (SIGEDE) o Mantenimiento (obra manual). */
+  tipo_gestion?: 'Arrastre' | 'Mantenimiento';
+  /** Id interno de obra (mantenimiento). */
+  obra_id?: string | null;
   contrato?: string | null;
   plantel?: string | null;
   tipo?: string | null;

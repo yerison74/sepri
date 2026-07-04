@@ -17,6 +17,9 @@ export const TABLE_ORDER = [
   'usuarios_app',
   'area',
   'contratistas',
+  'contrato',
+  'contrato_adenda',
+  'adenda',
   'obras',
   'historial_estados',
   'tramites',
@@ -30,9 +33,6 @@ export const TABLE_ORDER = [
   'contratista_access_tokens',
   'documentos_tecnicos_obra',
   'movimiento_documentos_tecnicos_obra',
-  'contrato',
-  'contrato_adenda',
-  'adenda',
   'matriz_general',
 ];
 

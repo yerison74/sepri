@@ -10,6 +10,7 @@ export const OBRAS_COLUMNAS_LISTADO = [
   'nombre',
   'nombre_inaugurado',
   'tipo_obra',
+  'tipo',
   'estado',
   'provincia',
   'municipio',
