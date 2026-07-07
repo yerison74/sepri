@@ -29,6 +29,8 @@ import {
   OBRAS_SELECT_COMPLETO,
   OBRAS_SELECT_DASHBOARD_PROXIMAS,
   resolverObrasSelect,
+  resolverObrasSelectLegacy,
+  resolverObrasSelectSinContrato,
   resolverObrasSelectSinJoin,
 } from '../constants/obrasSelect';
 import { propagarEstadoObraAMatriz } from './obraTechadoSync';
@@ -559,8 +561,17 @@ function mapObraRow(row: Record<string, unknown>): Obra {
       contrato: rest.contrato as string | null | undefined,
       contrato_ref: contratoRef,
     }) ?? (rest.contrato as string | null | undefined) ?? null;
+  const tipo: Obra['tipo'] =
+    (rest.tipo as Obra['tipo']) ??
+    inferirTipoObraGestion({
+      codigo: rest.codigo as string | null | undefined,
+      distrito_minerd_sigede: rest.distrito_minerd_sigede as string | null | undefined,
+      contrato_id: rest.contrato_id as string | null | undefined,
+      contrato: contratoNumero,
+    });
   return {
     ...(rest as unknown as Obra),
+    tipo,
     contrato: contratoNumero,
     contrato_ref: contratoRef ?? null,
     contratista: contratista ?? null,
@@ -613,12 +624,16 @@ async function obtenerFilasObrasUbicacionResponsablePaginadas(): Promise<Record<
   return filas;
 }
 
-async function buscarContratistaIdsPorResponsable(term: string): Promise<string[]> {
+const MAX_IDS_EN_FILTRO_OBRAS = 40;
+const MIN_CHARS_BUSQUEDA_CONTRATISTA = 2;
+
+async function buscarContratistaIdsPorResponsable(term: string, limit?: number): Promise<string[]> {
   const pattern = `%${term.replace(/'/g, "''")}%`;
-  const { data, error } = await supabase
-    .from('contratistas')
-    .select('id')
-    .ilike('responsable', pattern);
+  let query = supabase.from('contratistas').select('id').ilike('responsable', pattern);
+  if (limit != null) {
+    query = query.limit(limit);
+  }
+  const { data, error } = await query;
   if (error) {
     if (error.code === '42P01') return [];
     throw error;
@@ -626,8 +641,18 @@ async function buscarContratistaIdsPorResponsable(term: string): Promise<string[
   return (data || []).map((r) => r.id as string);
 }
 
-async function condicionesBusquedaObras(searchTerm: string): Promise<string[]> {
+type OpcionesBusquedaObras = {
+  joinContratistas?: boolean;
+  incluirContratoId?: boolean;
+};
+
+async function condicionesBusquedaObras(
+  searchTerm: string,
+  opciones: OpcionesBusquedaObras = {},
+): Promise<string[]> {
   const term = searchTerm.trim();
+  if (!term) return [];
+
   const esc = term.replace(/'/g, "''");
   const searchPattern = `%${esc}%`;
   const isNumeric = /^\d+$/.test(term);
@@ -653,21 +678,104 @@ async function condicionesBusquedaObras(searchTerm: string): Promise<string[]> {
     `nombre_inaugurado.ilike.${searchPattern}`,
   );
 
-  const contratistaIds = await buscarContratistaIdsPorResponsable(term);
-  if (contratistaIds.length > 0) {
-    searchConditions.push(`contratista_id.in.(${contratistaIds.join(',')})`);
+  if (term.length >= MIN_CHARS_BUSQUEDA_CONTRATISTA) {
+    if (opciones.joinContratistas) {
+      searchConditions.push(`contratistas.responsable.ilike.${searchPattern}`);
+    } else {
+      const contratistaIds = await buscarContratistaIdsPorResponsable(
+        term,
+        MAX_IDS_EN_FILTRO_OBRAS + 1,
+      );
+      if (contratistaIds.length > 0 && contratistaIds.length <= MAX_IDS_EN_FILTRO_OBRAS) {
+        searchConditions.push(`contratista_id.in.(${contratistaIds.join(',')})`);
+      }
+    }
   }
 
-  try {
-    const contratoIds = await contratoObrasService.buscarContratoIdsPorTermino(term);
-    if (contratoIds.length > 0) {
-      searchConditions.push(`contrato_id.in.(${contratoIds.join(',')})`);
+  if (opciones.incluirContratoId && term.length >= MIN_CHARS_BUSQUEDA_CONTRATISTA) {
+    try {
+      const contratoIds = await contratoObrasService.buscarContratoIdsPorTermino(term);
+      if (contratoIds.length > 0 && contratoIds.length <= MAX_IDS_EN_FILTRO_OBRAS) {
+        searchConditions.push(`contrato_id.in.(${contratoIds.join(',')})`);
+      }
+    } catch {
+      /* catálogo contrato opcional */
     }
-  } catch {
-    /* catálogo contrato opcional */
   }
 
   return searchConditions;
+}
+
+function esErrorSchemaObrasQuery(error: { code?: string; message?: string } | null): boolean {
+  if (!error) return false;
+  const code = error.code ?? '';
+  const msg = (error.message ?? '').toLowerCase();
+  if (code.startsWith('PGRST2')) return true;
+  if (msg.includes('bad request')) return true;
+  if (/contratistas|contrato|column|relationship|schema cache/i.test(msg)) return true;
+  return false;
+}
+
+function aplicarPaginacionObrasQuery<T extends { limit: (n: number) => T; range: (f: number, t: number) => T }>(
+  query: T,
+  filtros: ObrasFilters,
+): T {
+  if (filtros.limit != null) {
+    if (filtros.offset != null) {
+      return query.range(filtros.offset, filtros.offset + filtros.limit - 1);
+    }
+    return query.limit(filtros.limit);
+  }
+  return query;
+}
+
+async function ejecutarConsultaObrasListado(
+  selectCols: string,
+  filtros: ObrasFilters,
+  filtroResponsable: string,
+): Promise<{ data: unknown[] | null; error: { code?: string; message?: string } | null; count: number | null }> {
+  const joinContratistas = selectCols.includes('contratistas');
+  let query = supabase.from('obras').select(selectCols, { count: 'exact' });
+  query = aplicarFiltrosObrasEnQuery(query, filtros);
+
+  if (filtros.moduloBusquedaOr?.termino?.trim()) {
+    const termino = filtros.moduloBusquedaOr.termino.trim();
+    const pattern = `%${termino}%`;
+    const columnas = filtros.moduloBusquedaOr.columnas?.length
+      ? filtros.moduloBusquedaOr.columnas
+      : ['descripcion', 'nombre'];
+    const condiciones = columnas.map((col) => `${col}.ilike.${pattern}`);
+    query = query.or(condiciones.join(','));
+  }
+
+  if (filtroResponsable) {
+    if (joinContratistas) {
+      query = query.ilike('contratistas.responsable', `%${filtroResponsable}%`);
+    } else {
+      const ids = await buscarContratistaIdsPorResponsable(
+        filtroResponsable,
+        MAX_IDS_EN_FILTRO_OBRAS + 1,
+      );
+      if (ids.length === 0 || ids.length > MAX_IDS_EN_FILTRO_OBRAS) {
+        return { data: [], error: null, count: 0 };
+      }
+      query = query.in('contratista_id', ids);
+    }
+  }
+
+  if (filtros.search) {
+    const searchConditions = await condicionesBusquedaObras(filtros.search, {
+      joinContratistas,
+      incluirContratoId: /\bcontrato_id\b/.test(selectCols),
+    });
+    if (searchConditions.length > 0) {
+      query = query.or(searchConditions.join(','));
+    }
+  }
+
+  query = query.order('created_at', { ascending: false });
+  query = aplicarPaginacionObrasQuery(query, filtros);
+  return await query;
 }
 
 async function sugerenciasResponsableLegacy(_search: string, _limit: number): Promise<string[]> {
@@ -888,77 +996,25 @@ export const obrasService = {
     try {
       const filtroResponsable = filtros.responsable?.trim() || '';
       const proyeccion = filtros.proyeccion ?? 'listado';
-      const selectCols = resolverObrasSelect(proyeccion, !!filtroResponsable);
-      const selectFallback = resolverObrasSelectSinJoin(proyeccion);
+      const filtroResponsableActivo = !!filtroResponsable;
+      const selects = [
+        resolverObrasSelect(proyeccion, filtroResponsableActivo),
+        resolverObrasSelectSinContrato(proyeccion, filtroResponsableActivo),
+        resolverObrasSelectSinJoin(proyeccion),
+        resolverObrasSelectLegacy(proyeccion),
+      ];
 
-      let query = supabase
-        .from('obras')
-        .select(selectCols, { count: 'exact' });
+      let data: unknown[] | null = null;
+      let error: { code?: string; message?: string } | null = null;
+      let count: number | null = null;
 
-      query = aplicarFiltrosObrasEnQuery(query, filtros);
-
-      if (filtros.moduloBusquedaOr?.termino?.trim()) {
-        const termino = filtros.moduloBusquedaOr.termino.trim();
-        const pattern = `%${termino}%`;
-        const columnas = filtros.moduloBusquedaOr.columnas?.length
-          ? filtros.moduloBusquedaOr.columnas
-          : ['descripcion', 'nombre'];
-        const condiciones = columnas.map((col) => `${col}.ilike.${pattern}`);
-        query = query.or(condiciones.join(','));
-      }
-
-      if (filtroResponsable) {
-        query = query.ilike('contratistas.responsable', `%${filtroResponsable}%`);
-      }
-
-      if (filtros.search) {
-        const searchConditions = await condicionesBusquedaObras(filtros.search);
-        query = query.or(searchConditions.join(','));
-      }
-
-      query = query.order('created_at', { ascending: false });
-
-      if (filtros.limit) {
-        query = query.limit(filtros.limit);
-      }
-      if (filtros.offset != null && filtros.limit) {
-        query = query.range(filtros.offset, filtros.offset + filtros.limit - 1);
-      }
-
-      let { data, error, count } = await query;
-
-      if (error?.message?.includes('contratistas') || error?.code === 'PGRST200') {
-        let fallback = supabase.from('obras').select(selectFallback, { count: 'exact' });
-        fallback = aplicarFiltrosObrasEnQuery(fallback, filtros);
-        if (filtros.moduloBusquedaOr?.termino?.trim()) {
-          const termino = filtros.moduloBusquedaOr.termino.trim();
-          const pattern = `%${termino}%`;
-          const columnas = filtros.moduloBusquedaOr.columnas?.length
-            ? filtros.moduloBusquedaOr.columnas
-            : ['descripcion', 'nombre'];
-          const condiciones = columnas.map((col) => `${col}.ilike.${pattern}`);
-          fallback = fallback.or(condiciones.join(','));
-        }
-        if (filtroResponsable) {
-          const ids = await buscarContratistaIdsPorResponsable(filtroResponsable);
-          if (ids.length > 0) fallback = fallback.in('contratista_id', ids);
-          else {
-            return { data: [], count: 0 };
-          }
-        }
-        if (filtros.search) {
-          const searchConditions = await condicionesBusquedaObras(filtros.search);
-          fallback = fallback.or(searchConditions.join(','));
-        }
-        fallback = fallback.order('created_at', { ascending: false });
-        if (filtros.limit) fallback = fallback.limit(filtros.limit);
-        if (filtros.offset != null && filtros.limit) {
-          fallback = fallback.range(filtros.offset, filtros.offset + filtros.limit - 1);
-        }
-        const fb = await fallback;
-        data = fb.data;
-        error = fb.error;
-        count = fb.count;
+      for (const selectCols of selects) {
+        const result = await ejecutarConsultaObrasListado(selectCols, filtros, filtroResponsable);
+        data = result.data;
+        error = result.error;
+        count = result.count;
+        if (!error) break;
+        if (!esErrorSchemaObrasQuery(error)) break;
       }
 
       if (error) throw error;
