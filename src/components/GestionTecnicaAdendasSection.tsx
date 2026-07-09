@@ -24,6 +24,8 @@ import {
   SEPRI_FIELD_SHADOW,
 } from '../constants/gestionTecnicaDocumentoUi';
 import { BTN_PRIMARY_SM, BTN_SECONDARY_SM, BTN_DANGER } from '../constants/buttonStyles';
+import ObraEdicionBuscador from './ObraEdicionBuscador';
+import type { ObraEdicionOpcion } from '../types/database';
 
 const inputClass =
   `w-full px-3 py-2.5 rounded-xl text-sm text-stone-700 placeholder:text-stone-400 bg-white border-0 transition-all duration-150 outline-none ${SEPRI_FIELD_SHADOW}`;
@@ -36,6 +38,8 @@ const EMPTY_FORM = {
   tipo_adenda: '',
   monto: '',
   estado: 'en_curso' as EstadoAdenda,
+  obra_id: null as string | null,
+  obra_busqueda: '',
 };
 
 export function camposDocumentoDesdeAdendas(adendas: Adenda[]) {
@@ -153,11 +157,16 @@ const GestionTecnicaAdendasSection: React.FC<GestionTecnicaAdendasSectionProps> 
   };
 
   const abrirEditar = (adenda: Adenda) => {
+    const obraLabel = adenda.obra
+      ? [adenda.obra.codigo, adenda.obra.nombre].filter(Boolean).join(' — ')
+      : adenda.obra_id || '';
     setForm({
       numero_adenda: adenda.numero_adenda,
       tipo_adenda: adenda.tipo_adenda || '',
       monto: montoFormDesdeNumero(adenda.monto),
       estado: adenda.estado,
+      obra_id: adenda.obra_id || null,
+      obra_busqueda: obraLabel,
     });
     setEditandoId(adenda.id);
     setFormAbierto(true);
@@ -185,6 +194,7 @@ const GestionTecnicaAdendasSection: React.FC<GestionTecnicaAdendasSectionProps> 
       await gestionTecnicaDocumentoAPI.guardarAdenda(
         {
           contrato_id: contratoId,
+          obra_id: form.obra_id,
           numero_adenda: normalizarCodigoAdenda(form.numero_adenda) || form.numero_adenda.trim(),
           tipo_adenda: form.tipo_adenda || null,
           monto: parseMontoDOP(form.monto),
@@ -294,6 +304,41 @@ const GestionTecnicaAdendasSection: React.FC<GestionTecnicaAdendasSectionProps> 
           </select>
         </div>
       </div>
+      <div className="space-y-1">
+        <ObraEdicionBuscador
+          busqueda={form.obra_busqueda}
+          onBusquedaChange={(value) =>
+            setForm((p) => ({
+              ...p,
+              obra_busqueda: value,
+              obra_id: value.trim() ? p.obra_id : null,
+            }))
+          }
+          onSeleccionar={(opcion: ObraEdicionOpcion) => {
+            setForm((p) => ({
+              ...p,
+              obra_id: opcion.id,
+              obra_busqueda: [opcion.codigo || opcion.sigede, opcion.nombre]
+                .filter(Boolean)
+                .join(' — '),
+            }));
+          }}
+          onBuscar={() => undefined}
+          contratoId={contratoId}
+          label="Obra relacionada"
+          placeholder="SIGEDE, contrato, plantel, provincia o municipio…"
+          helpText="Opcional. Solo obras del contrato seleccionado."
+        />
+        {form.obra_id && (
+          <button
+            type="button"
+            className="text-[11px] text-stone-500 hover:text-stone-700 underline"
+            onClick={() => setForm((p) => ({ ...p, obra_id: null, obra_busqueda: '' }))}
+          >
+            Quitar obra vinculada
+          </button>
+        )}
+      </div>
       <div className="flex flex-wrap gap-2 justify-end">
         <button type="button" onClick={resetForm} className={BTN_SECONDARY_SM} disabled={guardando}>
           <Close sx={{ fontSize: 16 }} />
@@ -332,6 +377,14 @@ const GestionTecnicaAdendasSection: React.FC<GestionTecnicaAdendasSectionProps> 
           label="Monto adenda anterior"
           value={adendaAnterior ? formatMontoDOP(adendaAnterior.monto) : ''}
         />
+        <CampoAdendaLectura
+          label="Obra relacionada"
+          value={
+            adendaAnterior?.obra
+              ? `${adendaAnterior.obra.codigo || adendaAnterior.obra.id} — ${adendaAnterior.obra.nombre}`
+              : adendaAnterior?.obra_id || ''
+          }
+        />
       </div>
     </div>
   );
@@ -361,6 +414,14 @@ const GestionTecnicaAdendasSection: React.FC<GestionTecnicaAdendasSectionProps> 
         <CampoAdendaLectura
           label="Monto adenda solicitada"
           value={adendaActual ? formatMontoDOP(adendaActual.monto) : ''}
+        />
+        <CampoAdendaLectura
+          label="Obra relacionada"
+          value={
+            adendaActual?.obra
+              ? `${adendaActual.obra.codigo || adendaActual.obra.id} — ${adendaActual.obra.nombre}`
+              : adendaActual?.obra_id || ''
+          }
         />
       </div>
     </div>
@@ -453,6 +514,7 @@ const GestionTecnicaAdendasSection: React.FC<GestionTecnicaAdendasSectionProps> 
               <tr>
                 <th className={GT_TABLA_TH}>Número</th>
                 <th className={GT_TABLA_TH}>Tipo</th>
+                <th className={GT_TABLA_TH}>Obra</th>
                 <th className={GT_TABLA_TH}>Monto</th>
                 <th className={GT_TABLA_TH}>Estado</th>
                 {!soloLectura && <th className={`${GT_TABLA_TH} w-28`}>Acciones</th>}
@@ -467,6 +529,11 @@ const GestionTecnicaAdendasSection: React.FC<GestionTecnicaAdendasSectionProps> 
                 >
                   <td className={`${GT_TABLA_TD} font-mono tabular-nums`}>{a.numero_adenda}</td>
                   <td className={GT_TABLA_TD}>{a.tipo_adenda || '—'}</td>
+                  <td className={GT_TABLA_TD}>
+                    {a.obra
+                      ? `${a.obra.codigo || a.obra.id} — ${a.obra.nombre}`
+                      : a.obra_id || '—'}
+                  </td>
                   <td className={`${GT_TABLA_TD} tabular-nums`}>{formatMontoDOP(a.monto)}</td>
                   <td className={GT_TABLA_TD}>
                     <span

@@ -111,16 +111,16 @@ export const mantenimientosAPI = {
     }
   },
 
-  obtenerRelacionesObraPorSigede: async (sigedes: string[], obraId?: string) => {
+  obtenerRelacionesObraPorSigede: async (
+    obra: Pick<
+      import('../types/database').Obra,
+      'id' | 'codigo' | 'distrito_minerd_sigede' | 'contrato_id' | 'contrato'
+    >,
+  ) => {
     try {
-      const [relaciones, techado] = await Promise.all([
-        obrasService.obtenerRelacionesPorSigede(sigedes),
-        obraId?.trim()
-          ? techadoService.obtenerResumenPorObraId(obraId.trim())
-          : Promise.resolve([]),
-      ]);
+      const data = await obrasService.obtenerRelacionesObra(obra);
       return {
-        data: { data: { ...relaciones, techado } },
+        data: { data },
       } as AxiosResponse<{
         data: import('../types/database').ObraRelacionesSigede;
       }>;
@@ -483,6 +483,7 @@ export const gestionTecnicaDocumentoAPI = {
   guardarAdenda: async (
     payload: {
       contrato_id: string;
+      obra_id?: string | null;
       numero_adenda: string;
       tipo_adenda?: string | null;
       monto?: number | string | null;
@@ -654,9 +655,13 @@ export const uploadAPI = {
     }
   },
 
-  buscarObrasParaEdicion: async (search: string, limit = 10) => {
+  buscarObrasParaEdicion: async (
+    search: string,
+    limit = 10,
+    opciones?: { contratoId?: string | null },
+  ) => {
     try {
-      const data = await obrasService.buscarObrasParaEdicion(search, limit);
+      const data = await obrasService.buscarObrasParaEdicion(search, limit, opciones);
       return { data: { data } } as AxiosResponse<{
         data: import('../types/database').ObraEdicionOpcion[];
       }>;

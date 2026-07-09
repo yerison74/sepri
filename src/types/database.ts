@@ -111,6 +111,7 @@ export type EstadoAdenda = 'en_curso' | 'anterior';
 export interface Adenda {
   id: string;
   contrato_id: string;
+  obra_id?: string | null;
   numero_adenda: string;
   tipo_adenda?: string | null;
   monto?: number | null;
@@ -118,6 +119,7 @@ export interface Adenda {
   created_at?: string | null;
   updated_at?: string | null;
   contrato?: Pick<ContratoTechado, 'id' | 'lote' | 'no_contrato'> | null;
+  obra?: Pick<Obra, 'id' | 'nombre' | 'codigo' | 'tipo' | 'contrato_id'> | null;
 }
 
 /** Datos de obra mostrados al vincular obras a un documento técnico. */
@@ -179,6 +181,17 @@ export interface ObraRelacionesSigede {
   tramites: TramiteObraResumen[];
   documentos: DocumentoObraResumen[];
   techado?: ObraMatrizTechadoResumen[];
+  /** Catálogo Techado del contrato vinculado a la obra. */
+  contrato?: Pick<ContratoTechado, 'id' | 'lote' | 'no_contrato' | 'contratista_nombre'> | null;
+  /** Adendas de gestión técnica del contrato. */
+  adendas?: Adenda[];
+  /** Otras obras del mismo contrato. */
+  obrasContrato?: Array<{
+    id: string;
+    nombre: string;
+    codigo?: string | null;
+    tipo?: string | null;
+  }>;
 }
 
 /** Opción de búsqueda para editar una obra en Carga de archivos. */

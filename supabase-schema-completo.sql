@@ -735,6 +735,12 @@ CREATE TABLE IF NOT EXISTS public.adenda (
   CONSTRAINT adenda_contrato_numero_unique UNIQUE (contrato_id, numero_adenda)
 );
 
+ALTER TABLE public.adenda
+  ADD COLUMN IF NOT EXISTS obra_id text REFERENCES public.obras(id) ON DELETE SET NULL;
+
+CREATE INDEX IF NOT EXISTS idx_adenda_obra_id
+  ON public.adenda(obra_id) WHERE obra_id IS NOT NULL;
+
 CREATE TABLE IF NOT EXISTS public.matriz_general (
   id                              text PRIMARY KEY DEFAULT gen_random_uuid()::text,
   contrato_id                     text NOT NULL REFERENCES public.contrato(id) ON DELETE CASCADE,

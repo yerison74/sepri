@@ -9,7 +9,6 @@ type FiltroQuery = {
 
 const CAMPOS_TEXTO_ILIKE: Array<keyof ObrasFilters> = [
   'codigo',
-  'contrato',
   'nombre',
   'nombre_inaugurado',
   'tipo_obra',

@@ -3,6 +3,7 @@ import type { Contratista, ContratoTechado } from '../types/database';
 import { normalizarNoContrato } from '../utils/techadoNormalizar';
 
 const CONTRATO_SELECT = 'id, lote, no_contrato, contratista_nombre';
+export const MAX_IDS_CONTRATO_FILTRO = 40;
 
 type ObraContratoRow = {
   id: string;
@@ -51,6 +52,51 @@ async function buscarObrasPorNumeroContrato(noContrato: string): Promise<ObraCon
 
   if (error) throw error;
   return (data || []) as ObraContratoRow[];
+}
+
+/** Condiciones OR para búsqueda por número de contrato (legado + contrato_id). */
+export async function condicionesOrContratoEnObras(term: string): Promise<string[]> {
+  const t = term.trim();
+  if (!t) return [];
+  const esc = t.replace(/'/g, "''");
+  const pattern = `%${esc}%`;
+  const conditions = [`contrato.ilike.${pattern}`];
+  if (t.length >= 2) {
+    try {
+      const ids = await contratoObrasService.buscarContratoIdsPorTermino(t);
+      if (ids.length > 0 && ids.length <= MAX_IDS_CONTRATO_FILTRO) {
+        conditions.push(`contrato_id.in.(${ids.join(',')})`);
+      }
+    } catch {
+      /* catálogo contrato opcional */
+    }
+  }
+  return conditions;
+}
+
+type FiltroContratoQuery = {
+  eq: (column: string, value: unknown) => FiltroContratoQuery;
+  in: (column: string, values: unknown[]) => FiltroContratoQuery;
+  ilike: (column: string, pattern: string) => FiltroContratoQuery;
+};
+
+/** Filtro avanzado de contrato: resuelve catálogo y cae a texto legado. */
+export async function aplicarFiltroContratoEnQuery<T extends FiltroContratoQuery>(
+  query: T,
+  valorContrato: string,
+): Promise<T> {
+  const valor = valorContrato.trim();
+  if (!valor) return query;
+  try {
+    const ids = await contratoObrasService.buscarContratoIdsPorTermino(valor);
+    if (ids.length === 1) return query.eq('contrato_id', ids[0]) as T;
+    if (ids.length > 1 && ids.length <= MAX_IDS_CONTRATO_FILTRO) {
+      return query.in('contrato_id', ids) as T;
+    }
+  } catch {
+    /* catálogo contrato opcional */
+  }
+  return query.ilike('contrato', `%${valor.replace(/'/g, "''")}%`) as T;
 }
 
 async function inferirLoteParaContrato(
