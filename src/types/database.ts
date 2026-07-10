@@ -141,12 +141,17 @@ export interface ObraSigedeResumen {
 
 /** Resultado de búsqueda de obra para vincular a un trámite. */
 export interface ObraTramiteOpcion {
+  /** Id interno de la obra (OB-xxxx / MT-xxxx). */
+  id: string;
+  /** Código SIGEDE si existe; vacío en mantenimiento. */
   sigede: string;
   nombre: string;
   contrato?: string | null;
   responsable?: string | null;
   provincia?: string | null;
   municipio?: string | null;
+  /** true si la obra se vincula por id (sin SIGEDE). */
+  sinSigede?: boolean;
 }
 
 export interface BuscarObrasTramiteResult {
@@ -257,6 +262,8 @@ export interface Tramite {
   updated_at?: string | null;
   /** Obras SIGEDE vinculadas al trámite. */
   id_sigede?: string[];
+  /** Obras sin SIGEDE (mantenimiento) vinculadas por id interno. */
+  obra_ids?: string[];
   obras_sigede?: ObraSigedeResumen[];
 }
 

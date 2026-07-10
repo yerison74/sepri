@@ -377,14 +377,18 @@ CREATE TABLE IF NOT EXISTS public.tramites (
   fecha_creacion      timestamptz DEFAULT now(),
   created_at          timestamptz NOT NULL DEFAULT now(),
   updated_at          timestamptz NOT NULL DEFAULT now(),
-  id_sigede           text[] NOT NULL DEFAULT '{}'
+  id_sigede           text[] NOT NULL DEFAULT '{}',
+  obra_ids            text[] NOT NULL DEFAULT '{}'
 );
 
 ALTER TABLE public.tramites ADD COLUMN IF NOT EXISTS proceso text;
 ALTER TABLE public.tramites ADD COLUMN IF NOT EXISTS id_sigede text[] NOT NULL DEFAULT '{}';
+ALTER TABLE public.tramites ADD COLUMN IF NOT EXISTS obra_ids text[] NOT NULL DEFAULT '{}';
 
 COMMENT ON COLUMN public.tramites.id_sigede IS
   'Códigos SIGEDE (codigo o distrito_minerd_sigede) de obras vinculadas al trámite.';
+COMMENT ON COLUMN public.tramites.obra_ids IS
+  'Ids internos de obras sin SIGEDE (MT-xxxx / OB-xxxx) vinculadas al trámite.';
 
 CREATE TABLE IF NOT EXISTS public.movimientos_tramites (
   id                bigserial PRIMARY KEY,
@@ -1089,6 +1093,7 @@ BEGIN
 END $$;
 
 CREATE INDEX IF NOT EXISTS idx_tramites_id_sigede_gin ON public.tramites USING gin (id_sigede);
+CREATE INDEX IF NOT EXISTS idx_tramites_obra_ids_gin ON public.tramites USING gin (obra_ids);
 CREATE INDEX IF NOT EXISTS idx_doc_tecnicos_id_sigede_gin
   ON public.documentos_tecnicos_obra USING gin (id_sigede);
 CREATE INDEX IF NOT EXISTS idx_doc_tecnicos_obra_ids_gin

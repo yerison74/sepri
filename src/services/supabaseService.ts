@@ -1742,73 +1742,135 @@ export const obrasService = {
     }
 
     const cols =
-      'codigo, nombre, contrato, contrato_id, provincia, municipio, distrito_minerd_sigede, contratista_id';
+      'id, codigo, nombre, contrato, contrato_id, provincia, municipio, distrito_minerd_sigede, contratista_id, tipo, contrato_ref:contrato_id(no_contrato)';
     const pattern = `%${term.replace(/'/g, "''")}%`;
     const condicionesContrato = await condicionesOrContratoEnObras(term);
+    const termNorm = normalizarNoContrato(term);
 
     const searchConditions = [
+      `id.ilike.${pattern}`,
       `codigo.ilike.${pattern}`,
       `nombre.ilike.${pattern}`,
       `distrito_minerd_sigede.ilike.${pattern}`,
+      `provincia.ilike.${pattern}`,
+      `municipio.ilike.${pattern}`,
       ...condicionesContrato,
     ];
 
     let contratistaIds: string[] = [];
     try {
-      contratistaIds = await buscarContratistaIdsPorResponsable(term);
+      contratistaIds = await buscarContratistaIdsPorResponsable(
+        term,
+        MAX_IDS_EN_FILTRO_OBRAS + 1,
+      );
+      if (contratistaIds.length > MAX_IDS_EN_FILTRO_OBRAS) {
+        contratistaIds = [];
+      }
     } catch {
       contratistaIds = [];
     }
 
+    const emptyResult = {
+      data: [] as Record<string, unknown>[],
+      error: null as { message?: string } | null,
+    };
+
     const [resGeneral, resPorContratista, resContratoExacto] = await Promise.all([
-      supabase
-        .from('obras')
-        .select(cols)
-        .or(searchConditions.join(','))
-        .order('codigo', { ascending: true })
-        .limit(limit),
-      contratistaIds.length > 0
-        ? supabase
-            .from('obras')
-            .select(cols)
-            .in('contratista_id', contratistaIds)
-            .order('codigo', { ascending: true })
-            .limit(limit)
-        : Promise.resolve({ data: [] as Record<string, unknown>[], error: null }),
-      (async () => {
-        const contratoIds = await contratoObrasService.buscarContratoIdsPorTermino(term);
-        if (contratoIds.length > 0) {
-          return supabase
-            .from('obras')
-            .select(cols)
-            .in('contrato_id', contratoIds)
-            .order('codigo', { ascending: true })
-            .limit(500);
-        }
-        const norm = normalizarNoContrato(term);
-        if (!norm) return { data: [] as Record<string, unknown>[], error: null };
-        return supabase
+      Promise.resolve(
+        supabase
           .from('obras')
           .select(cols)
-          .eq('contrato', norm)
+          .or(searchConditions.join(','))
           .order('codigo', { ascending: true })
-          .limit(500);
+          .limit(limit),
+      )
+        .then((r) => (r.error ? emptyResult : r))
+        .catch(() => emptyResult),
+      contratistaIds.length > 0
+        ? Promise.resolve(
+            supabase
+              .from('obras')
+              .select(cols)
+              .in('contratista_id', contratistaIds)
+              .order('codigo', { ascending: true })
+              .limit(limit),
+          )
+            .then((r) => (r.error ? emptyResult : r))
+            .catch(() => emptyResult)
+        : Promise.resolve(emptyResult),
+      (async () => {
+        try {
+          // Lote solo si el término identifica un único contrato (exacto o normalizado).
+          let contratoIdUnico: string | null = null;
+          let noContratoLote = termNorm || term;
+
+          if (termNorm) {
+            const { data: exactos } = await supabase
+              .from('contrato')
+              .select('id, no_contrato')
+              .eq('no_contrato', termNorm)
+              .limit(2);
+            if (exactos && exactos.length === 1 && exactos[0].id) {
+              contratoIdUnico = String(exactos[0].id);
+              noContratoLote = String(exactos[0].no_contrato || termNorm);
+            }
+          }
+
+          if (!contratoIdUnico) {
+            const contratoIds = await contratoObrasService.buscarContratoIdsPorTermino(term);
+            if (contratoIds.length === 1) {
+              contratoIdUnico = contratoIds[0];
+              const { data: cat } = await supabase
+                .from('contrato')
+                .select('no_contrato')
+                .eq('id', contratoIdUnico)
+                .maybeSingle();
+              if (cat?.no_contrato) noContratoLote = String(cat.no_contrato);
+            }
+          }
+
+          if (contratoIdUnico) {
+            const r = await supabase
+              .from('obras')
+              .select(cols)
+              .eq('contrato_id', contratoIdUnico)
+              .order('codigo', { ascending: true })
+              .limit(500);
+            return {
+              ...r,
+              _noContratoLote: noContratoLote,
+            };
+          }
+
+          if (termNorm) {
+            const r = await supabase
+              .from('obras')
+              .select(cols)
+              .eq('contrato', termNorm)
+              .order('codigo', { ascending: true })
+              .limit(500);
+            return { ...r, _noContratoLote: termNorm };
+          }
+
+          return { ...emptyResult, _noContratoLote: term };
+        } catch {
+          return { ...emptyResult, _noContratoLote: term };
+        }
       })(),
     ]);
-
-    if (resGeneral.error) throw resGeneral.error;
-    if (resPorContratista.error) throw resPorContratista.error;
-    if (resContratoExacto.error) throw resContratoExacto.error;
 
     const filasCombinadas = [
       ...((resGeneral.data || []) as Record<string, unknown>[]),
       ...((resPorContratista.data || []) as Record<string, unknown>[]),
+      ...((resContratoExacto.data || []) as Record<string, unknown>[]),
     ];
     const loteFilas = (resContratoExacto.data || []) as Record<string, unknown>[];
+    const noContratoLote =
+      (resContratoExacto as { _noContratoLote?: string })._noContratoLote || termNorm || term;
 
     const idsContratista = Array.from(
       new Set(
-        [...filasCombinadas, ...loteFilas]
+        filasCombinadas
           .map((row) => row.contratista_id)
           .filter((id): id is string => typeof id === 'string' && id.length > 0),
       ),
@@ -1828,19 +1890,28 @@ export const obrasService = {
     }
 
     const mapRow = (row: Record<string, unknown>): import('../types/database').ObraTramiteOpcion | null => {
-      const sigede = String(row.codigo || row.distrito_minerd_sigede || '').trim();
-      if (!sigede) return null;
+      const id = String(row.id || '').trim();
+      if (!id) return null;
+      const codigo = String(row.codigo || '').trim();
+      const distrito = String(row.distrito_minerd_sigede || '').trim();
+      const sigede = codigo || distrito;
       const contratistaId =
         typeof row.contratista_id === 'string' ? row.contratista_id : null;
+      const contratoNum =
+        numeroContratoDesdeObra(
+          row as unknown as Parameters<typeof numeroContratoDesdeObra>[0],
+        ) ?? (row.contrato != null ? String(row.contrato) : null);
       return {
-        sigede,
+        id,
+        sigede: sigede || id,
         nombre: String(row.nombre || ''),
-        contrato: row.contrato != null ? String(row.contrato) : null,
+        contrato: contratoNum,
         responsable: contratistaId
           ? responsablePorContratista.get(contratistaId) ?? null
           : null,
         provincia: row.provincia != null ? String(row.provincia) : null,
         municipio: row.municipio != null ? String(row.municipio) : null,
+        sinSigede: !sigede,
       };
     };
 
@@ -1851,8 +1922,8 @@ export const obrasService = {
       const out: import('../types/database').ObraTramiteOpcion[] = [];
       for (const row of filas) {
         const m = mapRow(row);
-        if (!m || vistos.has(m.sigede)) continue;
-        vistos.add(m.sigede);
+        if (!m || vistos.has(m.id)) continue;
+        vistos.add(m.id);
         out.push(m);
       }
       return out;
@@ -1863,7 +1934,7 @@ export const obrasService = {
     const loteObras = mergeUnicas(loteFilas);
     const loteContrato =
       loteObras.length > 0
-        ? { contrato: term, obras: loteObras }
+        ? { contrato: noContratoLote, obras: loteObras }
         : null;
 
     return { obras, loteContrato };
@@ -2330,11 +2401,18 @@ export const tramitesService = {
       const ids = Array.isArray(data.id_sigede)
         ? (data.id_sigede as string[]).map((s) => String(s).trim()).filter(Boolean)
         : [];
+      const obraIds = Array.isArray(data.obra_ids)
+        ? (data.obra_ids as string[]).map((s) => String(s).trim()).filter(Boolean)
+        : [];
 
       return {
         ...data,
         id_sigede: ids,
-        obras_sigede: ids.length > 0 ? await obrasService.obtenerResumenesPorSigede(ids) : [],
+        obra_ids: obraIds,
+        obras_sigede:
+          ids.length > 0 || obraIds.length > 0
+            ? await obrasService.obtenerResumenesObrasDocumento(ids, obraIds)
+            : [],
       };
     } catch (error: any) {
       console.error('Error al obtener trámite:', error);

@@ -59,8 +59,11 @@ export async function condicionesOrContratoEnObras(term: string): Promise<string
   const t = term.trim();
   if (!t) return [];
   const esc = t.replace(/'/g, "''");
-  const pattern = `%${esc}%`;
-  const conditions = [`contrato.ilike.${pattern}`];
+  const conditions = [`contrato.ilike.%${esc}%`];
+  const norm = normalizarNoContrato(t);
+  if (norm && norm !== t) {
+    conditions.push(`contrato.ilike.%${norm.replace(/'/g, "''")}%`);
+  }
   if (t.length >= 2) {
     try {
       const ids = await contratoObrasService.buscarContratoIdsPorTermino(t);
@@ -171,11 +174,14 @@ export const contratoObrasService = {
   buscarContratoIdsPorTermino: async (search: string): Promise<string[]> => {
     const term = (search || '').trim();
     if (!term) return [];
-    const esc = term.replace(/'/g, "''");
-    const pattern = `%${esc}%`;
     const ids = new Set<string>();
 
     const norm = normalizarNoContrato(term);
+    const patrones = new Set<string>([`%${term.replace(/'/g, "''")}%`]);
+    if (norm && norm !== term) {
+      patrones.add(`%${norm.replace(/'/g, "''")}%`);
+    }
+
     if (norm) {
       const { data: exact } = await supabase.from('contrato').select('id').eq('no_contrato', norm);
       for (const row of exact || []) {
@@ -183,14 +189,17 @@ export const contratoObrasService = {
       }
     }
 
-    const { data, error } = await supabase
-      .from('contrato')
-      .select('id')
-      .ilike('no_contrato', pattern)
-      .limit(80);
-    if (error) throw error;
-    for (const row of data || []) {
-      if (row.id) ids.add(String(row.id));
+    for (const pattern of Array.from(patrones)) {
+      const { data, error } = await supabase
+        .from('contrato')
+        .select('id')
+        .ilike('no_contrato', pattern)
+        .limit(80);
+      if (error) throw error;
+      for (const row of data || []) {
+        if (row.id) ids.add(String(row.id));
+      }
+      if (ids.size >= 80) break;
     }
     return Array.from(ids);
   },

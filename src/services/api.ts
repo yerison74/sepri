@@ -939,14 +939,16 @@ export const tramitesAPI = {
     codigo_area?: string;
     id_fijo?: string;
     id_sigede?: string[];
+    obra_ids?: string[];
   }) => {
     try {
       const prefijo = tramite.codigo_area || 'TR';
       // Si se pasa id_fijo (desde contratista), usarlo directamente
       const sufijo = (Date.now() % 1000000).toString().padStart(6, '0');
       const id = tramite.id_fijo || `${prefijo}-${sufijo}`;
-      const { codigo_area: _, id_fijo: __, id_sigede, ...resto } = tramite;
+      const { codigo_area: _, id_fijo: __, id_sigede, obra_ids, ...resto } = tramite;
       const sigedes = (id_sigede || []).map((s) => s.trim()).filter(Boolean);
+      const obraIds = (obra_ids || []).map((s) => s.trim()).filter(Boolean);
       const data = await tramitesService.crearTramite({
         ...resto,
         id,
@@ -954,6 +956,7 @@ export const tramitesAPI = {
         codigo_barras: `${Date.now()}`,
         proceso: tramite.proceso ?? undefined,
         id_sigede: sigedes,
+        obra_ids: obraIds,
       });
       return { data: { data } } as AxiosResponse<{ data: Tramite }>;
     } catch (error: any) {
@@ -986,6 +989,18 @@ export const tramitesAPI = {
           }
         } catch {
           id_sigede = [];
+        }
+      }
+      const obraIdsRaw = formData.get('obra_ids') as string | null;
+      let obra_ids: string[] = [];
+      if (obraIdsRaw) {
+        try {
+          const parsed = JSON.parse(obraIdsRaw);
+          if (Array.isArray(parsed)) {
+            obra_ids = parsed.map(String).map((s) => s.trim()).filter(Boolean);
+          }
+        } catch {
+          obra_ids = [];
         }
       }
 
@@ -1026,6 +1041,7 @@ export const tramitesAPI = {
         archivo_pdf: archivoPdfUrl,
         nombre_archivo: archivoPdf.name,
         id_sigede,
+        obra_ids,
       });
 
       return { data: { data } } as AxiosResponse<{ data: Tramite }>;
