@@ -126,18 +126,43 @@ async function inferirLoteParaContrato(
   return 0;
 }
 
-/** Asigna contrato_id a obras que aún tengan el número legado; no bloquea si no hay coincidencias. */
+/** Evita PATCH repetidos al mismo contrato (carga masiva / búsquedas concurrentes). */
+const vinculacionesEnCurso = new Map<string, Promise<void>>();
+const vinculacionesCompletadas = new Set<string>();
+
+/** Asigna contrato_id a obras legadas que aún no lo tienen; no bloquea si no hay coincidencias. */
 async function vincularObrasAContrato(contratoId: string, noContrato: string): Promise<void> {
   const norm = normalizarNoContrato(noContrato);
-  if (!norm) return;
+  if (!norm || !contratoId) return;
 
-  const { error } = await supabase
-    .from('obras')
-    .update({ contrato_id: contratoId, updated_at: new Date().toISOString() })
-    .eq('contrato', norm);
+  const key = `${contratoId}|${norm}`;
+  if (vinculacionesCompletadas.has(key)) return;
 
-  if (error) {
-    console.warn('vincularObrasAContrato:', error.message);
+  const enCurso = vinculacionesEnCurso.get(key);
+  if (enCurso) {
+    await enCurso;
+    return;
+  }
+
+  const promesa = (async () => {
+    const { error } = await supabase
+      .from('obras')
+      .update({ contrato_id: contratoId, updated_at: new Date().toISOString() })
+      .eq('contrato', norm)
+      .is('contrato_id', null);
+
+    if (error) {
+      console.warn('vincularObrasAContrato:', error.message);
+      return;
+    }
+    vinculacionesCompletadas.add(key);
+  })();
+
+  vinculacionesEnCurso.set(key, promesa);
+  try {
+    await promesa;
+  } finally {
+    vinculacionesEnCurso.delete(key);
   }
 }
 
@@ -176,24 +201,50 @@ export const contratoObrasService = {
    */
   resolverOCrearContrato: async (options: {
     no_contrato: string;
+    lote?: number | null;
     contratista_nombre?: string | null;
     crearSiFalta?: boolean;
+    /** En carga masiva omitir el PATCH global por contrato (cada fila ya lleva contrato_id). */
+    vincularObras?: boolean;
   }): Promise<ContratoTechado | null> => {
     const norm = normalizarNoContrato(options.no_contrato);
     if (!norm) return null;
 
-    const { data: catalogo, error: errCat } = await supabase
-      .from('contrato')
-      .select(CONTRATO_SELECT)
-      .eq('no_contrato', norm)
-      .order('lote', { ascending: true })
-      .limit(1)
-      .maybeSingle();
+    const debeVincular = options.vincularObras !== false;
+    const vincular = debeVincular
+      ? (contratoId: string) => vincularObrasAContrato(contratoId, norm)
+      : async () => {};
 
-    if (errCat) throw errCat;
-    if (catalogo) {
-      await vincularObrasAContrato(catalogo.id as string, norm);
-      return catalogo as ContratoTechado;
+    const loteExplicito =
+      options.lote != null && Number.isFinite(options.lote) ? options.lote : null;
+
+    if (loteExplicito != null) {
+      const { data: porLote, error: errLote } = await supabase
+        .from('contrato')
+        .select(CONTRATO_SELECT)
+        .eq('lote', loteExplicito)
+        .eq('no_contrato', norm)
+        .maybeSingle();
+
+      if (errLote) throw errLote;
+      if (porLote) {
+        await vincular(porLote.id as string);
+        return porLote as ContratoTechado;
+      }
+    } else {
+      const { data: catalogo, error: errCat } = await supabase
+        .from('contrato')
+        .select(CONTRATO_SELECT)
+        .eq('no_contrato', norm)
+        .order('lote', { ascending: true })
+        .limit(1)
+        .maybeSingle();
+
+      if (errCat) throw errCat;
+      if (catalogo) {
+        await vincular(catalogo.id as string);
+        return catalogo as ContratoTechado;
+      }
     }
 
     const obras = await buscarObrasPorNumeroContrato(norm);
@@ -206,7 +257,7 @@ export const contratoObrasService = {
       })
       .find(Boolean);
     if (refObra?.id) {
-      await vincularObrasAContrato(refObra.id, norm);
+      await vincular(refObra.id);
       return refObra as ContratoTechado;
     }
 
@@ -225,7 +276,7 @@ export const contratoObrasService = {
       }
     }
 
-    const lote = await inferirLoteParaContrato(norm, obras);
+    const lote = loteExplicito ?? (await inferirLoteParaContrato(norm, obras));
     const { data: creado, error: errIns } = await supabase
       .from('contrato')
       .upsert(
@@ -241,7 +292,7 @@ export const contratoObrasService = {
       .single();
 
     if (errIns) throw errIns;
-    await vincularObrasAContrato(creado.id as string, norm);
+    await vincular(creado.id as string);
     return creado as ContratoTechado;
   },
 

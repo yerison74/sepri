@@ -188,6 +188,7 @@ const ObraMasDetallesDialog: React.FC<ObraMasDetallesDialogProps> = ({ open, onC
                 label="Total última cubicación"
                 value={formatearMonto(obra.total_ultima_cubicacion)}
               />
+              <CampoDetalle label="SNIP" value={obra.snip} />
               <CampoDetalle label="Envío SNIP" value={obra.envio_snip} />
               <CampoDetalle label="Monto SNIP" value={formatearMonto(obra.monto_snip)} />
               <CampoDetalle label="Modificación SNIP" value={obra.modificacion_snip} />

@@ -63,6 +63,7 @@ export interface Obra {
   ultima_total_cubicado?: number | null;
   total_cubicado_base?: number | null;
   total_pagado?: number | null;
+  snip?: string | null;
   envio_snip?: string | null;
   monto_snip?: number | null;
   modificacion_snip?: string | null;
@@ -392,6 +393,7 @@ export interface ObrasFilters {
   ultima_total_cubicado?: string;
   total_cubicado_base?: string;
   total_pagado?: string;
+  snip?: string;
   envio_snip?: string;
   monto_snip?: string;
   modificacion_snip?: string;

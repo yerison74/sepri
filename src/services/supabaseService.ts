@@ -532,6 +532,7 @@ const OBRA_CAMPO_STRING_MAX: Record<string, number> = {
   tipo_ultima_cubicacion: 100,
   estatus_ultima_cubicacion: 100,
   grupo_ultimo_estatus_cubicacion: 100,
+  snip: 100,
   envio_snip: 100,
   modificacion_snip: 100,
   observacion_legal: 25000,
@@ -642,7 +643,6 @@ async function buscarContratistaIdsPorResponsable(term: string, limit?: number):
 }
 
 type OpcionesBusquedaObras = {
-  joinContratistas?: boolean;
   incluirContratoId?: boolean;
 };
 
@@ -686,16 +686,12 @@ async function condicionesBusquedaObras(
   }
 
   if (term.length >= MIN_CHARS_BUSQUEDA_CONTRATISTA) {
-    if (opciones.joinContratistas) {
-      searchConditions.push(`contratistas.responsable.ilike.${searchPattern}`);
-    } else {
-      const contratistaIds = await buscarContratistaIdsPorResponsable(
-        term,
-        MAX_IDS_EN_FILTRO_OBRAS + 1,
-      );
-      if (contratistaIds.length > 0 && contratistaIds.length <= MAX_IDS_EN_FILTRO_OBRAS) {
-        searchConditions.push(`contratista_id.in.(${contratistaIds.join(',')})`);
-      }
+    const contratistaIds = await buscarContratistaIdsPorResponsable(
+      term,
+      MAX_IDS_EN_FILTRO_OBRAS + 1,
+    );
+    if (contratistaIds.length > 0 && contratistaIds.length <= MAX_IDS_EN_FILTRO_OBRAS) {
+      searchConditions.push(`contratista_id.in.(${contratistaIds.join(',')})`);
     }
   }
 
@@ -730,7 +726,6 @@ async function ejecutarConsultaObrasListado(
   filtros: ObrasFilters,
   filtroResponsable: string,
 ): Promise<{ data: unknown[] | null; error: { code?: string; message?: string } | null; count: number | null }> {
-  const joinContratistas = selectCols.includes('contratistas');
   let query = supabase.from('obras').select(selectCols, { count: 'exact' });
   query = aplicarFiltrosObrasEnQuery(query, filtros);
 
@@ -761,23 +756,18 @@ async function ejecutarConsultaObrasListado(
   }
 
   if (filtroResponsable) {
-    if (joinContratistas) {
-      query = query.ilike('contratistas.responsable', `%${filtroResponsable}%`);
-    } else {
-      const ids = await buscarContratistaIdsPorResponsable(
-        filtroResponsable,
-        MAX_IDS_EN_FILTRO_OBRAS + 1,
-      );
-      if (ids.length === 0 || ids.length > MAX_IDS_EN_FILTRO_OBRAS) {
-        return { data: [], error: null, count: 0 };
-      }
-      query = query.in('contratista_id', ids);
+    const ids = await buscarContratistaIdsPorResponsable(
+      filtroResponsable,
+      MAX_IDS_EN_FILTRO_OBRAS + 1,
+    );
+    if (ids.length === 0 || ids.length > MAX_IDS_EN_FILTRO_OBRAS) {
+      return { data: [], error: null, count: 0 };
     }
+    query = query.in('contratista_id', ids);
   }
 
   if (filtros.search) {
     const searchConditions = await condicionesBusquedaObras(filtros.search, {
-      joinContratistas,
       incluirContratoId: /\bcontrato_id\b/.test(selectCols),
     });
     if (searchConditions.length > 0) {
@@ -899,6 +889,16 @@ async function prepararPayloadObraPersistencia(
     raw.contratista_id = await contratistasService.buscarOCrearPorResponsable(responsable);
   }
 
+  const loteRaw = raw.lote;
+  const loteParsed =
+    typeof loteRaw === 'number' && Number.isFinite(loteRaw)
+      ? loteRaw
+      : typeof loteRaw === 'string' && loteRaw.trim()
+        ? parseInt(loteRaw.trim(), 10)
+        : null;
+  const lote = loteParsed != null && !Number.isNaN(loteParsed) ? loteParsed : null;
+  delete raw.lote;
+
   const numContrato =
     typeof raw.contrato === 'string' && raw.contrato.trim()
       ? raw.contrato.trim()
@@ -906,8 +906,10 @@ async function prepararPayloadObraPersistencia(
   if (numContrato && !raw.contrato_id) {
     const contrato = await contratoObrasService.resolverOCrearContrato({
       no_contrato: numContrato,
+      lote,
       contratista_nombre: responsable || null,
       crearSiFalta: true,
+      vincularObras: false,
     });
     if (contrato?.id) {
       raw.contrato_id = contrato.id;
@@ -1318,13 +1320,10 @@ export const obrasService = {
         const payloads = await Promise.all(
           slice.map((o) => prepararPayloadObraPersistencia(o as Record<string, unknown>)),
         );
-        const conCodigo = payloads.every((p) => p.codigo);
-        const { data, error } = conCodigo
-          ? await supabase
-              .from('obras')
-              .upsert(payloads, { onConflict: 'codigo' })
-              .select(OBRAS_SELECT_COMPLETO)
-          : await supabase.from('obras').insert(payloads).select(OBRAS_SELECT_COMPLETO);
+        const { data, error } = await supabase
+          .from('obras')
+          .insert(payloads)
+          .select(OBRAS_SELECT_COMPLETO);
         if (error) throw error;
         todas.push(...mapObrasRows((data || []) as Record<string, unknown>[]));
       }

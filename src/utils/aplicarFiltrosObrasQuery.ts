@@ -27,6 +27,7 @@ const CAMPOS_TEXTO_ILIKE: Array<keyof ObrasFilters> = [
   'tipo_ultima_cubicacion',
   'estatus_ultima_cubicacion',
   'grupo_ultimo_estatus_cubicacion',
+  'snip',
   'envio_snip',
   'modificacion_snip',
   'observacion_legal',

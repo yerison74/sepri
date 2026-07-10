@@ -236,6 +236,7 @@ CREATE TABLE IF NOT EXISTS public.obras (
   ultima_total_cubicado       numeric(18, 2),
   total_cubicado_base         numeric(18, 2),
   total_pagado                numeric(18, 2),
+  snip                        varchar(100),
   envio_snip                  varchar(100),
   monto_snip                  numeric(18, 2),
   modificacion_snip           varchar(100),
@@ -269,6 +270,7 @@ ALTER TABLE public.obras
   ADD COLUMN IF NOT EXISTS total_cubicado_base numeric(18, 2),
   ADD COLUMN IF NOT EXISTS total_pagado numeric(18, 2),
   ADD COLUMN IF NOT EXISTS fecha_detenida date,
+  ADD COLUMN IF NOT EXISTS snip varchar(100),
   ADD COLUMN IF NOT EXISTS envio_snip varchar(100),
   ADD COLUMN IF NOT EXISTS monto_snip numeric(18, 2),
   ADD COLUMN IF NOT EXISTS modificacion_snip varchar(100);
@@ -1052,17 +1054,39 @@ WITH duplicados AS (
 )
 DELETE FROM public.obras WHERE id IN (SELECT id FROM duplicados);
 
-DROP INDEX IF EXISTS idx_obras_codigo_unique;
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1
+    FROM pg_class c
+    JOIN pg_namespace n ON n.oid = c.relnamespace
+    WHERE c.relkind = 'i'
+      AND n.nspname = 'public'
+      AND c.relname = 'idx_obras_codigo_unique'
+  ) THEN
+    CREATE UNIQUE INDEX idx_obras_codigo_unique
+      ON public.obras (codigo)
+      WHERE codigo IS NOT NULL AND trim(codigo) <> '';
+  END IF;
+END $$;
 
-CREATE UNIQUE INDEX IF NOT EXISTS idx_obras_codigo_unique
-  ON public.obras (codigo)
-  WHERE codigo IS NOT NULL AND trim(codigo) <> '';
-
-CREATE UNIQUE INDEX IF NOT EXISTS idx_obras_mantenimiento_contrato_nombre
-  ON public.obras (contrato_id, lower(trim(nombre)))
-  WHERE tipo = 'Mantenimiento'
-    AND contrato_id IS NOT NULL
-    AND trim(nombre) <> '';
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1
+    FROM pg_class c
+    JOIN pg_namespace n ON n.oid = c.relnamespace
+    WHERE c.relkind = 'i'
+      AND n.nspname = 'public'
+      AND c.relname = 'idx_obras_mantenimiento_contrato_nombre'
+  ) THEN
+    CREATE UNIQUE INDEX idx_obras_mantenimiento_contrato_nombre
+      ON public.obras (contrato_id, lower(trim(nombre)))
+      WHERE tipo = 'Mantenimiento'
+        AND contrato_id IS NOT NULL
+        AND trim(nombre) <> '';
+  END IF;
+END $$;
 
 CREATE INDEX IF NOT EXISTS idx_tramites_id_sigede_gin ON public.tramites USING gin (id_sigede);
 CREATE INDEX IF NOT EXISTS idx_doc_tecnicos_id_sigede_gin
