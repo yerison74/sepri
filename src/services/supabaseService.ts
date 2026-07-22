@@ -3977,8 +3977,15 @@ export const adendaService = {
     });
   },
 
-  buscarContratos: async (search: string, limit = 8): Promise<ContratoTechado[]> => {
+  buscarContratos: async (search: string, limit = 25): Promise<ContratoTechado[]> => {
     return contratoObrasService.buscarContratos(search, limit);
+  },
+
+  obtenerObrasParaDocumentoPorContrato: async (
+    contratoId: string,
+    noContrato?: string | null,
+  ): Promise<{ id_sigede: string[]; obra_ids: string[] }> => {
+    return contratoObrasService.obtenerObrasParaDocumentoPorContrato(contratoId, noContrato);
   },
 
   buscarContratoPorNumero: async (
@@ -4039,7 +4046,7 @@ export const adendaService = {
   crear: async (payload: {
     contrato_id: string;
     obra_id?: string | null;
-    numero_adenda: string;
+    numero_adenda?: string | null;
     tipo_adenda?: string | null;
     monto?: number | string | null;
     estado: EstadoAdenda;
@@ -4049,10 +4056,14 @@ export const adendaService = {
       await demoteOtrasAdendasEnCurso(payload.contrato_id);
     }
 
+    const numero =
+      parseCodigoAdenda(payload.numero_adenda) ||
+      (payload.numero_adenda?.trim() ? payload.numero_adenda.trim() : null);
+
     const row: Record<string, unknown> = {
       contrato_id: payload.contrato_id,
       obra_id: payload.obra_id?.trim() || null,
-      numero_adenda: parseCodigoAdenda(payload.numero_adenda) || payload.numero_adenda.trim(),
+      numero_adenda: numero,
       tipo_adenda: payload.tipo_adenda?.trim() || null,
       monto: parseMontoDocumento(payload.monto),
       estado,
@@ -4066,7 +4077,7 @@ export const adendaService = {
     id: string,
     payload: Partial<{
       obra_id: string | null;
-      numero_adenda: string;
+      numero_adenda: string | null;
       tipo_adenda: string | null;
       monto: number | string | null;
       estado: EstadoAdenda;
@@ -4088,7 +4099,9 @@ export const adendaService = {
 
     const updates: Record<string, unknown> = { updated_at: new Date().toISOString() };
     if (payload.numero_adenda !== undefined) {
-      updates.numero_adenda = parseCodigoAdenda(payload.numero_adenda) || payload.numero_adenda.trim();
+      updates.numero_adenda =
+        parseCodigoAdenda(payload.numero_adenda) ||
+        (payload.numero_adenda?.trim() ? payload.numero_adenda.trim() : null);
     }
     if (payload.tipo_adenda !== undefined) updates.tipo_adenda = payload.tipo_adenda?.trim() || null;
     if (payload.monto !== undefined) updates.monto = parseMontoDocumento(payload.monto);
@@ -4100,6 +4113,86 @@ export const adendaService = {
 
   eliminar: async (id: string): Promise<void> => {
     const { error } = await supabase.from('adenda').delete().eq('id', id);
+    if (error) throw error;
+  },
+};
+
+export const documentoTecnicoComentarioService = {
+  listarPorDocumento: async (
+    documentoId: string,
+    opciones?: { adendaId?: string | null; soloDocumento?: boolean },
+  ): Promise<import('../types/database').DocumentoTecnicoComentario[]> => {
+    if (!documentoId) return [];
+    let query = supabase
+      .from('documento_tecnico_comentario')
+      .select(
+        'id, documento_id, adenda_id, comentario, usuario, archivo_pdf, nombre_archivo, created_at',
+      )
+      .eq('documento_id', documentoId)
+      .order('created_at', { ascending: false });
+
+    if (opciones?.adendaId) {
+      query = query.eq('adenda_id', opciones.adendaId);
+    } else if (opciones?.soloDocumento) {
+      query = query.is('adenda_id', null);
+    }
+
+    const { data, error } = await query;
+    if (error) throw error;
+    return (data || []) as import('../types/database').DocumentoTecnicoComentario[];
+  },
+
+  crear: async (payload: {
+    documento_id: string;
+    adenda_id?: string | null;
+    comentario: string;
+    usuario: string;
+    archivo?: File | null;
+  }): Promise<import('../types/database').DocumentoTecnicoComentario> => {
+    const texto = payload.comentario.trim();
+    if (!texto) throw new Error('El comentario no puede estar vacío');
+    const usuario = payload.usuario.trim();
+    if (!usuario) throw new Error('Indique el usuario del comentario');
+
+    let archivoPdf: string | null = null;
+    let nombreArchivo: string | null = null;
+
+    if (payload.archivo) {
+      const file = payload.archivo;
+      if (file.type && file.type !== 'application/pdf') {
+        throw new Error('Solo se permiten archivos PDF');
+      }
+      if (file.size > 10 * 1024 * 1024) {
+        throw new Error('El PDF no puede superar 10 MB');
+      }
+      const safeName = file.name.replace(/[^\w.\-() ]+/g, '_');
+      const scope = payload.adenda_id || 'documento';
+      const path = `documentos-tecnicos/${payload.documento_id}/${scope}-${Date.now()}-${safeName}`;
+      archivoPdf = await storageService.subirArchivo(file, 'documentos', path);
+      nombreArchivo = file.name;
+    }
+
+    const { data, error } = await supabase
+      .from('documento_tecnico_comentario')
+      .insert({
+        documento_id: payload.documento_id,
+        adenda_id: payload.adenda_id || null,
+        comentario: texto,
+        usuario,
+        archivo_pdf: archivoPdf,
+        nombre_archivo: nombreArchivo,
+      })
+      .select(
+        'id, documento_id, adenda_id, comentario, usuario, archivo_pdf, nombre_archivo, created_at',
+      )
+      .single();
+
+    if (error) throw error;
+    return data as import('../types/database').DocumentoTecnicoComentario;
+  },
+
+  eliminar: async (id: string): Promise<void> => {
+    const { error } = await supabase.from('documento_tecnico_comentario').delete().eq('id', id);
     if (error) throw error;
   },
 };

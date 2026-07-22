@@ -1,5 +1,5 @@
 import axios, { AxiosInstance, AxiosResponse } from 'axios';
-import { obrasService, historialUploadsService, storageService, tramitesService, notificacionesTiempoService, areasService, formularioContratistaService, documentosTecnicosService, contratistasService, adendaService } from './supabaseService';
+import { obrasService, historialUploadsService, storageService, tramitesService, notificacionesTiempoService, areasService, formularioContratistaService, documentosTecnicosService, contratistasService, adendaService, documentoTecnicoComentarioService } from './supabaseService';
 import { techadoService } from './techadoService';
 import { getDiasMaximosPorArea } from '../constants/procesos';
 import { mensajeNotificacionTiempo } from '../utils/notificacionesTiempo';
@@ -420,7 +420,7 @@ export const gestionTecnicaDocumentoAPI = {
     }
   },
 
-  buscarContratos: async (search: string, limit = 8) => {
+  buscarContratos: async (search: string, limit = 25) => {
     try {
       const data = await adendaService.buscarContratos(search, limit);
       return { data: { data } } as AxiosResponse<{ data: import('../types/database').ContratoTechado[] }>;
@@ -428,6 +428,25 @@ export const gestionTecnicaDocumentoAPI = {
       throw {
         response: {
           data: { error: error.message || 'Error al buscar contratos' },
+          status: 500,
+        },
+      };
+    }
+  },
+
+  obrasPorContrato: async (contratoId: string, noContrato?: string | null) => {
+    try {
+      const data = await adendaService.obtenerObrasParaDocumentoPorContrato(
+        contratoId,
+        noContrato,
+      );
+      return { data: { data } } as AxiosResponse<{
+        data: { id_sigede: string[]; obra_ids: string[] };
+      }>;
+    } catch (error: any) {
+      throw {
+        response: {
+          data: { error: error.message || 'Error al cargar obras del contrato' },
           status: 500,
         },
       };
@@ -450,10 +469,13 @@ export const gestionTecnicaDocumentoAPI = {
 
   resolverContratoDesdeObras: async (noContrato: string, contratistaNombre?: string | null) => {
     try {
+      const norm = String(noContrato || '').trim();
+      // Solo crear en catálogo si el número tiene formato completo (evita huérfanos tipo "0459").
+      const formatoCompleto = /^\d{4}-\d{2}$/.test(norm) || /^\d{4}-\d{4}$/.test(norm);
       const data = await adendaService.resolverOCrearContrato({
         no_contrato: noContrato,
         contratista_nombre: contratistaNombre,
-        crearSiFalta: true,
+        crearSiFalta: formatoCompleto,
       });
       return { data: { data } } as AxiosResponse<{ data: import('../types/database').ContratoTechado | null }>;
     } catch (error: any) {
@@ -484,7 +506,7 @@ export const gestionTecnicaDocumentoAPI = {
     payload: {
       contrato_id: string;
       obra_id?: string | null;
-      numero_adenda: string;
+      numero_adenda?: string | null;
       tipo_adenda?: string | null;
       monto?: number | string | null;
       estado: import('../types/database').EstadoAdenda;
@@ -514,6 +536,61 @@ export const gestionTecnicaDocumentoAPI = {
       throw {
         response: {
           data: { error: error.message || 'Error al eliminar adenda' },
+          status: 500,
+        },
+      };
+    }
+  },
+
+  listarComentariosDocumento: async (
+    documentoId: string,
+    opciones?: { adendaId?: string | null; soloDocumento?: boolean },
+  ) => {
+    try {
+      const data = await documentoTecnicoComentarioService.listarPorDocumento(documentoId, opciones);
+      return {
+        data: { data },
+      } as AxiosResponse<{ data: import('../types/database').DocumentoTecnicoComentario[] }>;
+    } catch (error: any) {
+      throw {
+        response: {
+          data: { error: error.message || 'Error al listar comentarios' },
+          status: 500,
+        },
+      };
+    }
+  },
+
+  crearComentarioDocumento: async (payload: {
+    documento_id: string;
+    adenda_id?: string | null;
+    comentario: string;
+    usuario: string;
+    archivo?: File | null;
+  }) => {
+    try {
+      const data = await documentoTecnicoComentarioService.crear(payload);
+      return {
+        data: { data },
+      } as AxiosResponse<{ data: import('../types/database').DocumentoTecnicoComentario }>;
+    } catch (error: any) {
+      throw {
+        response: {
+          data: { error: error.message || 'Error al registrar comentario' },
+          status: 500,
+        },
+      };
+    }
+  },
+
+  eliminarComentarioDocumento: async (id: string) => {
+    try {
+      await documentoTecnicoComentarioService.eliminar(id);
+      return { data: { ok: true } };
+    } catch (error: any) {
+      throw {
+        response: {
+          data: { error: error.message || 'Error al eliminar comentario' },
           status: 500,
         },
       };

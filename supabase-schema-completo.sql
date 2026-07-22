@@ -731,7 +731,7 @@ CREATE TABLE IF NOT EXISTS public.contrato_adenda (
 CREATE TABLE IF NOT EXISTS public.adenda (
   id            uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   contrato_id   text NOT NULL REFERENCES public.contrato(id) ON DELETE CASCADE,
-  numero_adenda varchar(12) NOT NULL,
+  numero_adenda varchar(12),
   tipo_adenda   varchar(120),
   monto         numeric(18, 2),
   estado        varchar(20) NOT NULL DEFAULT 'en_curso'
@@ -746,6 +746,29 @@ ALTER TABLE public.adenda
 
 CREATE INDEX IF NOT EXISTS idx_adenda_obra_id
   ON public.adenda(obra_id) WHERE obra_id IS NOT NULL;
+
+-- Comentarios / evidencia PDF (documento o adenda)
+CREATE TABLE IF NOT EXISTS public.documento_tecnico_comentario (
+  id             uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  documento_id   uuid NOT NULL
+                   REFERENCES public.documentos_tecnicos_obra(id) ON DELETE CASCADE,
+  adenda_id      uuid
+                   REFERENCES public.adenda(id) ON DELETE CASCADE,
+  comentario     text NOT NULL,
+  usuario        text NOT NULL,
+  archivo_pdf    text,
+  nombre_archivo text,
+  created_at     timestamptz NOT NULL DEFAULT now(),
+  CONSTRAINT documento_tecnico_comentario_texto_chk
+    CHECK (length(trim(comentario)) > 0)
+);
+
+CREATE INDEX IF NOT EXISTS idx_gt_comentario_documento
+  ON public.documento_tecnico_comentario(documento_id, created_at DESC);
+
+CREATE INDEX IF NOT EXISTS idx_gt_comentario_adenda
+  ON public.documento_tecnico_comentario(adenda_id, created_at DESC)
+  WHERE adenda_id IS NOT NULL;
 
 CREATE TABLE IF NOT EXISTS public.matriz_general (
   id                              text PRIMARY KEY DEFAULT gen_random_uuid()::text,
@@ -1147,7 +1170,7 @@ BEGIN
     'usuarios_app', 'area', 'contratistas', 'historial_estados',
     'tiempo_en_area', 'notificaciones_tiempo', 'notificacion_leida',
     'documentos_tecnicos_obra', 'movimiento_documentos_tecnicos_obra',
-    'contrato', 'contrato_adenda', 'adenda', 'matriz_general',
+    'contrato', 'contrato_adenda', 'adenda', 'documento_tecnico_comentario', 'matriz_general',
     'contratista_access_tokens', 'formulario_contratista',
     'movimientos_solicitud_contratista'
   ]

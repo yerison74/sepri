@@ -113,7 +113,7 @@ export interface Adenda {
   id: string;
   contrato_id: string;
   obra_id?: string | null;
-  numero_adenda: string;
+  numero_adenda?: string | null;
   tipo_adenda?: string | null;
   monto?: number | null;
   estado: EstadoAdenda;
@@ -121,6 +121,19 @@ export interface Adenda {
   updated_at?: string | null;
   contrato?: Pick<ContratoTechado, 'id' | 'lote' | 'no_contrato'> | null;
   obra?: Pick<Obra, 'id' | 'nombre' | 'codigo' | 'tipo' | 'contrato_id'> | null;
+}
+
+/** Comentario / evidencia de documento técnico o de una adenda. */
+export interface DocumentoTecnicoComentario {
+  id: string;
+  documento_id: string;
+  /** Si es null, el comentario es del documento; si tiene valor, es de esa adenda. */
+  adenda_id?: string | null;
+  comentario: string;
+  usuario: string;
+  archivo_pdf?: string | null;
+  nombre_archivo?: string | null;
+  created_at?: string | null;
 }
 
 /** Datos de obra mostrados al vincular obras a un documento técnico. */
@@ -499,6 +512,10 @@ export interface ContratoTechado {
   observaciones?: string | null;
   created_at?: string | null;
   updated_at?: string | null;
+  /** Solo en búsquedas UI: planteles vinculados (no persistido). */
+  planteles_resumen?: string | null;
+  /** Solo en búsquedas UI: cantidad de obras vinculadas. */
+  obras_count?: number | null;
 }
 
 export interface ContratoAdendaTechado {
