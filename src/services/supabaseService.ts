@@ -2016,10 +2016,12 @@ export const obrasService = {
     const [resTramites, resDocumentos] = await Promise.all([
       supabase
         .from('tramites')
-        .select('id, titulo, estado, oficio, area_destinatario, proceso, fecha_creacion')
+        .select(
+          'id, titulo, estado, oficio, area_destinatario, proceso, fecha_creacion, tipo_tramite, nombre_destinatario',
+        )
         .overlaps('id_sigede', ids)
         .order('fecha_creacion', { ascending: false })
-        .limit(100),
+        .limit(200),
       supabase
         .from('documentos_tecnicos_obra')
         .select(
@@ -2042,6 +2044,7 @@ export const obrasService = {
 
   /**
    * Relaciones completas de una obra: SIGEDE, obra_id (mantenimiento), contrato_id y Techado.
+   * Trámites se agrupan por `id` (un registro por número de trámite).
    */
   obtenerRelacionesObra: async (
     obra: Pick<Obra, 'id' | 'codigo' | 'distrito_minerd_sigede' | 'contrato_id' | 'contrato'>,
@@ -2060,7 +2063,17 @@ export const obrasService = {
 
     const agregarTramites = (filas: import('../types/database').TramiteObraResumen[]) => {
       for (const t of filas) {
-        if (t.id) tramitesMap.set(t.id, t);
+        const id = String(t.id || '').trim();
+        if (!id) continue;
+        // Agrupa por id: conserva el más reciente si hay duplicados.
+        const prev = tramitesMap.get(id);
+        if (!prev) {
+          tramitesMap.set(id, { ...t, id });
+          continue;
+        }
+        const prevTs = Date.parse(prev.fecha_creacion || '') || 0;
+        const nextTs = Date.parse(t.fecha_creacion || '') || 0;
+        if (nextTs >= prevTs) tramitesMap.set(id, { ...t, id });
       }
     };
     const agregarDocumentos = (filas: import('../types/database').DocumentoObraResumen[]) => {
@@ -2081,13 +2094,32 @@ export const obrasService = {
     }
 
     if (obraId) {
+      // Trámites de mantenimiento / sin SIGEDE vinculados por obra_ids.
       consultas.push(
         supabase
           .from('tramites')
-          .select('id, titulo, estado, oficio, area_destinatario, proceso, fecha_creacion')
+          .select(
+            'id, titulo, estado, oficio, area_destinatario, proceso, fecha_creacion, tipo_tramite, nombre_destinatario',
+          )
+          .contains('obra_ids', [obraId])
+          .order('fecha_creacion', { ascending: false })
+          .limit(200)
+          .then(({ data, error }) => {
+            if (error) throw error;
+            agregarTramites((data || []) as import('../types/database').TramiteObraResumen[]);
+          }),
+      );
+
+      // Compat: algunos flujos antiguos guardaron el id de obra en id_sigede.
+      consultas.push(
+        supabase
+          .from('tramites')
+          .select(
+            'id, titulo, estado, oficio, area_destinatario, proceso, fecha_creacion, tipo_tramite, nombre_destinatario',
+          )
           .contains('id_sigede', [obraId])
           .order('fecha_creacion', { ascending: false })
-          .limit(100)
+          .limit(200)
           .then(({ data, error }) => {
             if (error) throw error;
             agregarTramites((data || []) as import('../types/database').TramiteObraResumen[]);
@@ -2156,13 +2188,57 @@ export const obrasService = {
 
     await Promise.all(consultas);
 
+    // Trámites de gestión técnica: no_tramite de movimientos de documentos vinculados a la obra.
+    const solicitudes = Array.from(
+      new Set(
+        Array.from(documentosMap.values())
+          .map((d) => String(d.solicitud || '').trim())
+          .filter(Boolean),
+      ),
+    );
+    if (solicitudes.length > 0) {
+      const { data: movs, error: errMovs } = await supabase
+        .from('movimiento_documentos_tecnicos_obra')
+        .select('no_tramite')
+        .in('solicitud', solicitudes)
+        .not('no_tramite', 'is', null)
+        .limit(500);
+      if (errMovs) throw errMovs;
+
+      const idsTramiteGt = Array.from(
+        new Set(
+          (movs || [])
+            .map((m) => String((m as { no_tramite?: string | null }).no_tramite || '').trim())
+            .filter(Boolean),
+        ),
+      ).filter((id) => !tramitesMap.has(id));
+
+      if (idsTramiteGt.length > 0) {
+        const { data: tramitesGt, error: errGt } = await supabase
+          .from('tramites')
+          .select(
+            'id, titulo, estado, oficio, area_destinatario, proceso, fecha_creacion, tipo_tramite, nombre_destinatario',
+          )
+          .in('id', idsTramiteGt)
+          .limit(200);
+        if (errGt) throw errGt;
+        agregarTramites((tramitesGt || []) as import('../types/database').TramiteObraResumen[]);
+      }
+    }
+
     const techado = obraId
       ? await import('./techadoService').then((m) => m.techadoService.obtenerResumenPorObraId(obraId))
       : [];
 
+    const tramites = Array.from(tramitesMap.values()).sort((a, b) => {
+      const ta = Date.parse(a.fecha_creacion || '') || 0;
+      const tb = Date.parse(b.fecha_creacion || '') || 0;
+      return tb - ta;
+    });
+
     return {
       sigedes,
-      tramites: Array.from(tramitesMap.values()),
+      tramites,
       documentos: Array.from(documentosMap.values()),
       techado,
       contrato,
@@ -2487,12 +2563,57 @@ export const tramitesService = {
     try {
       const { data, error } = await supabase
         .from('movimientos_tramites')
-        .select('*')
+        .select(
+          `*, movimiento_documento:movimiento_documento_id (
+            archivo_pdf, nombre_archivo, fecha_solicitud, fecha_entrada, fecha_salida, estatus, solicitud, no_tramite
+          )`,
+        )
         .eq('tramite_id', tramiteId)
         .order('fecha_movimiento', { ascending: false });
 
-      if (error) throw error;
-      return data || [];
+      if (error) {
+        // Fallback si el embed no está disponible en el esquema remoto.
+        const { data: plain, error: plainErr } = await supabase
+          .from('movimientos_tramites')
+          .select('*')
+          .eq('tramite_id', tramiteId)
+          .order('fecha_movimiento', { ascending: false });
+        if (plainErr) throw plainErr;
+        return plain || [];
+      }
+
+      return (data || []).map((row: Record<string, unknown>) => {
+        const raw = row.movimiento_documento;
+        const docMov = (Array.isArray(raw) ? raw[0] : raw) as
+          | {
+              archivo_pdf?: string | null;
+              nombre_archivo?: string | null;
+              fecha_solicitud?: string | null;
+              fecha_entrada?: string | null;
+              fecha_salida?: string | null;
+              estatus?: string | null;
+              solicitud?: string | null;
+              no_tramite?: string | null;
+            }
+          | null
+          | undefined;
+        const { movimiento_documento: _md, ...rest } = row;
+        return {
+          ...(rest as unknown as MovimientoTramite),
+          archivo_pdf: docMov?.archivo_pdf || null,
+          nombre_archivo: docMov?.nombre_archivo || null,
+          detalle_gestion_tecnica: docMov
+            ? {
+                solicitud: docMov.solicitud || null,
+                fecha_solicitud: docMov.fecha_solicitud || null,
+                fecha_entrada: docMov.fecha_entrada || null,
+                fecha_salida: docMov.fecha_salida || null,
+                estatus: docMov.estatus || null,
+                no_tramite: docMov.no_tramite || null,
+              }
+            : null,
+        };
+      });
     } catch (error: any) {
       console.error('Error al obtener historial:', error);
       throw new Error(error.message || 'Error al obtener historial');
@@ -2994,6 +3115,19 @@ function parseCodigoAdenda(value: string | number | null | undefined): string | 
   return trimmed || null;
 }
 
+async function tocarDocumentoTecnicoPorSolicitud(solicitud: string): Promise<void> {
+  const id = solicitud.trim();
+  if (!id) return;
+  try {
+    await supabase
+      .from('documentos_tecnicos_obra')
+      .update({ updated_at: new Date().toISOString() })
+      .eq('solicitud', id);
+  } catch {
+    /* no bloquear el movimiento si no se pudo marcar el documento */
+  }
+}
+
 function mapDocumentoTecnicoRow(row: unknown): DocumentoTecnicoObra {
   const r = row as Record<string, unknown>;
   const contratistaRaw = r.contratistas;
@@ -3088,58 +3222,106 @@ async function asegurarTramiteGestionTecnica(params: {
   solicitud: string;
   areaDestinatario: string;
   oficio?: string | null;
+  archivo_pdf?: string | null;
+  nombre_archivo?: string | null;
+  actualizarPdf?: boolean;
 }): Promise<void> {
   const id = params.noTramite.trim();
+  const solicitud = params.solicitud.trim();
+
+  const { data: doc, error: docErr } = await supabase
+    .from('documentos_tecnicos_obra')
+    .select(
+      'tipo_adenda, cuadrantes, id_sigede, obra_ids, contrato:contrato_id(no_contrato, contratista_nombre)',
+    )
+    .eq('solicitud', solicitud)
+    .maybeSingle();
+  if (docErr) throw docErr;
+
+  const contratoRaw = doc?.contrato as
+    | { no_contrato?: string | null; contratista_nombre?: string | null }
+    | Array<{ no_contrato?: string | null; contratista_nombre?: string | null }>
+    | null
+    | undefined;
+  const contrato = Array.isArray(contratoRaw) ? contratoRaw[0] : contratoRaw;
+  const noContrato = contrato?.no_contrato?.trim() || null;
+  const contratista = contrato?.contratista_nombre?.trim() || null;
+
+  const tituloPartes = [
+    `Doc. técnico ${solicitud}`,
+    doc?.tipo_adenda?.trim() || null,
+    noContrato ? `Contrato ${noContrato}` : null,
+    contratista || null,
+  ].filter(Boolean);
+  const titulo = tituloPartes.join(' · ');
+
+  const rowBase: Record<string, unknown> = {
+    titulo,
+    oficio: params.oficio?.trim() || null,
+    nombre_destinatario: solicitud,
+    area_destinatario: params.areaDestinatario,
+    area_destino_final: params.areaDestinatario,
+    tipo_tramite: 'tipo_gestion_tecnica',
+    id_sigede: (doc?.id_sigede as string[] | null) || [],
+    obra_ids: (doc?.obra_ids as string[] | null) || [],
+    updated_at: new Date().toISOString(),
+  };
+
+  if (params.actualizarPdf) {
+    rowBase.archivo_pdf = params.archivo_pdf || null;
+    rowBase.nombre_archivo = params.nombre_archivo || null;
+  }
+
   const { data: existing, error: selErr } = await supabase
     .from('tramites')
-    .select('id, tipo_tramite')
+    .select('id')
     .eq('id', id)
     .maybeSingle();
   if (selErr) throw selErr;
 
   if (existing?.id) {
-    if (existing.tipo_tramite !== 'tipo_gestion_tecnica') {
-      const { error: updErr } = await supabase
-        .from('tramites')
-        .update({
-          tipo_tramite: 'tipo_gestion_tecnica',
-          area_destinatario: params.areaDestinatario,
-          area_destino_final: params.areaDestinatario,
-          updated_at: new Date().toISOString(),
-        })
-        .eq('id', id);
-      if (updErr) throw updErr;
-    }
+    const { error: updErr } = await supabase.from('tramites').update(rowBase).eq('id', id);
+    if (updErr) throw updErr;
     return;
   }
 
-  const { data: doc, error: docErr } = await supabase
-    .from('documentos_tecnicos_obra')
-    .select('tipo_adenda')
-    .eq('solicitud', params.solicitud.trim())
-    .maybeSingle();
-  if (docErr) throw docErr;
-
-  const tituloBase = `Doc. técnico ${params.solicitud}`;
-  const titulo = doc?.tipo_adenda
-    ? `${tituloBase} - ${doc.tipo_adenda}`
-    : tituloBase;
-
   const { error: insErr } = await supabase.from('tramites').insert({
     id,
-    titulo,
-    oficio: params.oficio?.trim() || null,
-    nombre_destinatario: params.solicitud,
-    area_destinatario: params.areaDestinatario,
-    area_destino_final: params.areaDestinatario,
+    ...rowBase,
     proceso: null,
     estado: 'en_transito',
     codigo_barras: id,
-    archivo_pdf: null,
-    nombre_archivo: null,
-    tipo_tramite: 'tipo_gestion_tecnica',
+    archivo_pdf: params.archivo_pdf || null,
+    nombre_archivo: params.nombre_archivo || null,
+    fecha_creacion: new Date().toISOString(),
   });
   if (insErr) throw insErr;
+}
+
+async function resolverPdfTramiteDesdeMovimientos(
+  noTramite: string,
+  preferido?: { archivo_pdf?: string | null; nombre_archivo?: string | null } | null,
+): Promise<{ archivo_pdf: string | null; nombre_archivo: string | null }> {
+  if (preferido?.archivo_pdf) {
+    return {
+      archivo_pdf: preferido.archivo_pdf,
+      nombre_archivo: preferido.nombre_archivo || null,
+    };
+  }
+
+  const { data, error } = await supabase
+    .from('movimiento_documentos_tecnicos_obra')
+    .select('archivo_pdf, nombre_archivo, created_at')
+    .eq('no_tramite', noTramite.trim())
+    .not('archivo_pdf', 'is', null)
+    .order('created_at', { ascending: false })
+    .limit(1);
+  if (error) throw error;
+  const row = data?.[0];
+  return {
+    archivo_pdf: (row?.archivo_pdf as string) || null,
+    nombre_archivo: (row?.nombre_archivo as string) || null,
+  };
 }
 
 async function actualizarEstadoTramiteDesdeUltimoMovimiento(tramiteId: string): Promise<void> {
@@ -3201,11 +3383,19 @@ async function sincronizarMovimientoGestionTecnicaATramite(
     movimiento.area?.area || resolverNombreAreaPorId(movimiento.departamento, areas);
   if (!areaDestinoNombre) return;
 
+  const pdfTramite = await resolverPdfTramiteDesdeMovimientos(noTramite, {
+    archivo_pdf: movimiento.archivo_pdf,
+    nombre_archivo: movimiento.nombre_archivo,
+  });
+
   await asegurarTramiteGestionTecnica({
     noTramite,
     solicitud: movimiento.solicitud,
     areaDestinatario: areaDestinoNombre,
     oficio: movimiento.oficio,
+    archivo_pdf: pdfTramite.archivo_pdf,
+    nombre_archivo: pdfTramite.nombre_archivo,
+    actualizarPdf: true,
   });
 
   const areaOrigen = await obtenerAreaOrigenMovimientoDocumento(
@@ -3220,13 +3410,39 @@ async function sincronizarMovimientoGestionTecnicaATramite(
   const areaDestinoMovimiento =
     esDetenido || esCompletado ? areaOrigen : areaDestinoNombre;
 
+  const { data: docCtx } = await supabase
+    .from('documentos_tecnicos_obra')
+    .select('cuadrantes, tipo_adenda, contrato:contrato_id(no_contrato)')
+    .eq('solicitud', movimiento.solicitud.trim())
+    .maybeSingle();
+  const contratoCtx = Array.isArray(docCtx?.contrato)
+    ? docCtx?.contrato[0]
+    : docCtx?.contrato;
+  const noContratoCtx =
+    (contratoCtx as { no_contrato?: string | null } | null)?.no_contrato?.trim() || null;
+
   const observacionesPartes = [
     movimiento.observaciones?.trim() || null,
     `Solicitud: ${movimiento.solicitud}`,
+    docCtx?.cuadrantes ? `Cuadrantes: ${docCtx.cuadrantes}` : null,
+    docCtx?.tipo_adenda ? `Tipo adenda: ${docCtx.tipo_adenda}` : null,
+    noContratoCtx ? `Contrato: ${noContratoCtx}` : null,
     estatus ? `Estatus: ${estatus}` : null,
+    movimiento.fecha_solicitud ? `Solicitud el: ${movimiento.fecha_solicitud}` : null,
     movimiento.fecha_entrada ? `Entrada: ${movimiento.fecha_entrada}` : null,
+    movimiento.fecha_salida ? `Salida: ${movimiento.fecha_salida}` : null,
+    movimiento.archivo_pdf ? `PDF: ${movimiento.nombre_archivo || 'adjunto'}` : null,
     MARCA_OBSERVACION_GESTION_TECNICA,
   ].filter(Boolean);
+
+  const usuarioSync = opciones.usuario?.trim() || null;
+
+  const { data: espejo, error: buscarErr } = await supabase
+    .from('movimientos_tramites')
+    .select('id, tramite_id, usuario')
+    .eq('movimiento_documento_id', movimiento.id)
+    .maybeSingle();
+  if (buscarErr) throw buscarErr;
 
   const payload = {
     tramite_id: noTramite,
@@ -3234,18 +3450,12 @@ async function sincronizarMovimientoGestionTecnicaATramite(
     area_destino: areaDestinoMovimiento,
     oficio: movimiento.oficio?.trim() || null,
     observaciones: observacionesPartes.join(' | '),
-    usuario: opciones.usuario?.trim() || 'Gestión técnica de documento',
+    usuario: usuarioSync || espejo?.usuario || 'Gestión técnica de documento',
     estado_resultante: mapearEstatusAEstadoResultante(estatus),
     tipo_tramite: 'tipo_gestion_tecnica',
     movimiento_documento_id: movimiento.id,
+    fecha_movimiento: new Date().toISOString(),
   };
-
-  const { data: espejo, error: buscarErr } = await supabase
-    .from('movimientos_tramites')
-    .select('id, tramite_id')
-    .eq('movimiento_documento_id', movimiento.id)
-    .maybeSingle();
-  if (buscarErr) throw buscarErr;
 
   if (espejo?.id) {
     if (espejo.tramite_id !== noTramite) {
@@ -3268,6 +3478,9 @@ async function sincronizarMovimientoGestionTecnicaATramite(
     area_destinatario: areaDestinoNombre,
     estado: mapearEstatusAEstadoTramite(estatus),
     tipo_tramite: 'tipo_gestion_tecnica',
+    oficio: movimiento.oficio?.trim() || null,
+    archivo_pdf: pdfTramite.archivo_pdf,
+    nombre_archivo: pdfTramite.nombre_archivo,
   });
 }
 
@@ -3278,6 +3491,20 @@ async function cargarObrasSigedeDocumento(
 }
 
 export const documentosTecnicosService = {
+  listarRecientes: async (limite = 20): Promise<DocumentoTecnicoObra[]> => {
+    const tope = Math.min(Math.max(limite, 1), 50);
+    const { data, error } = await ejecutarConsultaDocumentoTecnico((select) =>
+      supabase
+        .from('documentos_tecnicos_obra')
+        .select(select)
+        .order('updated_at', { ascending: false, nullsFirst: false })
+        .order('created_at', { ascending: false, nullsFirst: false })
+        .limit(tope),
+    );
+    if (error) throw error;
+    return (data || []).map((r) => mapDocumentoTecnicoRow(r));
+  },
+
   listar: async (filtros?: { busqueda?: string }): Promise<DocumentoTecnicoObra[]> => {
     const { data, error } = await ejecutarConsultaDocumentoTecnico((select) =>
       supabase
@@ -3574,6 +3801,7 @@ export const documentosTecnicosService = {
       throw error;
     }
     const movimiento = mapMovimientoDocumentoRow(data as Record<string, unknown>);
+    await tocarDocumentoTecnicoPorSolicitud(movimiento.solicitud);
     try {
       await sincronizarMovimientoGestionTecnicaATramite(movimiento, {
         usuario: payload.usuario,
@@ -3601,6 +3829,7 @@ export const documentosTecnicosService = {
       observaciones?: string | null;
       archivo?: File | null;
       quitar_pdf?: boolean;
+      usuario?: string | null;
     },
   ): Promise<MovimientoDocumentoTecnicoObra> => {
     const solicitud = payload.solicitud.trim();
@@ -3642,8 +3871,11 @@ export const documentosTecnicosService = {
 
     if (error) throw error;
     const movimiento = mapMovimientoDocumentoRow(data as Record<string, unknown>);
+    await tocarDocumentoTecnicoPorSolicitud(movimiento.solicitud);
     try {
-      await sincronizarMovimientoGestionTecnicaATramite(movimiento);
+      await sincronizarMovimientoGestionTecnicaATramite(movimiento, {
+        usuario: payload.usuario,
+      });
     } catch (syncErr: unknown) {
       const msg = syncErr instanceof Error ? syncErr.message : 'Error al sincronizar con seguimiento de trámite';
       throw new Error(
@@ -3654,9 +3886,16 @@ export const documentosTecnicosService = {
   },
 
   eliminarMovimiento: async (id: string): Promise<void> => {
+    const { data: previo } = await supabase
+      .from('movimiento_documentos_tecnicos_obra')
+      .select('solicitud')
+      .eq('id', id)
+      .maybeSingle();
     const tramiteId = await eliminarEspejoMovimientoEnTramite(id);
     const { error } = await supabase.from('movimiento_documentos_tecnicos_obra').delete().eq('id', id);
     if (error) throw error;
+    const solicitud = String((previo as { solicitud?: string } | null)?.solicitud || '').trim();
+    if (solicitud) await tocarDocumentoTecnicoPorSolicitud(solicitud);
     if (tramiteId) {
       try {
         await actualizarEstadoTramiteDesdeUltimoMovimiento(tramiteId);

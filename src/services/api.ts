@@ -213,6 +213,20 @@ export const gestionTecnicaDocumentoAPI = {
     }
   },
 
+  listarDocumentosRecientes: async (limite = 20) => {
+    try {
+      const data = await documentosTecnicosService.listarRecientes(limite);
+      return { data: { data } } as AxiosResponse<{ data: DocumentoTecnicoObra[] }>;
+    } catch (error: any) {
+      throw {
+        response: {
+          data: { error: error.message || 'Error al listar documentos recientes' },
+          status: 500,
+        },
+      };
+    }
+  },
+
   guardarDocumento: async (
     payload: {
       solicitud: string;
@@ -331,6 +345,7 @@ export const gestionTecnicaDocumentoAPI = {
       observaciones?: string | null;
       archivo?: File | null;
       quitar_pdf?: boolean;
+      usuario?: string | null;
     },
   ) => {
     try {
