@@ -812,6 +812,84 @@ export const contratistasService = {
     return creado?.id as string;
   },
 
+  obtenerPorId: async (id: string): Promise<Contratista | null> => {
+    const cid = (id || '').trim();
+    if (!cid) return null;
+    const { data, error } = await supabase.from('contratistas').select('*').eq('id', cid).maybeSingle();
+    if (error) {
+      if (error.code === '42P01' || error.code === 'PGRST116') return null;
+      throw error;
+    }
+    return (data as Contratista) || null;
+  },
+
+  /** Si el ID existe actualiza; si no, crea. También busca por nombre. */
+  upsertDesdeCarga: async (
+    datos: Partial<Pick<Contratista, 'id' | 'responsable' | 'identificacion' | 'telefono1' | 'telefono2' | 'correo'>>,
+  ): Promise<{ id: string; created: boolean } | null> => {
+    const id = datos.id?.trim() || null;
+    const payload = Object.fromEntries(
+      Object.entries({
+        responsable: datos.responsable?.trim() || undefined,
+        identificacion: datos.identificacion?.trim() || undefined,
+        telefono1: datos.telefono1?.trim() || undefined,
+        telefono2: datos.telefono2?.trim() || undefined,
+        correo: datos.correo?.trim() || undefined,
+      }).filter(([, v]) => v != null && String(v).trim() !== ''),
+    ) as Partial<Contratista>;
+
+    if (!id && Object.keys(payload).length === 0) return null;
+
+    const aplicarUpdate = async (existenteId: string): Promise<{ id: string; created: boolean }> => {
+      if (Object.keys(payload).length > 0) {
+        await contratistasService.actualizar(existenteId, payload);
+      }
+      return { id: existenteId, created: false };
+    };
+
+    if (id) {
+      const existente = await contratistasService.obtenerPorId(id);
+      if (existente?.id) return aplicarUpdate(existente.id);
+
+      const insertPayload: Record<string, unknown> = {
+        id,
+        responsable: (payload.responsable as string) || 'Sin nombre',
+        ...payload,
+      };
+      const { data: creado, error } = await supabase
+        .from('contratistas')
+        .insert([insertPayload])
+        .select('id')
+        .single();
+      if (error) {
+        if (error.code === '42P01') return null;
+        throw error;
+      }
+      return creado?.id ? { id: creado.id as string, created: true } : null;
+    }
+
+    const nombre = (payload.responsable as string) || '';
+    if (!nombre) return null;
+    const existingId = await contratistasService.buscarOCrearPorResponsable(nombre);
+    if (!existingId) return null;
+    const { data: check } = await supabase
+      .from('contratistas')
+      .select('identificacion, telefono1, telefono2, correo, responsable')
+      .eq('id', existingId)
+      .maybeSingle();
+    const yaTeniaDatos = !!(
+      check?.identificacion ||
+      check?.telefono1 ||
+      check?.telefono2 ||
+      check?.correo
+    );
+    const created = !yaTeniaDatos && Object.keys(payload).length <= 1;
+    if (Object.keys(payload).length > 0) {
+      await contratistasService.actualizar(existingId, payload);
+    }
+    return { id: existingId, created };
+  },
+
   obtenerSugerenciasResponsable: async (search: string, limit = 8): Promise<string[]> => {
     const term = (search || '').trim();
     if (term.length < 2) return [];
@@ -4322,6 +4400,7 @@ export const adendaService = {
   },
 
   crear: async (payload: {
+    id?: string | null;
     contrato_id: string;
     obra_id?: string | null;
     numero_adenda?: string | null;
@@ -4347,13 +4426,79 @@ export const adendaService = {
       estado,
       updated_at: new Date().toISOString(),
     };
+    if (payload.id?.trim()) row.id = payload.id.trim();
 
     return guardarAdendaConSelect('insert', row);
+  },
+
+  upsertDesdeCarga: async (payload: {
+    id?: string | null;
+    contrato_id?: string | null;
+    obra_id?: string | null;
+    numero_adenda?: string | null;
+    tipo_adenda?: string | null;
+    monto?: number | string | null;
+    estado?: string | null;
+  }): Promise<Adenda | null> => {
+    const adendaId = payload.id?.trim() || null;
+    const contratoId = payload.contrato_id?.trim() || null;
+    const tieneDatos =
+      !!adendaId ||
+      !!(payload.numero_adenda && String(payload.numero_adenda).trim()) ||
+      !!(payload.tipo_adenda && payload.tipo_adenda.trim()) ||
+      payload.monto != null;
+    if (!tieneDatos) return null;
+
+    const estadoRaw = String(payload.estado || '').trim().toLowerCase();
+    const estado: EstadoAdenda = estadoRaw === 'anterior' ? 'anterior' : 'en_curso';
+    const numero =
+      parseCodigoAdenda(payload.numero_adenda) ||
+      (payload.numero_adenda?.trim() ? payload.numero_adenda.trim() : null);
+
+    if (adendaId) {
+      const { data: porId } = await supabase.from('adenda').select('id, contrato_id').eq('id', adendaId).maybeSingle();
+      if (porId?.id) {
+        return adendaService.actualizar(porId.id, {
+          contrato_id: contratoId || undefined,
+          obra_id: payload.obra_id?.trim() || null,
+          numero_adenda: numero,
+          tipo_adenda: payload.tipo_adenda?.trim() || null,
+          monto: payload.monto ?? null,
+          estado,
+        });
+      }
+    }
+
+    if (!contratoId) return null;
+
+    if (numero) {
+      const existente = await adendaService.obtenerPorContratoYNumero(contratoId, numero);
+      if (existente?.id) {
+        return adendaService.actualizar(existente.id, {
+          obra_id: payload.obra_id?.trim() || existente.obra_id || null,
+          numero_adenda: numero,
+          tipo_adenda: payload.tipo_adenda?.trim() || existente.tipo_adenda || null,
+          monto: payload.monto ?? existente.monto ?? null,
+          estado,
+        });
+      }
+    }
+
+    return adendaService.crear({
+      id: adendaId,
+      contrato_id: contratoId,
+      obra_id: payload.obra_id?.trim() || null,
+      numero_adenda: numero,
+      tipo_adenda: payload.tipo_adenda?.trim() || null,
+      monto: payload.monto ?? null,
+      estado,
+    });
   },
 
   actualizar: async (
     id: string,
     payload: Partial<{
+      contrato_id: string | null;
       obra_id: string | null;
       numero_adenda: string | null;
       tipo_adenda: string | null;
@@ -4385,6 +4530,9 @@ export const adendaService = {
     if (payload.monto !== undefined) updates.monto = parseMontoDocumento(payload.monto);
     if (payload.estado !== undefined) updates.estado = payload.estado;
     if (payload.obra_id !== undefined) updates.obra_id = payload.obra_id?.trim() || null;
+    if (payload.contrato_id !== undefined && payload.contrato_id?.trim()) {
+      updates.contrato_id = payload.contrato_id.trim();
+    }
 
     return guardarAdendaConSelect('update', updates, id);
   },
