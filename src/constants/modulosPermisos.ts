@@ -23,7 +23,7 @@ export const MODULOS_PERMISOS: ModuloPermisoDef[] = [
   { id: 'rh_vacaciones', label: 'RH - Vacaciones', icon: '🏖️', verKey: PERMISOS.VER_RH_VACACIONES, editarKey: PERMISOS.EDITAR_RH_VACACIONES },
   { id: 'rh_ponche', label: 'RH - Ponche', icon: '⏱️', verKey: PERMISOS.VER_RH_PONCHE, editarKey: PERMISOS.EDITAR_RH_PONCHE },
   { id: 'reporte', label: 'Reporte', icon: '📊', verKey: PERMISOS.VER_REPORTE, editarKey: PERMISOS.EDITAR_REPORTE },
-  { id: 'configuracion', label: 'Configuración', icon: '⚙️', verKey: PERMISOS.VER_CONFIGURACION, editarKey: PERMISOS.EDITAR_CONFIGURACION },
+  { id: 'configuracion', label: 'Administración', icon: '⚙️', verKey: PERMISOS.VER_CONFIGURACION, editarKey: PERMISOS.EDITAR_CONFIGURACION },
 ];
 
 export const MODULOS_PERMISOS_VISIBLES = MODULOS_PERMISOS.filter(

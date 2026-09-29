@@ -36,7 +36,6 @@ const CollaboratorsTable: React.FC<CollaboratorsTableProps> = ({ colaboradores, 
               <th className={GT_TABLA_TH}>Cargo</th>
               <th className={GT_TABLA_TH}>Correo</th>
               <th className={GT_TABLA_TH}>Estado</th>
-              <th className={GT_TABLA_TH}>Origen</th>
             </tr>
           </thead>
           <tbody>
@@ -78,11 +77,6 @@ const CollaboratorsTable: React.FC<CollaboratorsTableProps> = ({ colaboradores, 
                 <td className={`${GT_TABLA_TD} whitespace-nowrap`}>{c.correo}</td>
                 <td className={GT_TABLA_TD}>
                   <Badge tone={c.estado === 'Activo' ? 'success' : 'neutral'}>{c.estado}</Badge>
-                </td>
-                <td className={GT_TABLA_TD}>
-                  <Badge tone={c.soloUsuario ? 'info' : 'neutral'}>
-                    {c.soloUsuario ? 'Solo usuario' : 'Colaborador'}
-                  </Badge>
                 </td>
               </tr>
             ))}

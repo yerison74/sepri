@@ -13,11 +13,12 @@ import {
   Assessment,
   Description,
   Roofing,
+  AdminPanelSettings,
 } from '@mui/icons-material';
 import Login from './components/Login';
 import NotificacionesTiempo from './components/NotificacionesTiempo';
 import { useAuth } from './context/AuthContext';
-import { TAB_PERMISOS } from './constants/permisos';
+import { PERMISOS, TAB_PERMISOS } from './constants/permisos';
 import { MODULO_REPORTE_HABILITADO } from './constants/featureFlags';
 
 const StatsDashboard = React.lazy(() => import('./components/StatsDashboard'));
@@ -28,6 +29,7 @@ const TramiteHistory = React.lazy(() => import('./components/UploadHistory'));
 const GestionTecnicaDocumento = React.lazy(() => import('./components/GestionTecnicaDocumento'));
 const AtencionContratista = React.lazy(() => import('./components/AtencionContratista'));
 const RecursoHumano = React.lazy(() => import('./components/RecursoHumano'));
+const Administracion = React.lazy(() => import('./components/Administracion'));
 
 const ReporteObras = MODULO_REPORTE_HABILITADO
   ? React.lazy(() => import('./components/ReporteObras'))
@@ -112,13 +114,22 @@ function App() {
     ...(MODULO_REPORTE_HABILITADO
       ? [{ icon: <Assessment />, label: 'Reporte', index: 8 as const }]
       : []),
-    // Gestión de usuarios unificada en Recurso Humano → Colaboradores
+    { icon: <AdminPanelSettings />, label: 'Administración', index: 9 },
   ];
+
+  const puedeVerAdministracion =
+    hasPermission(PERMISOS.VER_CONFIGURACION) ||
+    hasPermission(PERMISOS.CREAR_USUARIOS) ||
+    hasPermission(PERMISOS.EDITAR_USUARIOS);
 
   // Solo mostrar pestañas para las que el usuario tiene permiso
   const tabs = tramitesOnly
     ? allTabs.filter((tab) => tab.index === 4)
-    : allTabs.filter((tab) => hasPermission(TAB_PERMISOS[tab.index as keyof typeof TAB_PERMISOS]));
+    : allTabs.filter((tab) =>
+        tab.index === 9
+          ? puedeVerAdministracion
+          : hasPermission(TAB_PERMISOS[tab.index as keyof typeof TAB_PERMISOS]),
+      );
 
   // Al tener usuario, ir a la primera pestaña que tiene permiso (login o recarga)
   const allowedTabIndices = tabs.map((t) => t.index).join(',');
@@ -358,6 +369,14 @@ function App() {
                       refreshTrigger={refreshTrigger}
                       soloLectura={!hasPermission('editar_reporte')}
                     />
+                  </Suspense>
+                </TabPanel>
+              )}
+
+              {puedeVerAdministracion && (
+                <TabPanel value={tabValue} index={9}>
+                  <Suspense fallback={<TabLoading />}>
+                    <Administracion />
                   </Suspense>
                 </TabPanel>
               )}

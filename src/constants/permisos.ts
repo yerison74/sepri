@@ -64,8 +64,8 @@ export const PERMISOS_LISTA: { codigo: PermisoCode; label: string }[] = [
   { codigo: PERMISOS.EDITAR_RH_PONCHE, label: 'Edición de RH - Ponche' },
   { codigo: PERMISOS.VER_REPORTE, label: 'Visualización de Reporte' },
   { codigo: PERMISOS.EDITAR_REPORTE, label: 'Exportación y reportes' },
-  { codigo: PERMISOS.VER_CONFIGURACION, label: 'Visualización de Configuración' },
-  { codigo: PERMISOS.EDITAR_CONFIGURACION, label: 'Edición de Configuración' },
+  { codigo: PERMISOS.VER_CONFIGURACION, label: 'Visualización de Administración' },
+  { codigo: PERMISOS.EDITAR_CONFIGURACION, label: 'Edición de Administración' },
 ];
 
 /** Mapeo pestaña App -> permiso requerido para ver */

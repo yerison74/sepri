@@ -1,4 +1,10 @@
 import { supabase } from '../lib/supabase';
+import {
+  cedulaSoloDigitos,
+  esCedulaCompleta,
+  formatearCedulaInput,
+  normalizarCedula,
+} from '../utils/cedula';
 
 /**
  * Convención RRHH:
@@ -82,6 +88,40 @@ type UsuarioAppRow = {
 function nombreDesdeUsuario(u: UsuarioAppRow): string {
   const full = [u.nombre, u.apellido].filter(Boolean).join(' ').trim();
   return full || u.usuario || 'Sin nombre';
+}
+
+async function buscarColaboradorPorIdentificacion(
+  identificacion: string,
+): Promise<RrhhColaborador | null> {
+  const formatted = normalizarCedula(identificacion);
+  const digits = cedulaSoloDigitos(identificacion);
+  if (!digits) return null;
+
+  const variants = Array.from(new Set([formatted, digits].filter(Boolean)));
+  const { data, error } = await supabase
+    .from(TABLA_COLABORADORES)
+    .select(SELECT_COLS)
+    .in('identificacion', variants)
+    .limit(1);
+
+  if (error) throw error;
+  return ((data?.[0] as RrhhColaborador) || null);
+}
+
+async function buscarUsuarioPorIdentificacion(identificacion: string): Promise<UsuarioAppRow | null> {
+  const formatted = normalizarCedula(identificacion);
+  const digits = cedulaSoloDigitos(identificacion);
+  if (!digits) return null;
+
+  const variants = Array.from(new Set([formatted, digits].filter(Boolean)));
+  const { data, error } = await supabase
+    .from('usuarios_app')
+    .select('id, nombre, apellido, usuario, cargo, area, activo, identificacion')
+    .in('identificacion', variants)
+    .limit(1);
+
+  if (error) throw error;
+  return ((data?.[0] as UsuarioAppRow) || null);
 }
 
 export const rrhhColaboradoresService = {
@@ -181,10 +221,27 @@ export const rrhhColaboradoresService = {
     return (data as RrhhColaborador) || null;
   },
 
+  obtenerPorUsuarioAppId: async (usuarioAppId: string): Promise<RrhhColaborador | null> => {
+    const uid = (usuarioAppId || '').trim();
+    if (!uid) return null;
+    const { data, error } = await supabase
+      .from(TABLA_COLABORADORES)
+      .select(SELECT_COLS)
+      .eq('usuario_app_id', uid)
+      .maybeSingle();
+    if (error) throw error;
+    return (data as RrhhColaborador) || null;
+  },
+
   crear: async (payload: RrhhColaboradorCreate): Promise<RrhhColaborador> => {
+    const cedula = normalizarCedula(payload.identificacion);
+    if (!esCedulaCompleta(cedula)) {
+      throw new Error('La cédula debe tener 11 dígitos (formato 000-0000000-0).');
+    }
+
     const row = {
       nombre: payload.nombre.trim(),
-      identificacion: payload.identificacion.trim(),
+      identificacion: cedula,
       cargo: payload.cargo?.trim() || null,
       departamento: payload.departamento?.trim() || null,
       telefono: payload.telefono?.trim() || null,
@@ -213,7 +270,13 @@ export const rrhhColaboradoresService = {
       updated_at: new Date().toISOString(),
     };
     if (payload.nombre !== undefined) row.nombre = payload.nombre.trim();
-    if (payload.identificacion !== undefined) row.identificacion = payload.identificacion.trim();
+    if (payload.identificacion !== undefined) {
+      const cedula = normalizarCedula(payload.identificacion);
+      if (!esCedulaCompleta(cedula)) {
+        throw new Error('La cédula debe tener 11 dígitos (formato 000-0000000-0).');
+      }
+      row.identificacion = cedula;
+    }
     if (payload.cargo !== undefined) row.cargo = payload.cargo?.trim() || null;
     if (payload.departamento !== undefined) row.departamento = payload.departamento?.trim() || null;
     if (payload.telefono !== undefined) row.telefono = payload.telefono?.trim() || null;
@@ -234,45 +297,102 @@ export const rrhhColaboradoresService = {
   },
 
   /**
+   * Si el usuario tiene cédula completa, crea o vincula su ficha de colaborador.
+   * Regla: todo usuario con cédula es colaborador; no todo colaborador es usuario.
+   */
+  asegurarDesdeUsuario: async (params: {
+    usuarioAppId: string;
+    identificacion: string;
+    nombre: string;
+    apellido?: string | null;
+    cargo?: string | null;
+    area?: string | null;
+    correo?: string | null;
+    activo?: boolean;
+  }): Promise<RrhhColaborador> => {
+    const cedula = normalizarCedula(params.identificacion);
+    if (!esCedulaCompleta(cedula)) {
+      throw new Error('La cédula debe tener 11 dígitos (formato 000-0000000-0).');
+    }
+
+    const nombreCompleto =
+      [params.nombre, params.apellido].filter(Boolean).join(' ').trim() ||
+      params.correo ||
+      'Sin nombre';
+
+    const [porCedula, porUsuario] = await Promise.all([
+      buscarColaboradorPorIdentificacion(cedula),
+      rrhhColaboradoresService.obtenerPorUsuarioAppId(params.usuarioAppId),
+    ]);
+
+    if (porCedula && porUsuario && porCedula.id !== porUsuario.id) {
+      throw new Error(
+        'Conflicto: esta cédula pertenece a otro colaborador y el usuario ya tiene una ficha distinta.',
+      );
+    }
+
+    const target = porCedula || porUsuario;
+    if (target) {
+      if (target.usuario_app_id && target.usuario_app_id !== params.usuarioAppId) {
+        throw new Error('Esta cédula ya está asignada a otro usuario de la aplicación.');
+      }
+
+      return rrhhColaboradoresService.actualizar(target.id, {
+        nombre: nombreCompleto,
+        identificacion: cedula,
+        cargo: params.cargo || target.cargo || null,
+        departamento:
+          params.area && params.area !== 'Ninguna' ? params.area : target.departamento || null,
+        correo: params.correo || target.correo || null,
+        estado: params.activo === false ? 'Inactivo' : 'Activo',
+        usuario_app_id: params.usuarioAppId,
+      });
+    }
+
+    return rrhhColaboradoresService.crear({
+      nombre: nombreCompleto,
+      identificacion: cedula,
+      cargo: params.cargo || null,
+      departamento: params.area && params.area !== 'Ninguna' ? params.area : null,
+      correo: params.correo || null,
+      estado: params.activo === false ? 'Inactivo' : 'Activo',
+      usuario_app_id: params.usuarioAppId,
+    });
+  },
+
+  /**
    * Para formularios de Usuario/Colaborador:
    * al digitar identificación, devuelve coincidencias cruzadas.
    */
   buscarRelacionPorIdentificacion: async (
     identificacion: string,
   ): Promise<RrhhVinculoIdentificacion> => {
-    const doc = (identificacion || '').trim();
-    if (!doc) return { colaborador: null, usuarioApp: null };
+    const digits = cedulaSoloDigitos(identificacion);
+    if (!digits) return { colaborador: null, usuarioApp: null };
 
-    const [{ data: colab }, usuarioRes] = await Promise.all([
-      supabase
-        .from(TABLA_COLABORADORES)
-        .select(SELECT_COLS)
-        .eq('identificacion', doc)
-        .maybeSingle(),
-      supabase
-        .from('usuarios_app')
-        .select('id, nombre, apellido, usuario, cargo, area, activo, identificacion')
-        .eq('identificacion', doc)
-        .maybeSingle(),
+    const [colab, usuario] = await Promise.all([
+      buscarColaboradorPorIdentificacion(digits),
+      buscarUsuarioPorIdentificacion(digits),
     ]);
 
     let usuarioApp: RrhhVinculoIdentificacion['usuarioApp'] = null;
-    if (!usuarioRes.error && usuarioRes.data) {
-      const row = usuarioRes.data as Record<string, unknown>;
+    if (usuario) {
       usuarioApp = {
-        id: String(row.id || ''),
-        nombre: (row.nombre as string) || null,
-        apellido: (row.apellido as string) || null,
-        usuario: (row.usuario as string) || null,
-        cargo: (row.cargo as string) || null,
-        area: (row.area as string) || null,
-        activo: (row.activo as boolean) ?? null,
+        id: usuario.id,
+        nombre: usuario.nombre || null,
+        apellido: usuario.apellido || null,
+        usuario: usuario.usuario || null,
+        cargo: usuario.cargo || null,
+        area: usuario.area || null,
+        activo: usuario.activo ?? null,
       };
     }
 
     return {
-      colaborador: (colab as RrhhColaborador) || null,
+      colaborador: colab,
       usuarioApp,
     };
   },
 };
+
+export { formatearCedulaInput, esCedulaCompleta, normalizarCedula };

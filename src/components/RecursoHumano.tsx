@@ -21,7 +21,7 @@ import {
 } from './rrhh/mockData';
 import {
   rrhhColaboradoresService,
-  type RrhhListaItem,
+  type RrhhColaborador,
 } from '../services/rrhhColaboradores.service';
 
 type VistaRh = 'lista' | 'formulario';
@@ -44,18 +44,17 @@ function inicialesDe(nombre: string): string {
   return `${parts[0][0] || ''}${parts[1][0] || ''}`.toUpperCase();
 }
 
-function mapListaItem(c: RrhhListaItem, idx: number): ColaboradorMock {
+function mapColaborador(c: RrhhColaborador, idx: number): ColaboradorMock {
   return {
-    id: c.key,
-    colaboradorId: c.colaboradorId,
-    usuarioAppId: c.usuarioAppId,
-    soloUsuario: c.soloUsuario,
+    id: c.id,
+    colaboradorId: c.id,
+    usuarioAppId: c.usuario_app_id,
     nombre: c.nombre,
     iniciales: inicialesDe(c.nombre),
     departamento: c.departamento?.trim() || 'Sin área',
     cargo: c.cargo?.trim() || '—',
     correo: c.correo?.trim() || '—',
-    estado: c.estado,
+    estado: c.estado === 'Inactivo' ? 'Inactivo' : 'Activo',
     avatarClass: AVATAR_COLORS[idx % AVATAR_COLORS.length],
   };
 }
@@ -67,7 +66,6 @@ const RecursoHumano: React.FC = () => {
   const [vista, setVista] = useState<VistaRh>('lista');
   const [formMode, setFormMode] = useState<ColaboradorFormMode>('create');
   const [editId, setEditId] = useState<string | null>(null);
-  const [usuarioAppIdForm, setUsuarioAppIdForm] = useState<string | null>(null);
   const [colaboradores, setColaboradores] = useState<ColaboradorMock[]>([]);
   const [loadingColabs, setLoadingColabs] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -101,8 +99,8 @@ const RecursoHumano: React.FC = () => {
     setLoadingColabs(true);
     setLoadError(null);
     try {
-      const rows = await rrhhColaboradoresService.listarUnificados();
-      setColaboradores(rows.map(mapListaItem));
+      const rows = await rrhhColaboradoresService.listar();
+      setColaboradores(rows.map(mapColaborador));
     } catch (err: unknown) {
       const msg =
         (err as { message?: string })?.message || 'No se pudieron cargar los colaboradores.';
@@ -123,21 +121,11 @@ const RecursoHumano: React.FC = () => {
     if (tabActual !== 'colaboradores' || !puedeEditarColaboradores) return;
     setFormMode('create');
     setEditId(null);
-    setUsuarioAppIdForm(null);
     setVista('formulario');
   };
 
   const handleAbrir = (row: ColaboradorMock) => {
-    if (row.soloUsuario && row.usuarioAppId) {
-      // Usuario sin ficha RH: abrir formulario para completar / vincular
-      setEditId(null);
-      setUsuarioAppIdForm(row.usuarioAppId);
-      setFormMode(puedeEditarColaboradores ? 'create' : 'view');
-      setVista('formulario');
-      return;
-    }
     setEditId(row.colaboradorId || row.id);
-    setUsuarioAppIdForm(row.usuarioAppId || null);
     setFormMode(puedeEditarColaboradores ? 'edit' : 'view');
     setVista('formulario');
   };
@@ -145,13 +133,11 @@ const RecursoHumano: React.FC = () => {
   const handleCancelarForm = () => {
     setVista('lista');
     setEditId(null);
-    setUsuarioAppIdForm(null);
   };
 
   const handleSaved = () => {
     setVista('lista');
     setEditId(null);
-    setUsuarioAppIdForm(null);
     void cargarColaboradores();
   };
 
@@ -169,7 +155,6 @@ const RecursoHumano: React.FC = () => {
         <ColaboradorForm
           mode={formMode}
           colaboradorId={editId}
-          usuarioAppId={usuarioAppIdForm}
           onCancel={handleCancelarForm}
           onSaved={handleSaved}
         />
