@@ -3445,10 +3445,11 @@ async function eliminarEspejoMovimientoEnTramite(movimientoDocumentoId: string):
 
 /**
  * Replica o actualiza el movimiento de gestión técnica en `movimientos_tramites` (solo lectura en seguimiento).
+ * Si hay No. trámite, siempre crea/actualiza el espejo en Seguimiento de trámite (igual que el alta manual).
  */
 async function sincronizarMovimientoGestionTecnicaATramite(
   movimiento: MovimientoDocumentoTecnicoObra,
-  opciones: { usuario?: string | null } = {},
+  opciones: { usuario?: string | null; areas?: Area[] } = {},
 ): Promise<void> {
   const noTramite = movimiento.no_tramite?.trim();
   if (!noTramite) {
@@ -3456,10 +3457,11 @@ async function sincronizarMovimientoGestionTecnicaATramite(
     return;
   }
 
-  const areas = await areasService.obtenerAreas();
+  const areas = opciones.areas || (await areasService.obtenerAreas());
   const areaDestinoNombre =
-    movimiento.area?.area || resolverNombreAreaPorId(movimiento.departamento, areas);
-  if (!areaDestinoNombre) return;
+    movimiento.area?.area ||
+    resolverNombreAreaPorId(movimiento.departamento, areas) ||
+    AREA_ORIGEN_GESTION_TECNICA;
 
   const pdfTramite = await resolverPdfTramiteDesdeMovimientos(noTramite, {
     archivo_pdf: movimiento.archivo_pdf,
@@ -3818,24 +3820,38 @@ export const documentosTecnicosService = {
     return ordenarMovimientosDocumento(filas);
   },
 
-  crearMovimiento: async (payload: {
-    solicitud: string;
-    fecha_solicitud?: string | null;
-    fecha_entrada?: string | null;
-    no_tramite?: string | null;
-    oficio?: string | null;
-    estatus?: string | null;
-    departamento?: string | null;
-    fecha_salida?: string | null;
-    observaciones?: string | null;
-    usuario?: string | null;
-    archivo?: File | null;
-  }): Promise<MovimientoDocumentoTecnicoObra> => {
+  crearMovimiento: async (
+    payload: {
+      solicitud: string;
+      fecha_solicitud?: string | null;
+      fecha_entrada?: string | null;
+      no_tramite?: string | null;
+      oficio?: string | null;
+      estatus?: string | null;
+      departamento?: string | null;
+      fecha_salida?: string | null;
+      observaciones?: string | null;
+      usuario?: string | null;
+      archivo?: File | null;
+    },
+    opciones: {
+      areas?: Area[];
+      omitirListadoExistentes?: boolean;
+      omitirTocarDocumento?: boolean;
+    } = {},
+  ): Promise<MovimientoDocumentoTecnicoObra> => {
     const solicitud = payload.solicitud.trim();
-    const existentes = await documentosTecnicosService.listarMovimientos(solicitud);
-    const errorValidacion = validarMovimientoDocumento(existentes, payload);
-    if (errorValidacion) {
-      throw new Error(errorValidacion);
+    if (!opciones.omitirListadoExistentes) {
+      const existentes = await documentosTecnicosService.listarMovimientos(solicitud);
+      const errorValidacion = validarMovimientoDocumento(existentes, payload);
+      if (errorValidacion) {
+        throw new Error(errorValidacion);
+      }
+    } else {
+      const errorValidacion = validarMovimientoDocumento([], payload);
+      if (errorValidacion) {
+        throw new Error(errorValidacion);
+      }
     }
     if (payload.estatus?.trim() && !esEstatusMovimientoValido(payload.estatus)) {
       throw new Error('Estatus debe ser: En Proceso, Detenida o Certificada');
@@ -3873,21 +3889,25 @@ export const documentosTecnicosService = {
       const msg = error.message || '';
       if (/fecha_entrada|oficio|estatus|observaciones|archivo_pdf|nombre_archivo/i.test(msg) && (error.code === 'PGRST204' || /column/i.test(msg))) {
         throw new Error(
-          'Faltan columnas en movimiento_documentos_tecnicos_obra. Ejecute supabase-migracion-movimiento-documento-pdf.sql (o el schema completo) en Supabase y recargue la página.',
+          'Faltan columnas en movimiento_documentos_tecnicos_obra. Ejecute supabase-schema-completo.sql en Supabase y recargue la página.',
         );
       }
       throw error;
     }
     const movimiento = mapMovimientoDocumentoRow(data as Record<string, unknown>);
-    await tocarDocumentoTecnicoPorSolicitud(movimiento.solicitud);
+    if (!opciones.omitirTocarDocumento) {
+      await tocarDocumentoTecnicoPorSolicitud(movimiento.solicitud);
+    }
     try {
       await sincronizarMovimientoGestionTecnicaATramite(movimiento, {
         usuario: payload.usuario,
+        areas: opciones.areas,
       });
     } catch (syncErr: unknown) {
       const msg = syncErr instanceof Error ? syncErr.message : 'Error al sincronizar con seguimiento de trámite';
+      await supabase.from('movimiento_documentos_tecnicos_obra').delete().eq('id', movimiento.id);
       throw new Error(
-        `Movimiento guardado, pero no se pudo sincronizar con Seguimiento de trámite: ${msg}`,
+        `No se pudo registrar el movimiento en Seguimiento de trámite: ${msg}`,
       );
     }
     return movimiento;
@@ -3995,6 +4015,31 @@ export const documentosTecnicosService = {
     return (data || []).map((r) => mapMovimientoDocumentoRow(r as Record<string, unknown>));
   },
 
+  listarMovimientosPorSolicitudes: async (
+    solicitudes: string[],
+  ): Promise<MovimientoDocumentoTecnicoObra[]> => {
+    const ids = Array.from(new Set(solicitudes.map((s) => s.trim()).filter(Boolean)));
+    if (ids.length === 0) return [];
+
+    const chunkSize = 100;
+    const acumulado: MovimientoDocumentoTecnicoObra[] = [];
+    for (let i = 0; i < ids.length; i += chunkSize) {
+      const chunk = ids.slice(i, i + chunkSize);
+      const { data, error } = await supabase
+        .from('movimiento_documentos_tecnicos_obra')
+        .select(MOV_DOC_TECNICO_SELECT)
+        .in('solicitud', chunk)
+        .order('solicitud', { ascending: true })
+        .order('fecha_entrada', { ascending: true, nullsFirst: false })
+        .order('fecha_salida', { ascending: true, nullsFirst: false });
+      if (error) throw error;
+      for (const row of data || []) {
+        acumulado.push(mapMovimientoDocumentoRow(row as Record<string, unknown>));
+      }
+    }
+    return acumulado;
+  },
+
   importarMasivo: async (payload: {
     documentos: Array<{
       solicitud: string;
@@ -4035,6 +4080,7 @@ export const documentosTecnicosService = {
     documentosCreados: number;
     documentosActualizados: number;
     movimientosCreados: number;
+    movimientosSincronizados: number;
     adendasCreadas: number;
     adendasActualizadas: number;
     errores: string[];
@@ -4043,6 +4089,7 @@ export const documentosTecnicosService = {
       documentosCreados: 0,
       documentosActualizados: 0,
       movimientosCreados: 0,
+      movimientosSincronizados: 0,
       adendasCreadas: 0,
       adendasActualizadas: 0,
       errores: [] as string[],
@@ -4056,12 +4103,44 @@ export const documentosTecnicosService = {
       throw new Error('El archivo no contiene documentos ni movimientos para importar');
     }
 
+    const normalizarClaveArea = (valor: string) =>
+      valor
+        .trim()
+        .toLowerCase()
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '');
+
+    const normalizarEstatusImport = (valor: string | null | undefined): string | null => {
+      const raw = (valor || '').trim();
+      if (!raw) return null;
+      const clave = normalizarClaveArea(raw);
+      if (clave === 'en proceso' || clave === 'en_proceso') return 'En Proceso';
+      if (clave === 'detenida' || clave === 'detenido') return 'Detenida';
+      if (clave === 'certificada' || clave === 'certificado' || clave === 'completado') {
+        return 'Certificada';
+      }
+      return raw;
+    };
+
     const areas = await areasService.obtenerAreas();
-    const areaPorNombre = new Map(
-      areas.map((a) => [a.area.trim().toLowerCase(), a.id] as const),
-    );
+    const areaPorNombre = new Map<string, string>();
+    for (const a of areas) {
+      areaPorNombre.set(normalizarClaveArea(a.area), a.id);
+    }
+    const resolverAreaId = (nombre: string): string | null => {
+      const clave = normalizarClaveArea(nombre);
+      const exacto = areaPorNombre.get(clave);
+      if (exacto) return exacto;
+      const entradas = Array.from(areaPorNombre.entries());
+      for (let i = 0; i < entradas.length; i++) {
+        const [k, id] = entradas[i];
+        if (k.includes(clave) || clave.includes(k)) return id;
+      }
+      return null;
+    };
 
     const solicitudesRegistradas = new Set<string>();
+    const solicitudesTocadas = new Set<string>();
 
     for (let i = 0; i < payload.documentos.length; i++) {
       const fila = payload.documentos[i];
@@ -4176,9 +4255,16 @@ export const documentosTecnicosService = {
       }
     }
 
-    for (let i = 0; i < payload.movimientos.length; i++) {
-      const fila = payload.movimientos[i];
-      const filaNum = i + 2;
+    // Orden cronológico para que el área de origen del espejo en seguimiento quede correcta.
+    const movimientosOrdenados = payload.movimientos
+      .map((fila, idx) => ({ fila, filaNum: idx + 2 }))
+      .sort((a, b) => {
+        const clave = (f: (typeof payload.movimientos)[number]) =>
+          `${(f.fecha_entrada || f.fecha_solicitud || '9999-99-99').slice(0, 10)}|${(f.solicitud || '').toLowerCase()}|${(f.no_tramite || '').toLowerCase()}`;
+        return clave(a.fila).localeCompare(clave(b.fila));
+      });
+
+    for (const { fila, filaNum } of movimientosOrdenados) {
       try {
         const solicitud = fila.solicitud.trim();
         if (!solicitud) {
@@ -4197,35 +4283,57 @@ export const documentosTecnicosService = {
           continue;
         }
 
+        const noTramite = fila.no_tramite?.trim() || null;
         let departamentoId: string | null = null;
         if (fila.departamento?.trim()) {
-          departamentoId =
-            areaPorNombre.get(fila.departamento.trim().toLowerCase()) || null;
+          departamentoId = resolverAreaId(fila.departamento);
           if (!departamentoId) {
             resultado.errores.push(
               `Movimientos fila ${filaNum}: departamento "${fila.departamento}" no encontrado`,
             );
             continue;
           }
+        } else if (noTramite) {
+          resultado.errores.push(
+            `Movimientos fila ${filaNum}: con No. trámite "${noTramite}" el Departamento es obligatorio para registrarlo en Seguimiento de trámite`,
+          );
+          continue;
         }
 
-        await documentosTecnicosService.crearMovimiento({
-          solicitud,
-          fecha_solicitud: fila.fecha_solicitud || null,
-          fecha_entrada: fila.fecha_entrada || null,
-          no_tramite: fila.no_tramite || null,
-          oficio: fila.oficio || null,
-          estatus: fila.estatus || null,
-          departamento: departamentoId,
-          fecha_salida: fila.fecha_salida || null,
-          observaciones: fila.observaciones || null,
-          usuario: 'Importación Excel',
-        });
+        const estatus = normalizarEstatusImport(fila.estatus);
+        const creado = await documentosTecnicosService.crearMovimiento(
+          {
+            solicitud,
+            fecha_solicitud: fila.fecha_solicitud || null,
+            fecha_entrada: fila.fecha_entrada || null,
+            no_tramite: noTramite,
+            oficio: fila.oficio || null,
+            estatus,
+            departamento: departamentoId,
+            fecha_salida: fila.fecha_salida || null,
+            observaciones: fila.observaciones || null,
+            usuario: 'Importación Excel',
+          },
+          {
+            areas,
+            omitirListadoExistentes: true,
+            omitirTocarDocumento: true,
+          },
+        );
         resultado.movimientosCreados += 1;
+        if (creado.no_tramite?.trim()) {
+          resultado.movimientosSincronizados += 1;
+        }
+        solicitudesTocadas.add(solicitud);
       } catch (err: unknown) {
         const msg = err instanceof Error ? err.message : 'Error desconocido';
         resultado.errores.push(`Movimientos fila ${filaNum}: ${msg}`);
       }
+    }
+
+    const tocadas = Array.from(solicitudesTocadas);
+    for (let i = 0; i < tocadas.length; i++) {
+      await tocarDocumentoTecnicoPorSolicitud(tocadas[i]);
     }
 
     return resultado;

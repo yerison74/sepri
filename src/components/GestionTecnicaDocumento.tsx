@@ -1373,6 +1373,9 @@ const GestionTecnicaDocumento: React.FC<GestionTecnicaDocumentoProps> = ({ soloL
         `${r.documentosCreados} documento(s) creado(s)`,
         r.documentosActualizados > 0 ? `${r.documentosActualizados} actualizado(s)` : '',
         `${r.movimientosCreados} movimiento(s) registrado(s)`,
+        (r.movimientosSincronizados ?? 0) > 0
+          ? `${r.movimientosSincronizados} en Seguimiento de trámite`
+          : '',
         r.adendasCreadas > 0 ? `${r.adendasCreadas} adenda(s) creada(s)` : '',
         r.adendasActualizadas > 0 ? `${r.adendasActualizadas} adenda(s) actualizada(s)` : '',
       ].filter(Boolean);

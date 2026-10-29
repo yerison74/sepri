@@ -622,18 +622,17 @@ export const gestionTecnicaDocumentoAPI = {
   exportarExcel: async (filtros?: { busqueda?: string }) => {
     try {
       const documentos = await documentosTecnicosService.listar(filtros);
-      const movimientos = await documentosTecnicosService.listarTodosMovimientos();
-      const solicitudes = new Set(documentos.map((d) => d.solicitud));
-      const movimientosFiltrados = filtros?.busqueda?.trim()
-        ? movimientos.filter((m) => solicitudes.has(m.solicitud))
-        : movimientos;
+      const solicitudes = documentos.map((d) => d.solicitud);
+      const movimientos = filtros?.busqueda?.trim()
+        ? await documentosTecnicosService.listarMovimientosPorSolicitudes(solicitudes)
+        : await documentosTecnicosService.listarTodosMovimientos();
       const contratoIds = Array.from(
         new Set(documentos.map((d) => d.contrato_id).filter((id): id is string => !!id)),
       );
       const adendas =
         contratoIds.length > 0 ? await adendaService.listarPorContratoIds(contratoIds) : [];
 
-      const wb = construirWorkbookExport(documentos, movimientosFiltrados, adendas);
+      const wb = construirWorkbookExport(documentos, movimientos, adendas);
       const blob = workbookABlob(wb);
       return { data: blob } as AxiosResponse<Blob>;
     } catch (error: any) {
